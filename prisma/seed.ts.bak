@@ -1,0 +1,43 @@
+// Seed script to create an initial admin user
+import { PrismaClient } from '@prisma/client';
+import { randomBytes, scrypt as _scrypt } from 'crypto';
+import { promisify } from 'util';
+
+const scrypt = promisify(_scrypt);
+const prisma = new PrismaClient();
+
+async function hashPassword(password: string): Promise<string> {
+  const salt = randomBytes(16);
+  const N = 16384;
+  const r = 8;
+  const p = 1;
+  const dkLen = 64;
+  const key = (await scrypt(password, salt, dkLen, { N, r, p } as object)) as Buffer;
+  return `scrypt$${N}$${r}$${dkLen}$${salt.toString('base64')}$${key.toString('base64')}`;
+}
+
+async function main() {
+  // Create admin user
+  const existingAdmin = await prisma.users.findUnique({ where: { email: 'admin@example.com' } });
+  if (!existingAdmin) {
+    const hash = await hashPassword('admin1234');
+    await prisma.users.create({
+      data: {
+        name: '管理者',
+        email: 'admin@example.com',
+        password_hash: hash,
+        role: 'admin'
+      }
+    });
+    console.log('✓ 管理者ユーザーを作成しました: admin@example.com / admin1234');
+  } else {
+    console.log('✓ 管理者ユーザーは既に存在します');
+  }
+}
+
+main()
+  .catch((e) => {
+    console.error(e);
+    process.exit(1);
+  })
+  .finally(() => prisma.$disconnect());

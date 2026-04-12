@@ -1,0 +1,41 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    name: Deploy to production
+    runs-on: ubuntu-latest
+    # CI が通ってから実行
+    needs: []
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          port: ${{ secrets.SSH_PORT || 22 }}
+          script: |
+            set -e
+            cd ${{ secrets.DEPLOY_PATH }}
+
+            echo "=== git pull ==="
+            git pull origin main
+
+            echo "=== docker compose build ==="
+            docker compose build --no-cache
+
+            echo "=== docker compose up ==="
+            docker compose up -d --remove-orphans
+
+            echo "=== 古いイメージを削除 ==="
+            docker image prune -f
+
+            echo "=== デプロイ完了 ==="

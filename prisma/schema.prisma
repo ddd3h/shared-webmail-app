@@ -1,0 +1,490 @@
+// Prisma schema for the MVP based on the spec
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum MailboxType {
+  personal
+  team
+}
+
+enum MessageDirection {
+  incoming
+  outgoing
+}
+
+enum ThreadStatus {
+  open
+  in_progress
+  waiting
+  done
+  archived
+}
+
+enum JobStatus {
+  pending
+  success
+  failed
+}
+
+enum NotificationPriority {
+  high
+  normal
+  low
+}
+
+enum AuthType {
+  password
+  oauth
+}
+
+model users {
+  id                     String   @id @default(cuid())
+  name                   String
+  email                  String   @unique
+  password_hash          String?
+  role                   String   @default("user")
+  mattermost_user_id     String?
+  mattermost_link_status String?
+  signature              String?
+  created_at             DateTime @default(now())
+  updated_at             DateTime @updatedAt
+
+  // relations
+  owned_mailboxes            mailboxes[]              @relation("owner_user")
+  assigned_threads           threads[]                @relation("thread_assigned_user")
+  last_replied_threads       threads[]                @relation("thread_last_replied_by")
+  thread_assignments_to      thread_assignments[]     @relation("assigned_to_user")
+  thread_assignments_by      thread_assignments[]     @relation("assigned_by_user")
+  thread_state_changes       thread_state_history[]   @relation("state_changed_by")
+  thread_visibility          thread_visibility[]
+  thread_reads               thread_reads[]
+  mailbox_permissions        mailbox_permissions[]
+  messages_sent              message_sends[]          @relation("sent_by_user")
+  mattermost_links_created   mattermost_links[]       @relation("mm_link_created_by")
+  mattermost_notifications   mattermost_notifications[]
+  mattermost_forwards        mattermost_forwards[]    @relation("mm_forwarded_by")
+  push_subscriptions         push_subscriptions[]
+  notification_events        notification_events[]
+  audit_logs                 audit_logs[]             @relation("audit_actor")
+  drafts                     drafts[]
+  passkey_credentials        passkey_credentials[]
+  google_oauth_token         google_oauth_tokens?
+  contacts_created           contacts[]
+  password_reset_tokens      password_reset_tokens[]
+}
+
+model mailboxes {
+  id                    String      @id @default(cuid())
+  type                  MailboxType
+  display_name          String
+  email_address         String
+  owner_user_id         String?
+  is_active             Boolean     @default(true)
+  mattermost_channel_id String?
+  cached_size_bytes     BigInt?
+  size_cached_at        DateTime?
+  created_at            DateTime    @default(now())
+  updated_at            DateTime    @updatedAt
+
+  owner users? @relation("owner_user", fields: [owner_user_id], references: [id])
+
+  credentials mailbox_credentials?
+  permissions mailbox_permissions[]
+  threads     threads[]
+  messages    messages[]
+  sends       message_sends[]
+  sync_state  mailbox_sync_states?
+  drafts      drafts[]
+}
+
+model mailbox_credentials {
+  id                     String    @id @default(cuid())
+  mailbox_id             String    @unique
+  username               String
+  encrypted_password     String
+  encryption_key_version String
+  auth_type              AuthType  @default(password)
+  imap_host              String
+  imap_port              Int
+  imap_secure            Boolean
+  smtp_host              String
+  smtp_port              Int
+  smtp_secure            Boolean
+  last_tested_at         DateTime?
+  last_test_status       String?
+  last_error             String?
+  created_at             DateTime  @default(now())
+  updated_at             DateTime  @updatedAt
+
+  mailbox mailboxes @relation(fields: [mailbox_id], references: [id])
+}
+
+model mailbox_permissions {
+  id         String   @id @default(cuid())
+  mailbox_id String
+  user_id    String
+  can_view   Boolean  @default(true)
+  can_reply  Boolean  @default(false)
+  can_assign Boolean  @default(false)
+  created_at DateTime @default(now())
+
+  mailbox mailboxes @relation(fields: [mailbox_id], references: [id])
+  user    users     @relation(fields: [user_id], references: [id])
+
+  @@unique([mailbox_id, user_id])
+}
+
+model threads {
+  id                      String       @id @default(cuid())
+  mailbox_id              String
+  subject                 String
+  normalized_subject      String
+  status                  ThreadStatus @default(open)
+  assigned_user_id        String?
+  last_message_at         DateTime
+  last_received_at        DateTime?
+  last_sent_at            DateTime?
+  last_replied_by_user_id String?
+  unread_count            Int          @default(0)
+  is_archived             Boolean      @default(false)
+  created_at              DateTime     @default(now())
+  updated_at              DateTime     @updatedAt
+
+  mailbox         mailboxes @relation(fields: [mailbox_id], references: [id])
+  assigned_user   users?    @relation("thread_assigned_user", fields: [assigned_user_id], references: [id])
+  last_replied_by users?    @relation("thread_last_replied_by", fields: [last_replied_by_user_id], references: [id])
+
+  messages              messages[]
+  assignments           thread_assignments[]
+  state_history         thread_state_history[]
+  visibility            thread_visibility[]
+  reads                 thread_reads[]
+  sends                 message_sends[]
+  mattermost            mattermost_links?
+  mm_forwards           mattermost_forwards[]
+  mm_notifications      mattermost_notifications[]
+  notifications         notification_events[]
+  drafts                drafts[]
+}
+
+// Per-user read tracking for shared (team) mail threads
+model thread_reads {
+  id           String   @id @default(cuid())
+  thread_id    String
+  user_id      String
+  last_read_at DateTime @default(now())
+
+  thread threads @relation(fields: [thread_id], references: [id], onDelete: Cascade)
+  user   users   @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@unique([thread_id, user_id])
+}
+
+model messages {
+  id                  String           @id @default(cuid())
+  thread_id           String
+  mailbox_id          String
+  external_message_id String           @unique
+  imap_uid            Int?
+  in_reply_to         String?
+  references_raw      String?
+  direction           MessageDirection
+  from_name           String?
+  from_email          String
+  to_raw              String
+  cc_raw              String?
+  bcc_raw             String?
+  subject             String
+  text_body           String?
+  html_body           String?
+  sent_at             DateTime
+  received_at         DateTime?
+  raw_headers         String?
+  has_attachments     Boolean          @default(false)
+  created_at          DateTime         @default(now())
+
+  thread      threads     @relation(fields: [thread_id], references: [id])
+  mailbox     mailboxes   @relation(fields: [mailbox_id], references: [id])
+  attachments attachments[]
+  sends       message_sends[]
+  mm_forwards mattermost_forwards[]
+}
+
+model attachments {
+  id           String   @id @default(cuid())
+  message_id   String
+  filename     String
+  content_type String
+  size         Int
+  storage_key  String
+  created_at   DateTime @default(now())
+
+  message messages @relation(fields: [message_id], references: [id])
+}
+
+model thread_assignments {
+  id                  String   @id @default(cuid())
+  thread_id           String
+  assigned_to_user_id String?
+  assigned_by_user_id String
+  created_at          DateTime @default(now())
+
+  thread      threads @relation(fields: [thread_id], references: [id])
+  assigned_to users?  @relation("assigned_to_user", fields: [assigned_to_user_id], references: [id])
+  assigned_by users   @relation("assigned_by_user", fields: [assigned_by_user_id], references: [id])
+}
+
+model thread_state_history {
+  id                 String        @id @default(cuid())
+  thread_id          String
+  old_status         ThreadStatus?
+  new_status         ThreadStatus
+  changed_by_user_id String
+  created_at         DateTime      @default(now())
+
+  thread     threads @relation(fields: [thread_id], references: [id])
+  changed_by users   @relation("state_changed_by", fields: [changed_by_user_id], references: [id])
+}
+
+model thread_visibility {
+  id         String    @id @default(cuid())
+  thread_id  String
+  user_id    String
+  is_hidden  Boolean   @default(false)
+  hidden_at  DateTime?
+  created_at DateTime  @default(now())
+  updated_at DateTime  @updatedAt
+
+  thread threads @relation(fields: [thread_id], references: [id])
+  user   users   @relation(fields: [user_id], references: [id])
+
+  @@unique([thread_id, user_id])
+}
+
+model message_sends {
+  id              String    @id @default(cuid())
+  message_id      String
+  thread_id       String
+  mailbox_id      String
+  sent_by_user_id String
+  smtp_response   String?
+  status          JobStatus
+  error_message   String?
+  sent_at         DateTime
+
+  message messages  @relation(fields: [message_id], references: [id])
+  thread  threads   @relation(fields: [thread_id], references: [id])
+  mailbox mailboxes @relation(fields: [mailbox_id], references: [id])
+  sent_by users     @relation("sent_by_user", fields: [sent_by_user_id], references: [id])
+}
+
+model mattermost_links {
+  id                      String   @id @default(cuid())
+  thread_id               String   @unique
+  mattermost_channel_id   String
+  mattermost_post_id      String
+  mattermost_root_post_id String
+  permalink               String
+  created_by_user_id      String
+  created_at              DateTime @default(now())
+
+  thread     threads @relation(fields: [thread_id], references: [id])
+  created_by users   @relation("mm_link_created_by", fields: [created_by_user_id], references: [id])
+}
+
+model mattermost_notifications {
+  id                   String    @id @default(cuid())
+  thread_id            String?
+  user_id              String
+  notification_type    String
+  target_mattermost_id String
+  status               JobStatus
+  error_message        String?
+  created_at           DateTime  @default(now())
+
+  thread threads? @relation(fields: [thread_id], references: [id])
+  user   users    @relation(fields: [user_id], references: [id])
+}
+
+model mattermost_forwards {
+  id                   String    @id @default(cuid())
+  thread_id            String
+  message_id           String?
+  forwarded_by_user_id String
+  target_channel_id    String
+  target_post_id       String?
+  status               JobStatus
+  error_message        String?
+  created_at           DateTime  @default(now())
+
+  thread       threads   @relation(fields: [thread_id], references: [id])
+  message      messages? @relation(fields: [message_id], references: [id])
+  forwarded_by users     @relation("mm_forwarded_by", fields: [forwarded_by_user_id], references: [id])
+}
+
+model push_subscriptions {
+  id           String    @id @default(cuid())
+  user_id      String
+  endpoint     String    @unique
+  p256dh       String
+  auth         String
+  platform     String
+  user_agent   String
+  is_active    Boolean   @default(true)
+  last_seen_at DateTime?
+  created_at   DateTime  @default(now())
+  updated_at   DateTime  @updatedAt
+
+  user users @relation(fields: [user_id], references: [id])
+}
+
+model notification_events {
+  id         String               @id @default(cuid())
+  user_id    String
+  thread_id  String?
+  event_type String
+  title      String
+  body       String
+  url        String
+  priority   NotificationPriority
+  created_at DateTime             @default(now())
+
+  user       users   @relation(fields: [user_id], references: [id])
+  thread     threads? @relation(fields: [thread_id], references: [id])
+  deliveries notification_deliveries[]
+}
+
+model notification_deliveries {
+  id                    String    @id @default(cuid())
+  notification_event_id String
+  channel               String
+  status                JobStatus
+  response_code         Int?
+  error_message         String?
+  delivered_at          DateTime?
+  created_at            DateTime  @default(now())
+
+  event notification_events @relation(fields: [notification_event_id], references: [id])
+}
+
+model mailbox_sync_states {
+  id                    String    @id @default(cuid())
+  mailbox_id            String    @unique
+  last_sync_started_at  DateTime?
+  last_sync_finished_at DateTime?
+  last_success_at       DateTime?
+  last_error            String?
+  last_seen_uid         String?
+  status                String
+  updated_at            DateTime  @updatedAt
+
+  mailbox mailboxes @relation(fields: [mailbox_id], references: [id])
+}
+
+model audit_logs {
+  id            String   @id @default(cuid())
+  actor_user_id String?
+  action_type   String
+  target_type   String
+  target_id     String?
+  metadata_json String
+  created_at    DateTime @default(now())
+
+  actor users? @relation("audit_actor", fields: [actor_user_id], references: [id])
+}
+
+// key-value app settings for admin-managed configuration
+model app_settings {
+  id         String   @id @default(cuid())
+  key        String   @unique
+  value      String
+  is_secret  Boolean  @default(false)
+  updated_by String?
+  updated_at DateTime @updatedAt
+  created_at DateTime @default(now())
+}
+
+model passkey_credentials {
+  id            String    @id @default(cuid())
+  user_id       String
+  credential_id String    @unique
+  public_key    Bytes
+  counter       BigInt    @default(0)
+  device_type   String    @default("singleDevice")
+  backed_up     Boolean   @default(false)
+  transports    String?
+  aaguid        String?
+  name          String    @default("パスキー")
+  created_at    DateTime  @default(now())
+  last_used_at  DateTime?
+
+  user users @relation(fields: [user_id], references: [id], onDelete: Cascade)
+}
+
+// Company-wide shared address book
+model contacts {
+  id          String   @id @default(cuid())
+  name        String
+  email       String?
+  phone       String?
+  company     String?
+  department  String?
+  notes       String?
+  source      String   @default("manual")
+  google_id   String?  @unique
+  created_by  String?
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+
+  creator users? @relation(fields: [created_by], references: [id])
+}
+
+// Google OAuth tokens for Contacts sync
+model google_oauth_tokens {
+  id              String   @id @default(cuid())
+  user_id         String   @unique
+  encrypted_token String
+  created_at      DateTime @default(now())
+  updated_at      DateTime @updatedAt
+
+  user users @relation(fields: [user_id], references: [id], onDelete: Cascade)
+}
+
+// Password reset tokens
+model password_reset_tokens {
+  id         String   @id @default(cuid())
+  user_id    String
+  token      String   @unique @default(cuid())
+  expires_at DateTime
+  used       Boolean  @default(false)
+  created_at DateTime @default(now())
+
+  user users @relation(fields: [user_id], references: [id], onDelete: Cascade)
+}
+
+// Email drafts
+model drafts {
+  id          String    @id @default(cuid())
+  user_id     String
+  mailbox_id  String?
+  thread_id   String?
+  to_raw      String?
+  cc_raw      String?
+  subject     String?
+  html_body   String?
+  text_body   String?
+  is_shared   Boolean   @default(false)
+  created_at  DateTime  @default(now())
+  updated_at  DateTime  @updatedAt
+
+  user    users      @relation(fields: [user_id], references: [id])
+  mailbox mailboxes? @relation(fields: [mailbox_id], references: [id])
+  thread  threads?   @relation(fields: [thread_id], references: [id])
+}
