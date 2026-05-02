@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 
 type Item = { key: string; value: string; isSecret: boolean };
@@ -41,7 +41,7 @@ type MailboxFull = {
   permissions: { user_id: string; can_view: boolean; can_reply: boolean; can_assign: boolean }[];
 };
 
-export default function AdminSettingsPage() {
+function AdminSettingsContent() {
   const [items, setItems] = useState<Item[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [mailboxes, setMailboxes] = useState<MailboxFull[]>([]);
@@ -917,5 +917,13 @@ export default function AdminSettingsPage() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function AdminSettingsPage() {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center min-h-[200px] text-gray-400">読み込み中…</div>}>
+      <AdminSettingsContent />
+    </Suspense>
   );
 }
