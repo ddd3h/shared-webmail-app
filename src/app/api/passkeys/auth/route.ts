@@ -5,6 +5,7 @@ import { consumeChallenge } from '@/lib/passkey-challenge';
 import { getRpConfig } from '@/lib/passkey-rp';
 import { setSessionCookie } from '@/lib/auth';
 import { checkRateLimit, getClientIp } from '@/lib/rate-limit';
+import { sendDosAlert } from '@/lib/dos-alert';
 import { logAudit } from '@/lib/audit';
 
 // 10 verification attempts per 5 minutes per IP
@@ -15,6 +16,7 @@ export async function POST(req: NextRequest) {
   const ip = getClientIp(req);
   const result = checkRateLimit(`passkey-auth:ip:${ip}`, IP_LIMIT, WINDOW_MS);
   if (!result.allowed) {
+    if (result.isFirstBlock) sendDosAlert(ip, 'passkey-auth', result.retryAfterSec);
     return NextResponse.json(
       { error: 'too_many_requests' },
       { status: 429, headers: { 'Retry-After': String(result.retryAfterSec) } }

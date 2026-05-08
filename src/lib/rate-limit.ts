@@ -21,14 +21,10 @@ export interface RateLimitResult {
   allowed: boolean;
   remaining: number;
   retryAfterSec: number;
+  /** True only on the first request that exceeds the limit — use to trigger a one-shot alert. */
+  isFirstBlock: boolean;
 }
 
-/**
- * Fixed-window rate limiter.
- * @param key     Unique key (e.g. "login:ip:1.2.3.4")
- * @param limit   Max requests allowed per window
- * @param windowMs Window size in milliseconds
- */
 export function checkRateLimit(key: string, limit: number, windowMs: number): RateLimitResult {
   if (store.size > 50_000) cleanup();
   const now = Date.now();
@@ -36,7 +32,7 @@ export function checkRateLimit(key: string, limit: number, windowMs: number): Ra
 
   if (!entry || now > entry.resetAt) {
     store.set(key, { count: 1, resetAt: now + windowMs });
-    return { allowed: true, remaining: limit - 1, retryAfterSec: 0 };
+    return { allowed: true, remaining: limit - 1, retryAfterSec: 0, isFirstBlock: false };
   }
 
   entry.count++;
@@ -46,10 +42,11 @@ export function checkRateLimit(key: string, limit: number, windowMs: number): Ra
       allowed: false,
       remaining: 0,
       retryAfterSec: Math.ceil((entry.resetAt - now) / 1000),
+      isFirstBlock: entry.count === limit + 1,
     };
   }
 
-  return { allowed: true, remaining: limit - entry.count, retryAfterSec: 0 };
+  return { allowed: true, remaining: limit - entry.count, retryAfterSec: 0, isFirstBlock: false };
 }
 
 export function resetRateLimit(key: string) {

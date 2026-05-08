@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { syncMailbox } from '@/lib/mail/sync';
 import { checkRateLimit, getClientIp } from '@/lib/rate-limit';
+import { sendDosAlert } from '@/lib/dos-alert';
 
 // 5 calls per minute per IP — prevents sync DoS even when CRON_SECRET is set
 const WINDOW_MS = 60 * 1000;
@@ -21,6 +22,7 @@ export async function GET(req: NextRequest) {
   const ip = getClientIp(req);
   const result = checkRateLimit(`cron-sync:ip:${ip}`, IP_LIMIT, WINDOW_MS);
   if (!result.allowed) {
+    if (result.isFirstBlock) sendDosAlert(ip, 'cron-sync', result.retryAfterSec);
     return NextResponse.json(
       { error: 'too_many_requests' },
       { status: 429, headers: { 'Retry-After': String(result.retryAfterSec) } }
