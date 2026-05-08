@@ -210,6 +210,7 @@ export default function ThreadDetailPage({ params }: Props) {
   const [moving, setMoving] = useState(false);
   const [moveStep, setMoveStep] = useState<'idle' | 'transferring' | 'done'>('idle');
   const [discussPosting, setDiscussPosting] = useState(false);
+  const [aiLoading, setAiLoading] = useState(false);
   const router = useRouter();
   const editorRef = useRef<RichEditorHandle | CollabEditorHandle>(null);
   const forwardEditorRef = useRef<RichEditorHandle>(null);
@@ -327,6 +328,27 @@ export default function ThreadDetailPage({ params }: Props) {
       }
     } finally {
       setReplySending(false);
+    }
+  }
+
+  async function handleAiAssist() {
+    if (!editorRef.current) return;
+    setAiLoading(true);
+    try {
+      const draft = editorRef.current.isEmpty() ? '' : editorRef.current.getHTML();
+      const res = await fetch('/api/ai/reply', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ threadId: id, draft }),
+      });
+      const json = await res.json();
+      if (!res.ok) { flashMsg('error', json.error || 'AI処理に失敗しました'); return; }
+      // Convert plain text line breaks to <br> and set into editor
+      const html = json.text.replace(/\n/g, '<br>');
+      editorRef.current.setHTML(html);
+      editorRef.current.focus();
+    } finally {
+      setAiLoading(false);
     }
   }
 
@@ -1024,6 +1046,25 @@ export default function ThreadDetailPage({ params }: Props) {
                 )}
               </div>
               <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleAiAssist}
+                  disabled={aiLoading}
+                  title={editorRef.current?.isEmpty() ? 'AIで返信文を生成' : 'AIで校正・改善'}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium border border-purple-200 bg-purple-50 text-purple-700 hover:bg-purple-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  {aiLoading ? (
+                    <svg className="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+                    </svg>
+                  ) : (
+                    <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z"/>
+                    </svg>
+                  )}
+                  {aiLoading ? '生成中…' : 'AI'}
+                </button>
                 <button onClick={() => setShowReply(false)} className="btn btn-secondary btn-sm">キャンセル</button>
                 <button
                   onClick={sendReply}
