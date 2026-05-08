@@ -343,9 +343,12 @@ export default function ThreadDetailPage({ params }: Props) {
       });
       const json = await res.json();
       if (!res.ok) { flashMsg('error', json.error || 'AI処理に失敗しました'); return; }
-      // Convert plain text line breaks to <br> and set into editor
       const html = json.text.replace(/\n/g, '<br>');
-      editorRef.current.setHTML(html);
+      const sig = signatureRef.current;
+      const sigHtml = sig
+        ? `<p></p><p style="color:#111827;font-size:13px">${sig.replace(/\n/g, '<br>')}</p>`
+        : '';
+      editorRef.current.setHTML(html + sigHtml);
       editorRef.current.focus();
     } finally {
       setAiLoading(false);

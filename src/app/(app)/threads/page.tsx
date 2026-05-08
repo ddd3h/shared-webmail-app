@@ -100,6 +100,7 @@ function ComposeModal({ onClose, onSent, initialDraftId }: { onClose: () => void
   const editorRef = useRef<RichEditorHandle | CollabEditorHandle>(null);
   // Preserve RichEditor content so it can be injected into CollabEditor when collab connects
   const richContentRef = useRef('');
+  const sigHTMLRef = useRef('');
   const draft = useDraft(initialDraftId);
   const isTeam = mailboxes.find(m => m.id === selectedMailbox)?.type === 'team';
   const collabSessionId = isTeam && draft.draftId ? `draft-${draft.draftId}` : undefined;
@@ -138,6 +139,7 @@ function ComposeModal({ onClose, onSent, initialDraftId }: { onClose: () => void
           const html = `<p></p><p style="color:#111827;font-size:13px">${sig.replace(/\n/g, '<br>')}</p>`;
           setInitialBody(html);
           richContentRef.current = html;
+          sigHTMLRef.current = html;
         }
       }).catch(() => {});
     }
@@ -176,7 +178,8 @@ function ComposeModal({ onClose, onSent, initialDraftId }: { onClose: () => void
       });
       const json = await res.json();
       if (!res.ok) { setError(json.error || 'AI処理に失敗しました'); return; }
-      editorRef.current.setHTML(json.text.replace(/\n/g, '<br>'));
+      const sigHtml = sigHTMLRef.current ? `<p></p>${sigHTMLRef.current}` : '';
+      editorRef.current.setHTML(json.text.replace(/\n/g, '<br>') + sigHtml);
       editorRef.current.focus();
     } finally {
       setAiLoading(false);

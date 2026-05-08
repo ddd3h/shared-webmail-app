@@ -27,7 +27,7 @@ export async function GET(req: NextRequest) {
     where,
     select: {
       id: true, type: true, display_name: true, email_address: true,
-      is_active: true, created_at: true, updated_at: true, owner_user_id: true,
+      is_active: true, sync_mode: true, created_at: true, updated_at: true, owner_user_id: true,
       owner: { select: { id: true, name: true } },
       sync_state: { select: { status: true, last_sync_started_at: true, last_success_at: true, last_error: true } },
       credentials: { select: { imap_host: true, last_test_status: true, last_tested_at: true } },
