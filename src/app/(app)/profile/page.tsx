@@ -376,15 +376,17 @@ export default function ProfilePage() {
         <div className="flex items-center gap-4">
           {/* Avatar */}
           <div className="flex-shrink-0 w-16 h-16 rounded-full overflow-hidden bg-gray-100 border border-gray-200 flex items-center justify-center text-2xl font-bold text-gray-400">
-            <img
-              src="/api/user/avatar"
-              alt={name}
-              className="w-full h-full object-cover"
-              onError={(e) => {
-                e.currentTarget.style.display = 'none';
-                (e.currentTarget.parentElement as HTMLElement).textContent = name[0]?.toUpperCase() || '?';
-              }}
-            />
+            {email && (
+              <img
+                src={`/api/user/avatar?u=${encodeURIComponent(email)}`}
+                alt={name}
+                className="w-full h-full object-cover"
+                onError={(e) => {
+                  e.currentTarget.style.display = 'none';
+                  (e.currentTarget.parentElement as HTMLElement).textContent = name[0]?.toUpperCase() || '?';
+                }}
+              />
+            )}
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 flex-1 text-sm">
             <div>

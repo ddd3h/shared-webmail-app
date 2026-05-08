@@ -60,7 +60,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       headers: {
         'Content-Type': contentType,
         ...(contentLength ? { 'Content-Length': contentLength } : {}),
-        'Cache-Control': 'public, max-age=3600',
+        'Cache-Control': 'private, no-store',
         'X-Avatar-Source': 'Mattermost'
       }
     });
