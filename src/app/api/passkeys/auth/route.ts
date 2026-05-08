@@ -4,8 +4,23 @@ import { prisma } from '@/lib/db';
 import { consumeChallenge } from '@/lib/passkey-challenge';
 import { getRpConfig } from '@/lib/passkey-rp';
 import { setSessionCookie } from '@/lib/auth';
+import { checkRateLimit, getClientIp } from '@/lib/rate-limit';
+import { logAudit } from '@/lib/audit';
+
+// 10 verification attempts per 5 minutes per IP
+const WINDOW_MS = 5 * 60 * 1000;
+const IP_LIMIT = 10;
 
 export async function POST(req: NextRequest) {
+  const ip = getClientIp(req);
+  const result = checkRateLimit(`passkey-auth:ip:${ip}`, IP_LIMIT, WINDOW_MS);
+  if (!result.allowed) {
+    return NextResponse.json(
+      { error: 'too_many_requests' },
+      { status: 429, headers: { 'Retry-After': String(result.retryAfterSec) } }
+    );
+  }
+
   const body = await req.json();
   const { challengeId, ...authResponse } = body;
 
@@ -18,13 +33,17 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'challenge_expired' }, { status: 400 });
   }
 
-  // Find credential by id
   const credentialId = authResponse.id;
   const storedCred = await prisma.passkey_credentials.findUnique({
     where: { credential_id: credentialId },
     include: { user: { select: { id: true, email: true, role: true } } }
   });
   if (!storedCred) {
+    await logAudit({
+      actionType: 'passkey_auth_failed',
+      targetType: 'passkey_credentials',
+      metadata: { ip, reason: 'credential_not_found' },
+    });
     return NextResponse.json({ error: 'credential_not_found' }, { status: 401 });
   }
 
@@ -46,20 +65,39 @@ export async function POST(req: NextRequest) {
       },
     });
   } catch (e: any) {
+    await logAudit({
+      actionType: 'passkey_auth_failed',
+      targetType: 'passkey_credentials',
+      targetId: storedCred.id,
+      metadata: { ip, reason: e?.message || 'verification_error' },
+    });
     return NextResponse.json({ error: e?.message || 'verification_failed' }, { status: 401 });
   }
 
   if (!verification.verified) {
+    await logAudit({
+      actionType: 'passkey_auth_failed',
+      targetType: 'passkey_credentials',
+      targetId: storedCred.id,
+      metadata: { ip, reason: 'not_verified' },
+    });
     return NextResponse.json({ error: 'verification_failed' }, { status: 401 });
   }
 
-  // Update counter and last_used_at
   await prisma.passkey_credentials.update({
     where: { id: storedCred.id },
     data: {
       counter: BigInt(verification.authenticationInfo.newCounter),
       last_used_at: new Date(),
     }
+  });
+
+  await logAudit({
+    actorUserId: storedCred.user.id,
+    actionType: 'passkey_auth_success',
+    targetType: 'passkey_credentials',
+    targetId: storedCred.id,
+    metadata: { ip },
   });
 
   const res = NextResponse.json({ ok: true });

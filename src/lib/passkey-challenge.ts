@@ -1,7 +1,10 @@
 // In-memory WebAuthn challenge store (single-server MVP)
-// Challenges expire after 5 minutes
+// Challenges expire after 5 minutes; store is capped to prevent memory DoS.
 
 type ChallengeEntry = { challenge: string; expires: number };
+
+const MAX_STORE_SIZE = 500;
+const TTL_MS = 5 * 60 * 1000;
 
 const store = new Map<string, ChallengeEntry>();
 
@@ -12,9 +15,14 @@ function cleanup() {
   }
 }
 
-export function storeChallenge(key: string, challenge: string) {
+export function storeChallenge(key: string, challenge: string): boolean {
   cleanup();
-  store.set(key, { challenge, expires: Date.now() + 5 * 60 * 1000 });
+  if (store.size >= MAX_STORE_SIZE) {
+    // Store is full even after TTL cleanup — reject to prevent memory exhaustion.
+    return false;
+  }
+  store.set(key, { challenge, expires: Date.now() + TTL_MS });
+  return true;
 }
 
 export function consumeChallenge(key: string): string | null {
