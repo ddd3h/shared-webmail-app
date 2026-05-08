@@ -1,10 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { syncMailbox } from '@/lib/mail/sync';
+import { checkRateLimit, getClientIp } from '@/lib/rate-limit';
+import { sendDosAlert } from '@/lib/dos-alert';
+
+// 5 calls per minute per IP — prevents sync DoS even when CRON_SECRET is set
+const WINDOW_MS = 60 * 1000;
+const IP_LIMIT = 5;
 
 // GET /api/cron/sync - sync all active mailboxes
 // Protected by CRON_SECRET env variable for security
-// Can be called by Vercel Cron, external cron, or periodic polling
 export async function GET(req: NextRequest) {
   const secret = process.env.CRON_SECRET;
   if (secret) {
@@ -12,6 +17,16 @@ export async function GET(req: NextRequest) {
     if (auth !== `Bearer ${secret}`) {
       return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
     }
+  }
+
+  const ip = getClientIp(req);
+  const result = checkRateLimit(`cron-sync:ip:${ip}`, IP_LIMIT, WINDOW_MS);
+  if (!result.allowed) {
+    if (result.isFirstBlock) sendDosAlert(ip, 'cron-sync', result.retryAfterSec);
+    return NextResponse.json(
+      { error: 'too_many_requests' },
+      { status: 429, headers: { 'Retry-After': String(result.retryAfterSec) } }
+    );
   }
 
   const mailboxes = await prisma.mailboxes.findMany({
@@ -23,8 +38,8 @@ export async function GET(req: NextRequest) {
 
   for (const mb of mailboxes) {
     try {
-      const result = await syncMailbox(mb.id);
-      results.push({ mailboxId: mb.id, email: mb.email_address, ...result });
+      const r = await syncMailbox(mb.id);
+      results.push({ mailboxId: mb.id, email: mb.email_address, ...r });
     } catch (e: any) {
       results.push({ mailboxId: mb.id, email: mb.email_address, synced: 0, errors: [String(e?.message || e)] });
     }

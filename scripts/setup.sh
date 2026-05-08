@@ -259,6 +259,23 @@ read -rp "  Mattermost URL（任意・空でスキップ）: " MM_URL
 read -rsp "  Mattermost Bot Token（任意）: " MM_TOKEN; echo
 read -rp "  Mattermost デフォルトチャンネルID（任意）: " MM_CHANNEL
 
+# 管理者通知メール (DoS検知など)
+echo ""
+info "--- 管理者通知メール (DoS攻撃検知時のアラート) ---"
+info "未設定の場合は通知メールを送信しません"
+read -rp "  通知SMTPホスト（任意・空でスキップ）: " NOTIFY_SMTP_HOST
+if [[ -n "$NOTIFY_SMTP_HOST" ]]; then
+  read -rp "  通知SMTPポート [587]: " NOTIFY_SMTP_PORT
+  NOTIFY_SMTP_PORT="${NOTIFY_SMTP_PORT:-587}"
+  read -rp "  SSL/TLS使用 (465の場合はtrue) [false]: " NOTIFY_SMTP_SECURE
+  NOTIFY_SMTP_SECURE="${NOTIFY_SMTP_SECURE:-false}"
+  read -rp "  通知SMTPユーザー名: " NOTIFY_SMTP_USER
+  read -rsp "  通知SMTPパスワード: " NOTIFY_SMTP_PASS; echo
+  read -rp "  送信元アドレス [noreply@${APP_URL##*/}]: " NOTIFY_FROM_EMAIL
+  NOTIFY_FROM_EMAIL="${NOTIFY_FROM_EMAIL:-noreply@example.com}"
+  read -rp "  管理者宛先メールアドレス: " NOTIFY_ADMIN_EMAIL
+fi
+
 ENV_FILE="${APP_DIR}/.env"
 ENV_BACKUP=""
 if [[ -f "$ENV_FILE" ]]; then
@@ -320,6 +337,15 @@ VAPID_SUBJECT="mailto:${ADMIN_EMAIL}"
 MATTERMOST_BASE_URL="${MM_URL:-}"
 MATTERMOST_BOT_TOKEN="${MM_TOKEN:-}"
 MATTERMOST_DEFAULT_CHANNEL_ID="${MM_CHANNEL:-}"
+
+# ---- 管理者通知メール (DoS検知など - 任意) ----
+NOTIFY_SMTP_HOST="${NOTIFY_SMTP_HOST:-}"
+NOTIFY_SMTP_PORT="${NOTIFY_SMTP_PORT:-587}"
+NOTIFY_SMTP_SECURE="${NOTIFY_SMTP_SECURE:-false}"
+NOTIFY_SMTP_USER="${NOTIFY_SMTP_USER:-}"
+NOTIFY_SMTP_PASS="${NOTIFY_SMTP_PASS:-}"
+NOTIFY_FROM_EMAIL="${NOTIFY_FROM_EMAIL:-}"
+NOTIFY_ADMIN_EMAIL="${NOTIFY_ADMIN_EMAIL:-}"
 ENVEOF
 
 chmod 600 "$ENV_FILE"

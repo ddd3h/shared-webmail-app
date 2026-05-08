@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { hashPassword } from '@/lib/password';
+import { createHash } from 'crypto';
+
+function hashToken(raw: string): string {
+  return createHash('sha256').update(raw).digest('hex');
+}
 
 // POST /api/profile/password-reset  { token, newPassword }
 export async function POST(req: NextRequest) {
@@ -12,7 +17,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'password_too_short' }, { status: 400 });
   }
 
-  const record = await prisma.password_reset_tokens.findUnique({ where: { token } });
+  // Look up by hash — the raw token is never stored in the DB
+  const tokenHash = hashToken(token);
+  const record = await prisma.password_reset_tokens.findUnique({ where: { token_hash: tokenHash } });
   if (!record || record.used || record.expires_at < new Date()) {
     return NextResponse.json({ error: 'token_invalid' }, { status: 400 });
   }
