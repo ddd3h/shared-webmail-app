@@ -11,14 +11,28 @@ const cryptoImpl: any = globalThis.crypto;
 
 const INACTIVITY_MS = 4 * 60 * 60 * 1000; // 4 hours
 
-const isHttps = (process.env.NEXT_PUBLIC_APP_URL || '').startsWith('https://');
+// In production, always require Secure regardless of APP_URL configuration.
+// Relying on the URL string is fragile — a misconfigured URL would silently
+// disable Secure on a live HTTPS deployment.
+const isProd = process.env.NODE_ENV === 'production';
+
+if (isProd) {
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || '';
+  if (!appUrl.startsWith('https://')) {
+    console.error(
+      '[auth] NEXT_PUBLIC_APP_URL must start with https:// in production (got: %s). ' +
+      'Cookies will still be Secure, but fix the URL to avoid other issues.',
+      appUrl || '(unset)'
+    );
+  }
+}
 
 const COOKIE_OPTIONS = {
   httpOnly: true,
   sameSite: 'lax' as const,
   path: '/',
-  maxAge: INACTIVITY_MS / 1000, // cookie max-age matches inactivity window
-  ...(isHttps ? { secure: true } : {}),
+  maxAge: INACTIVITY_MS / 1000,
+  secure: isProd,
 };
 
 export type Session = {

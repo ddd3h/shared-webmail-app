@@ -460,12 +460,12 @@ model google_oauth_tokens {
 
 // Password reset tokens
 model password_reset_tokens {
-  id         String   @id @default(cuid())
-  user_id    String
-  token      String   @unique @default(cuid())
-  expires_at DateTime
-  used       Boolean  @default(false)
-  created_at DateTime @default(now())
+  id          String   @id @default(cuid())
+  user_id     String
+  token_hash  String   @unique  // SHA-256 hex of the raw token sent to the user
+  expires_at  DateTime
+  used        Boolean  @default(false)
+  created_at  DateTime @default(now())
 
   user users @relation(fields: [user_id], references: [id], onDelete: Cascade)
 }
