@@ -337,14 +337,9 @@ function ComposeModal({ onClose, onSent, initialDraftId }: { onClose: () => void
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-between px-5 py-3 border-t border-gray-200 flex-shrink-0 bg-gray-50 sm:rounded-b-2xl" style={{ paddingBottom: 'calc(0.75rem + env(safe-area-inset-bottom))' }}>
-          <div className="flex items-center gap-2">
-            {/* Attach file */}
-            <label className="cursor-pointer flex items-center gap-1 text-xs text-gray-500 hover:text-gray-700 px-2.5 py-1.5 rounded-lg hover:bg-gray-200 transition-colors border border-gray-200 bg-white">
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"/></svg>
-              ファイル添付
-              <input type="file" multiple className="sr-only" onChange={e => { if (e.target.files) setAttachments(prev => [...prev, ...Array.from(e.target.files!)]); e.target.value = ''; }} />
-            </label>
+        <div className="border-t border-gray-200 flex-shrink-0 bg-gray-50 sm:rounded-b-2xl" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
+          {/* Mobile info row: sync status */}
+          <div className="flex items-center justify-end px-4 pt-2 pb-0 sm:hidden">
             {isTeam && collabSessionId ? (
               <span className={`text-xs flex items-center gap-1 ${collab.connected ? 'text-emerald-600' : 'text-gray-400'}`}>
                 <span className={`w-1.5 h-1.5 rounded-full ${collab.connected ? 'bg-emerald-500 animate-pulse' : 'bg-gray-300'}`} />
@@ -354,33 +349,68 @@ function ComposeModal({ onClose, onSent, initialDraftId }: { onClose: () => void
               <DraftStatusBar status={draft.status} savedAt={draft.savedAt} />
             )}
           </div>
-          <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={handleAiAssist}
-              disabled={aiLoading}
-              title={editorRef.current?.isEmpty() ? 'AIで本文を生成' : 'AIで校正・改善'}
-              className="inline-flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs font-medium border border-purple-200 bg-purple-50 text-purple-700 hover:bg-purple-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-            >
-              {aiLoading ? (
-                <svg className="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
-                </svg>
+
+          {/* Actions row */}
+          <div className="flex items-center justify-between px-4 py-2.5">
+            <div className="flex items-center gap-1.5">
+              {/* Attach — icon only on mobile */}
+              <label className="cursor-pointer flex items-center gap-1 text-xs text-gray-500 hover:text-gray-700 p-1.5 rounded-lg hover:bg-gray-200 transition-colors border border-gray-200 bg-white" title="ファイル添付">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"/></svg>
+                <span className="hidden sm:inline">ファイル添付</span>
+                <input type="file" multiple className="sr-only" onChange={e => { if (e.target.files) setAttachments(prev => [...prev, ...Array.from(e.target.files!)]); e.target.value = ''; }} />
+              </label>
+              {/* Desktop only: sync status */}
+              {isTeam && collabSessionId ? (
+                <span className={`hidden sm:flex text-xs items-center gap-1 ${collab.connected ? 'text-emerald-600' : 'text-gray-400'}`}>
+                  <span className={`w-1.5 h-1.5 rounded-full ${collab.connected ? 'bg-emerald-500 animate-pulse' : 'bg-gray-300'}`} />
+                  {collab.connected ? '同期中' : '接続中…'}
+                </span>
               ) : (
-                <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z"/>
-                </svg>
+                <span className="hidden sm:block">
+                  <DraftStatusBar status={draft.status} savedAt={draft.savedAt} />
+                </span>
               )}
-              {aiLoading ? '生成中…' : 'AI'}
-            </button>
-            <button onClick={onClose} className="btn btn-secondary btn-sm">キャンセル</button>
-            <button onClick={send} disabled={sending} className="btn btn-primary btn-sm gap-1">
-              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
-              </svg>
-              {sending ? '送信中…' : '送信する'}
-            </button>
+            </div>
+            <div className="flex items-center gap-1.5">
+              {/* AI */}
+              <button
+                type="button"
+                onClick={handleAiAssist}
+                disabled={aiLoading}
+                title={editorRef.current?.isEmpty() ? 'AIで本文を生成' : 'AIで校正・改善'}
+                className="inline-flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs font-medium border border-purple-200 bg-purple-50 text-purple-700 hover:bg-purple-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                {aiLoading ? (
+                  <svg className="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+                  </svg>
+                ) : (
+                  <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z"/>
+                  </svg>
+                )}
+                {aiLoading ? '生成中…' : 'AI'}
+              </button>
+              {/* Cancel — × icon on mobile, text on desktop */}
+              <button
+                onClick={onClose}
+                title="キャンセル"
+                className="inline-flex items-center justify-center p-1.5 sm:px-3 sm:py-1.5 rounded-lg text-xs font-medium text-gray-600 bg-white border border-gray-200 hover:bg-gray-100 transition-colors"
+              >
+                <svg className="w-4 h-4 sm:hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+                <span className="hidden sm:inline">キャンセル</span>
+              </button>
+              {/* Send */}
+              <button onClick={send} disabled={sending} className="btn btn-primary btn-sm gap-1">
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                </svg>
+                {sending ? '送信中…' : '送信する'}
+              </button>
+            </div>
           </div>
         </div>
       </div>
