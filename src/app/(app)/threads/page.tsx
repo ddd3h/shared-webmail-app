@@ -98,6 +98,8 @@ function ComposeModal({ onClose, onSent, initialDraftId }: { onClose: () => void
   const [minimized, setMinimized] = useState(false);
   const [aiLoading, setAiLoading] = useState(false);
   const editorRef = useRef<RichEditorHandle | CollabEditorHandle>(null);
+  // Preserve RichEditor content so it can be injected into CollabEditor when collab connects
+  const richContentRef = useRef('');
   const draft = useDraft(initialDraftId);
   const isTeam = mailboxes.find(m => m.id === selectedMailbox)?.type === 'team';
   const collabSessionId = isTeam && draft.draftId ? `draft-${draft.draftId}` : undefined;
@@ -133,7 +135,9 @@ function ComposeModal({ onClose, onSent, initialDraftId }: { onClose: () => void
       fetch('/api/user/signature').then(r => r.json()).then(d => {
         const sig = d.signature ?? (d.name ? `${d.name}${d.email ? '\n' + d.email : ''}` : '');
         if (sig) {
-          setInitialBody(`<p></p><p style="color:#111827;font-size:13px">${sig.replace(/\n/g, '<br>')}</p>`);
+          const html = `<p></p><p style="color:#111827;font-size:13px">${sig.replace(/\n/g, '<br>')}</p>`;
+          setInitialBody(html);
+          richContentRef.current = html;
         }
       }).catch(() => {});
     }
@@ -147,7 +151,7 @@ function ComposeModal({ onClose, onSent, initialDraftId }: { onClose: () => void
         setCc(d.cc_raw || ''); if (d.cc_raw) setShowCc(true);
         setSubject(d.subject || '');
         if (d.mailbox_id) setSelectedMailbox(d.mailbox_id);
-        if (d.html_body) setInitialBody(d.html_body);
+        if (d.html_body) { setInitialBody(d.html_body); richContentRef.current = d.html_body; }
       }
     }).catch(() => {});
   }, [initialDraftId]);
@@ -305,6 +309,7 @@ function ComposeModal({ onClose, onSent, initialDraftId }: { onClose: () => void
                   activeUsers={collab.activeUsers}
                   placeholder="本文を入力してください…"
                   minHeight={240}
+                  initialHTML={richContentRef.current || undefined}
                 />
               ) : (
                 <RichEditor
@@ -312,7 +317,10 @@ function ComposeModal({ onClose, onSent, initialDraftId }: { onClose: () => void
                   placeholder="本文を入力してください…"
                   minHeight={240}
                   initialHTML={initialBody}
-                  onInput={scheduleFieldSave}
+                  onInput={() => {
+                    richContentRef.current = editorRef.current?.getHTML() || richContentRef.current;
+                    scheduleFieldSave();
+                  }}
                 />
               )}
             </div>

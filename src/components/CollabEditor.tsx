@@ -27,6 +27,7 @@ type Props = {
   placeholder?: string;
   minHeight?: number;
   onUpdate?: () => void;
+  initialHTML?: string;
 };
 
 const PALETTE_COLORS = [
@@ -74,7 +75,7 @@ function makeCollabCursorExtension(awareness: Awareness) {
 }
 
 const CollabEditor = forwardRef<CollabEditorHandle, Props>(
-  ({ doc, awareness, me, activeUsers, placeholder, minHeight = 160, onUpdate }, ref) => {
+  ({ doc, awareness, me, activeUsers, placeholder, minHeight = 160, onUpdate, initialHTML }, ref) => {
     const collabCursorExtension = useMemo(
       () => makeCollabCursorExtension(awareness),
       // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -83,6 +84,12 @@ const CollabEditor = forwardRef<CollabEditorHandle, Props>(
 
     const editor = useEditor({
       immediatelyRender: false,
+      onCreate({ editor }) {
+        // If the Yjs doc is empty (new session) and we have prior content, inject it
+        if (initialHTML && editor.isEmpty) {
+          editor.commands.setContent(initialHTML);
+        }
+      },
       extensions: [
         // StarterKit v3 includes Link and Underline — disable to avoid duplicates
         StarterKit.configure({ history: false, link: false, underline: false } as any),
