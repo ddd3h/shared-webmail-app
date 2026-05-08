@@ -94,12 +94,12 @@ fi
 # ── PM2 再起動 ────────────────────────────────────────────────────────────────
 step "アプリケーションを再起動しています..."
 
-if pm2 describe webmail-app &>/dev/null; then
+if pm2 describe shared-webmail-app &>/dev/null; then
   if [[ -f ecosystem.config.js ]]; then
     pm2 reload ecosystem.config.js --update-env
     ok "PM2 プロセスをリロードしました（ダウンタイムなし）"
   else
-    pm2 restart webmail-app
+    pm2 restart shared-webmail-app
     ok "PM2 プロセスを再起動しました"
   fi
 else
@@ -117,7 +117,7 @@ pm2 save
 hr
 echo -e "${GREEN}${BOLD}  ✔ デプロイ完了！${RESET}"
 echo ""
-pm2 list | grep webmail-app || true
+pm2 list | grep shared-webmail-app || true
 echo ""
-echo -e "  ログ確認: ${BOLD}pm2 logs webmail-app --lines 50${RESET}"
+echo -e "  ログ確認: ${BOLD}pm2 logs shared-webmail-app --lines 50${RESET}"
 hr
