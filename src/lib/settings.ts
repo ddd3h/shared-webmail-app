@@ -7,7 +7,9 @@ export type AppSettingKey =
   | 'MATTERMOST_BASE_URL'
   | 'MATTERMOST_BOT_TOKEN'
   | 'MATTERMOST_DEFAULT_CHANNEL_ID'
-  | 'SYNC_DEFAULT_INTERVAL_SEC';
+  | 'SYNC_DEFAULT_INTERVAL_SEC'
+  | 'OPENROUTER_API_KEY'
+  | 'OPENROUTER_MODEL';
 
 export async function getSetting(key: AppSettingKey) {
   const row = await prisma.app_settings.findUnique({ where: { key } });

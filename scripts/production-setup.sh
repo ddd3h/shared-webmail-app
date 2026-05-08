@@ -290,16 +290,33 @@ PORT=${APP_PORT}
 # ---- CRON認証 ----
 CRON_SECRET="${CRON_SECRET}"
 
-# ---- OpenRouter AI ----
+# ---- 定期同期間隔 (秒, 管理画面でも変更可) ----
+SYNC_DEFAULT_INTERVAL_SEC="180"
+
+# ---- IMAP接続タイムアウト (ミリ秒) ----
+EMAIL_CONNECT_TIMEOUT_MS="10000"
+
+# ---- OpenRouter AI (管理画面でも変更可) ----
 OPENROUTER_API_KEY="${OPENROUTER_KEY:-}"
 OPENROUTER_MODEL="${OPENROUTER_MODEL}"
+
+# ---- 署名テンプレート (任意, {{name}} と {{email}} が使えます) ----
+DEFAULT_SIGNATURE_TEMPLATE="───────────────\n{{name}}\n\nEmail: {{email}}\n───────────────"
+
+# ---- 新規メールアカウント追加時のデフォルトサーバー設定 (任意) ----
+NEXT_PUBLIC_DEFAULT_IMAP_HOST=""
+NEXT_PUBLIC_DEFAULT_IMAP_PORT="993"
+NEXT_PUBLIC_DEFAULT_IMAP_SECURE="true"
+NEXT_PUBLIC_DEFAULT_SMTP_HOST=""
+NEXT_PUBLIC_DEFAULT_SMTP_PORT="465"
+NEXT_PUBLIC_DEFAULT_SMTP_SECURE="true"
 
 # ---- Web Push / PWA通知 (管理画面から生成してください) ----
 VAPID_PUBLIC_KEY=""
 VAPID_PRIVATE_KEY=""
 VAPID_SUBJECT="mailto:${ADMIN_EMAIL}"
 
-# ---- Mattermost連携 (任意) ----
+# ---- Mattermost連携 (任意, Base URL と Bot Token は管理画面でも設定可) ----
 MATTERMOST_BASE_URL="${MM_URL:-}"
 MATTERMOST_BOT_TOKEN="${MM_TOKEN:-}"
 MATTERMOST_DEFAULT_CHANNEL_ID="${MM_CHANNEL:-}"

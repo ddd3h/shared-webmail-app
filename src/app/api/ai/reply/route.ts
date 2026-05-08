@@ -1,10 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSession, requireAuth } from '@/lib/auth';
 import { prisma } from '@/lib/db';
+import { getSetting } from '@/lib/settings';
 
-const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
-const OPENROUTER_MODEL = process.env.OPENROUTER_MODEL || 'anthropic/claude-3.5-haiku';
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+
+async function getOpenRouterConfig() {
+  const [dbKey, dbModel] = await Promise.all([
+    getSetting('OPENROUTER_API_KEY'),
+    getSetting('OPENROUTER_MODEL'),
+  ]);
+  return {
+    apiKey: dbKey || process.env.OPENROUTER_API_KEY || '',
+    model: dbModel || process.env.OPENROUTER_MODEL || 'anthropic/claude-3.5-haiku',
+  };
+}
 
 // Strip HTML to plain text for prompt context
 function htmlToText(html: string): string {
@@ -27,6 +37,8 @@ function htmlToText(html: string): string {
 export async function POST(req: NextRequest) {
   const session = await getSession();
   requireAuth(session);
+
+  const { apiKey: OPENROUTER_API_KEY, model: OPENROUTER_MODEL } = await getOpenRouterConfig();
 
   if (!OPENROUTER_API_KEY) {
     return NextResponse.json({ error: 'AI機能が設定されていません（OPENROUTER_API_KEY未設定）' }, { status: 503 });
