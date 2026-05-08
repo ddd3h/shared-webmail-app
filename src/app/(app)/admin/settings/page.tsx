@@ -119,11 +119,11 @@ function AdminSettingsContent() {
     return items.find(i => i.key === key)?.value || '';
   }
 
-  function setVal(key: string, value: string) {
+  function setVal(key: string, value: string, isSecret = false) {
     setItems(prev => {
       const idx = prev.findIndex(x => x.key === key);
       if (idx >= 0) { const copy = [...prev]; copy[idx] = { ...copy[idx], value }; return copy; }
-      return [...prev, { key, value, isSecret: false }];
+      return [...prev, { key, value, isSecret }];
     });
   }
 
@@ -452,6 +452,22 @@ function AdminSettingsContent() {
             <div>
               <label className="label">同期間隔（秒）</label>
               <input type="number" className="input" value={getVal('SYNC_DEFAULT_INTERVAL_SEC')} onChange={e => setVal('SYNC_DEFAULT_INTERVAL_SEC', e.target.value)} placeholder="180" />
+            </div>
+          </div>
+
+          <div className="card p-6">
+            <h2 className="font-semibold text-gray-900 mb-1">AI返信アシスト</h2>
+            <p className="text-xs text-gray-500 mb-4">OpenRouter経由でAIによる返信文生成・校正を利用できます。APIキーは <a href="https://openrouter.ai/keys" target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">openrouter.ai</a> で取得してください。</p>
+            <div className="space-y-3">
+              <div>
+                <label className="label">OpenRouter APIキー</label>
+                <input type="password" className="input font-mono text-xs" value={getVal('OPENROUTER_API_KEY')} onChange={e => setVal('OPENROUTER_API_KEY', e.target.value, true)} placeholder="sk-or-..." />
+              </div>
+              <div>
+                <label className="label">使用モデル</label>
+                <input className="input font-mono text-xs" value={getVal('OPENROUTER_MODEL')} onChange={e => setVal('OPENROUTER_MODEL', e.target.value)} placeholder="anthropic/claude-3.5-haiku" />
+                <p className="text-xs text-gray-400 mt-1">例: anthropic/claude-3.5-haiku、openai/gpt-4o-mini</p>
+              </div>
             </div>
           </div>
 

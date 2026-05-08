@@ -85,13 +85,15 @@ export async function syncMailbox(mailboxId: string): Promise<{ synced: number; 
   let synced = 0;
 
   const { ImapFlow } = (await import('imapflow')) as ImapFlowMod;
+  const connectTimeout = parseInt(process.env.EMAIL_CONNECT_TIMEOUT_MS || '10000', 10);
   const client = new ImapFlow({
     host: cred.imap_host,
     port: cred.imap_port,
     secure: cred.imap_secure,
     auth: { user: cred.username, pass: await decrypt(cred.encrypted_password) },
     logger: false,
-    tls: { rejectUnauthorized: false }
+    tls: { rejectUnauthorized: false },
+    connectTimeout,
   } as any);
 
   try {

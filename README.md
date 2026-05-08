@@ -1,57 +1,240 @@
-# 社内向け共有メールワークスペース
+<div align="center">
 
-本リポジトリは「IMAP/SMTP ベースの共有メール運用システム」の MVP 実装用スケルトンです。仕様は `docs/` とユーザー提供の開発指示書に準拠します。
+# 📬 Shared Mail Workspace
 
-## 構成
-- Next.js(App Router) を用いた Web アプリと API ルート（`src/app`）
-- Prisma による DB スキーマ（`prisma/schema.prisma`）
-- 非同期処理用 Worker スタブ（`src/workers/`）
-- PWA/Service Worker スタブ（`public/`）
-- 設計ドキュメント（`docs/`）
+**社内向け共有メール運用システム**
 
-## セットアップ / 起動
-- 環境変数: `.env` を `.env.example` から作成し編集（`DATABASE_URL`/`SESSION_SECRET`/`ENCRYPTION_KEY_HEX`）
-- 依存パッケージ: `npm install`
-- DB 初期化: `npx prisma migrate dev --name init`
-- 初回ユーザー作成（ブートストラップ）: `POST /api/admin/users` に `name/email/password`
-- アプリ起動: `npm run dev`
-- ワーカー起動（別ターミナル）:
-  - 同期: `npm run worker:sync`
-  - 送信: `npm run worker:send`
-  - Push: `npm run worker:push`
-  - Mattermost: `npm run worker:mattermost`
+チームで1つのメールアカウントを共有し、担当割り当て・ステータス管理・返信をシームレスに。
 
-## 使い方（MVP）
-- ログイン: `/login`（作成したユーザーで）
-- システム設定: `/admin/settings`（VAPID 生成、Mattermost 設定、同期間隔）
-- メールボックス: `/mailboxes`（作成・接続テスト・権限設定）
-- スレッド: `/threads` → 詳細で履歴/返信（送信後は Worker が SMTP 送信）
-- 手動同期: `POST /api/mailboxes/:id/resync`（または同期待ち）
-- 運用状況: `/admin/operations`（接続・同期・通知失敗・監査ログ、通知再試行）
+[![Next.js](https://img.shields.io/badge/Next.js-16-black?logo=next.js)](https://nextjs.org/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.4-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
+[![Prisma](https://img.shields.io/badge/Prisma-5-2D3748?logo=prisma)](https://www.prisma.io/)
+[![Tailwind CSS](https://img.shields.io/badge/Tailwind-3-06B6D4?logo=tailwindcss&logoColor=white)](https://tailwindcss.com/)
 
-## 実装済み機能（概要）
-- 認証/セッション（scrypt）/ユーザー作成ブートストラップ
-- Prisma スキーマ（仕様 10.x を反映）
-- メールボックス CRUD + 接続テスト（資格情報は AES-GCM で暗号化保存）
-- IMAP 同期（INBOX 差分取り込み、スレッド化、添付保存、未読計上、通知イベント発火）
-- スレッド API/画面（一覧/詳細/返信/担当/ステータス/非表示/アーカイブ/Mattermost リンク・転送）
-- 送信 Worker（SMTP 送信、Message-Id 反映、Sent フォルダに APPEND）
-- 通知（Web Push + 配信記録、通知失敗の再試行）
-- Mattermost Worker（スタブ実装）
-- RBAC（管理者上書き、チーム所有ルール: チームメンバーは閲覧可）
-- 管理画面（設定/運用状況/監査ログ）
+</div>
 
-## 注意事項
-- 添付はローカル `storage/attachments` に保存。実運用では S3/GCS 等に置き換え可能。
-- 送信後の APPEND はサーバ環境に依存するためフォルダ名を複数試行（Sent/Sent Items/INBOX.Sent/送信済みメール）。
-- RBAC は MVP 実装。細かいチームロールの権限は将来拡張。
+---
 
-## 優先実装フェーズ
-- Phase 1: 認証/DB基盤/メールボックス登録/接続テスト/同期 Worker/一覧・詳細/返信
-- Phase 2: 担当/ステータス/非表示/アーカイブ/監査ログ/管理
-- Phase 3: Mattermost 連携
-- Phase 4: PWA・Web Push
+## 概要
 
-## 注意
-- このリポジトリはスケルトンです。API/画面/Worker は最小の叩き台のみを含みます。
-- 仕様と実装の差異があれば仕様（指示書）を正とします。
+複数のスタッフが同一のメールアカウントを共有し、対応漏れを防ぐための社内ツールです。  
+受信メールをスレッドとして管理し、担当者の割り当て・ステータス管理・返信を一元化します。
+
+```
+受信メール → スレッド自動生成 → 担当者割り当て → 返信 → クローズ
+```
+
+---
+
+## 機能
+
+| カテゴリ | 機能 |
+|---|---|
+| **メール** | IMAP同期（差分取得）/ SMTP送信 / スレッド自動統合 / 添付ファイル |
+| **管理** | 担当者割り当て / ステータス管理（未対応・対応中・完了） / アーカイブ |
+| **権限** | 管理者・一般ユーザーのRBAC / メールボックスごとの閲覧・返信・担当変更権限 |
+| **通知** | Web Push通知（PWA・VAPID） / Mattermost転送 |
+| **認証** | パスワード認証 / パスキー（Touch ID / Face ID / セキュリティキー） |
+| **AI** | OpenRouter経由でのAI返信文生成・校正 |
+| **その他** | 下書き自動保存 / Google連絡帳同期 / 監査ログ |
+
+---
+
+## 技術スタック
+
+```
+┌─────────────────────────────────────────┐
+│  Browser (PWA + Service Worker)         │
+├─────────────────────────────────────────┤
+│  Next.js 16  ·  React 18  ·  Tailwind   │
+├─────────────────────────────────────────┤
+│  Route Handlers  ·  Edge Middleware     │
+├─────────────────────────────────────────┤
+│  PostgreSQL 16  ·  Prisma ORM           │
+├─────────────────────────────────────────┤
+│  imapflow  ·  nodemailer  ·  web-push   │
+└─────────────────────────────────────────┘
+```
+
+| 用途 | ライブラリ |
+|---|---|
+| フレームワーク | Next.js 16 (App Router) |
+| DB / ORM | PostgreSQL 16 + Prisma 5 |
+| セッション | iron-webcrypto (AES-GCM sealed cookie) |
+| IMAP受信 | imapflow |
+| SMTP送信 | nodemailer |
+| メール解析 | mailparser |
+| 暗号化 | AES-256-GCM (Web Crypto API) |
+| Push通知 | web-push (VAPID) |
+| パスキー | @simplewebauthn |
+| バリデーション | zod |
+| テスト | Vitest |
+
+---
+
+## クイックスタート
+
+### 前提
+
+- Node.js 20+
+- PostgreSQL 16
+
+### 1. セットアップ
+
+```bash
+# 依存パッケージのインストール
+npm install
+
+# 環境変数の設定
+cp .env.example .env
+```
+
+`.env` を編集して最低限以下を設定してください：
+
+```env
+DATABASE_URL="postgresql://your_user@localhost:5432/webmail_app?schema=public"
+SESSION_SECRET="$(openssl rand -base64 48)"
+ENCRYPTION_KEY_HEX="$(openssl rand -hex 32)"
+```
+
+### 2. DB初期化
+
+```bash
+# PostgreSQLにデータベースを作成
+createdb webmail_app
+
+# マイグレーション実行
+npx prisma migrate dev
+
+# 初期管理者ユーザーを作成
+node prisma/seed.mjs
+```
+
+### 3. 起動
+
+```bash
+npm run dev
+```
+
+`http://localhost:3000` にアクセスし、以下でログイン：
+
+```
+Email:    admin@example.com
+Password: admin1234
+```
+
+---
+
+## 本番デプロイ
+
+### 自動セットアップ（Ubuntu 22.04 / 24.04）
+
+Node.js・PostgreSQL・Nginx・PM2・HTTPS（Let's Encrypt）まで一括で設定します。
+
+```bash
+sudo bash scripts/production-setup.sh
+```
+
+### 更新デプロイ
+
+```bash
+bash scripts/deploy.sh
+# git pull → npm ci → prisma migrate deploy → npm run build → pm2 reload
+```
+
+---
+
+## 環境変数
+
+| 変数名 | 必須 | 説明 |
+|---|:---:|---|
+| `DATABASE_URL` | ✅ | PostgreSQL接続URL |
+| `SESSION_SECRET` | ✅ | セッション暗号化キー（32文字以上） |
+| `ENCRYPTION_KEY_HEX` | ✅ | メールパスワード暗号化キー（64桁hex） |
+| `NEXT_PUBLIC_APP_URL` | ✅ | アプリのURL（HTTPSならSecure Cookie） |
+| `OPENROUTER_API_KEY` | — | AI返信機能（管理画面でも設定可） |
+| `VAPID_PUBLIC_KEY` | — | Web Push通知（管理画面で自動生成可） |
+| `MATTERMOST_BASE_URL` | — | Mattermost連携（管理画面でも設定可） |
+| `CRON_SECRET` | — | 定期同期エンドポイントの認証トークン |
+
+全変数の一覧は [`.env.example`](./.env.example) を参照してください。
+
+---
+
+## DBスキーマ変更
+
+```bash
+# 1. prisma/schema.prisma を編集
+# 2. マイグレーション作成
+npx prisma migrate dev --name <変更名>
+# 3. クライアント再生成（migrate dev が内部で実行するが、明示的に実行することを推奨）
+npx prisma generate
+```
+
+> **本番環境では必ず `migrate deploy` を使用してください。`migrate dev` はDBをリセットする場合があります。**
+
+---
+
+## npm スクリプト
+
+```bash
+npm run dev          # 開発サーバー（Hot Reload）
+npm run build        # 本番ビルド
+npm run start        # 本番サーバー起動
+npm run test         # Vitestでテスト実行
+npm run typecheck    # TypeScript型チェック
+```
+
+---
+
+## ディレクトリ構成
+
+```
+webmail-app/
+├── prisma/              # DBスキーマ・マイグレーション・シードデータ
+├── public/              # Service Worker・PWAマニフェスト
+├── scripts/
+│   ├── production-setup.sh   # 本番初期セットアップ
+│   └── deploy.sh             # 更新デプロイ
+├── src/
+│   ├── app/             # Next.js App Router（画面・APIルート）
+│   │   ├── (app)/       # 認証済みページ
+│   │   └── api/         # Route Handlers
+│   ├── components/      # 共通コンポーネント
+│   └── lib/             # ビジネスロジック・ユーティリティ
+│       └── mail/        # IMAP同期・SMTP送信
+├── storage/
+│   └── attachments/     # 添付ファイル保存先
+└── docs/                # 設計ドキュメント
+```
+
+---
+
+## トラブルシューティング
+
+**`The column 'xxx' does not exist`**
+```bash
+npx prisma migrate deploy  # 本番
+npx prisma migrate dev     # 開発
+npx prisma generate        # クライアント再生成
+```
+
+**`Can't reach database server`**
+```bash
+brew services start postgresql@16   # macOS
+sudo systemctl start postgresql     # Linux
+```
+
+**Push通知が届かない**  
+→ 管理画面 (`/admin/settings`) で VAPID鍵を生成・保存してください。
+
+**AI返信ボタンが出ない**  
+→ 管理画面でOpenRouter APIキーを設定してください。
+
+
+<div align="center">
+
+Built with Next.js · PostgreSQL · Prisma · Tailwind CSS
+
+</div>
