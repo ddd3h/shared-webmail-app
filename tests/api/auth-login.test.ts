@@ -5,6 +5,7 @@ import { NextRequest } from 'next/server';
 vi.mock('@/lib/db', () => ({
   prisma: {
     users: { findUnique: vi.fn() },
+    audit_logs: { create: vi.fn() },
   }
 }));
 
@@ -16,6 +17,16 @@ vi.mock('@/lib/password', () => ({
 // モック: 認証・セッション
 vi.mock('@/lib/auth', () => ({
   setSessionCookie: vi.fn(),
+}));
+
+// モック: 監査ログ
+vi.mock('@/lib/audit', () => ({
+  logAudit: vi.fn(),
+}));
+
+// モック: DoSアラート
+vi.mock('@/lib/dos-alert', () => ({
+  sendDosAlert: vi.fn(),
 }));
 
 import { POST } from '@/app/api/auth/login/route';
@@ -31,6 +42,7 @@ describe('POST /api/auth/login', () => {
   const mockNextRequest = (body: any) => {
     return {
       json: async () => body,
+      headers: { get: () => null },
     } as unknown as NextRequest;
   };
 
