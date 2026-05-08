@@ -1,8 +1,11 @@
 // Node.js runtime only — NOT bundled for Edge.
-// Sets up periodic IMAP sync for all active mailboxes.
+// Handles two sync modes per mailbox:
+//   poll  — periodic interval sync (default, compatible with all servers)
+//   idle  — IMAP IDLE push connection (instant delivery, requires server support)
 
 import { prisma } from '@/lib/db';
 import { syncMailbox } from '@/lib/mail/sync';
+import { reconcileIdleConnections } from '@/lib/mail/idle';
 
 const DEFAULT_INTERVAL_SEC = 180;
 
@@ -16,10 +19,11 @@ async function getIntervalMs(): Promise<number> {
   }
 }
 
-async function runSync() {
+// Sync only poll-mode mailboxes; IDLE-mode mailboxes are handled by idle.ts
+async function runPollSync() {
   const mailboxes = await prisma.mailboxes.findMany({
-    where: { is_active: true },
-    select: { id: true, email_address: true }
+    where: { is_active: true, sync_mode: 'poll' },
+    select: { id: true, email_address: true },
   }).catch(() => [] as { id: string; email_address: string }[]);
 
   for (const mb of mailboxes) {
@@ -29,15 +33,21 @@ async function runSync() {
         console.log(`[cron] ${mb.email_address}: ${result.synced} new message(s)`);
       }
     } catch (e: any) {
-      console.error(`[cron] Sync failed for ${mb.email_address}:`, e?.message || e);
+      console.error(`[cron] sync failed for ${mb.email_address}:`, e?.message || e);
     }
   }
+}
+
+async function tick() {
+  await runPollSync().catch(e => console.error('[cron] poll error:', e));
+  // Keep IDLE connections in sync with DB (picks up new/removed mailboxes)
+  await reconcileIdleConnections().catch(e => console.error('[idle] reconcile error:', e));
 }
 
 async function scheduleNext() {
   const intervalMs = await getIntervalMs();
   setTimeout(async () => {
-    await runSync().catch(e => console.error('[cron] runSync error:', e));
+    await tick();
     scheduleNext();
   }, intervalMs);
 }
@@ -47,11 +57,10 @@ const g = globalThis as any;
 if (!g.__imapSyncStarted) {
   g.__imapSyncStarted = true;
 
-  // Run once shortly after startup, then loop with DB-configured interval.
   setTimeout(async () => {
-    await runSync().catch(e => console.error('[cron] initial sync error:', e));
+    await tick();
     scheduleNext();
   }, 10_000);
 
-  console.log('[cron] IMAP auto-sync started (interval from DB: SYNC_DEFAULT_INTERVAL_SEC)');
+  console.log('[cron] IMAP sync started — poll interval from SYNC_DEFAULT_INTERVAL_SEC, IDLE per mailbox');
 }

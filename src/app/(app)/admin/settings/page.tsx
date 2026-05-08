@@ -12,6 +12,7 @@ type MbForm = {
   imap_host: string; imap_port: number; imap_secure: boolean;
   smtp_host: string; smtp_port: number; smtp_secure: boolean;
   mattermost_channel_id: string;
+  sync_mode: string;
 };
 const DEFAULT_MB_FORM: MbForm = {
   type: 'personal', display_name: '', email_address: '', username: '', password: '',
@@ -21,7 +22,8 @@ const DEFAULT_MB_FORM: MbForm = {
   smtp_host: process.env.NEXT_PUBLIC_DEFAULT_SMTP_HOST || 'smtp.lolipop.jp',
   smtp_port: Number(process.env.NEXT_PUBLIC_DEFAULT_SMTP_PORT) || 465,
   smtp_secure: process.env.NEXT_PUBLIC_DEFAULT_SMTP_SECURE !== 'false',
-  mattermost_channel_id: ''
+  mattermost_channel_id: '',
+  sync_mode: 'poll',
 };
 type MailboxFull = {
   id: string;
@@ -29,6 +31,7 @@ type MailboxFull = {
   display_name: string;
   email_address: string;
   is_active: boolean;
+  sync_mode: string;
   owner_user_id: string | null;
   owner: { id: string; name: string } | null;
   sync_state: {
@@ -290,7 +293,8 @@ function AdminSettingsContent() {
         smtp_host: data.credentials?.smtp_host ?? 'smtp.chart-inc.com',
         smtp_port: data.credentials?.smtp_port ?? 465,
         smtp_secure: data.credentials?.smtp_secure ?? true,
-        mattermost_channel_id: data.mattermost_channel_id ?? ''
+        mattermost_channel_id: data.mattermost_channel_id ?? '',
+        sync_mode: data.sync_mode ?? 'poll'
       });
     } else {
       setMbForm(DEFAULT_MB_FORM);
@@ -306,6 +310,7 @@ function AdminSettingsContent() {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           type: mbForm.type, display_name: mbForm.display_name,
+          sync_mode: mbForm.sync_mode,
           mattermost_channel_id: mbForm.mattermost_channel_id || null,
           credentials: {
             username: mbForm.username,
@@ -536,6 +541,11 @@ function AdminSettingsContent() {
                           {mb.credentials?.imap_host && (
                             <p className="text-xs text-gray-400">IMAP: {mb.credentials.imap_host}</p>
                           )}
+                          <span className={`inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded font-medium ${mb.sync_mode === 'idle' ? 'bg-blue-50 text-blue-600' : 'bg-gray-100 text-gray-500'}`}>
+                            {mb.sync_mode === 'idle' ? (
+                              <><span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse" />IDLE</>
+                            ) : 'ポーリング'}
+                          </span>
                         </div>
                         {/* Action buttons */}
                         <div className="flex items-center gap-1.5 flex-shrink-0 flex-wrap">
@@ -855,6 +865,21 @@ function AdminSettingsContent() {
                     <input type="text" className="input font-mono text-sm" value={mbForm.mattermost_channel_id} onChange={e => setMbForm(f => ({ ...f, mattermost_channel_id: e.target.value }))} placeholder="例: s6ftom3jypgcuq7him9knzfo1a" />
                   </div>
                 )}
+                <div>
+                  <label className="label">
+                    受信同期モード
+                    <span className="text-xs text-gray-400 ml-1">（IMAP IDLE対応サーバー推奨）</span>
+                  </label>
+                  <select value={mbForm.sync_mode} onChange={e => setMbForm(f => ({ ...f, sync_mode: e.target.value }))} className="select">
+                    <option value="poll">ポーリング（定期確認）</option>
+                    <option value="idle">IMAP IDLE（プッシュ通知）</option>
+                  </select>
+                  {mbForm.sync_mode === 'idle' && (
+                    <p className="mt-1 text-xs text-blue-600">
+                      サーバーから即時プッシュされます。IMAPサーバーがIDLEに対応している必要があります。
+                    </p>
+                  )}
+                </div>
                 <div className="md:col-span-2">
                   <p className="text-sm font-semibold text-gray-700 mb-2">IMAP（受信）設定</p>
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">

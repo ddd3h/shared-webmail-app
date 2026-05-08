@@ -87,6 +87,7 @@ model mailboxes {
   email_address         String
   owner_user_id         String?
   is_active             Boolean     @default(true)
+  sync_mode             String      @default("poll")
   mattermost_channel_id String?
   cached_size_bytes     BigInt?
   size_cached_at        DateTime?

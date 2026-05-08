@@ -26,6 +26,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     display_name: mb.display_name,
     email_address: mb.email_address,
     is_active: mb.is_active,
+    sync_mode: mb.sync_mode,
     mattermost_channel_id: mb.mattermost_channel_id,
     credentials: mb.credentials ? {
       username: mb.credentials.username,
@@ -53,6 +54,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   const updates: any = {};
   if (typeof body.display_name === 'string') updates.display_name = body.display_name;
   if (typeof body.is_active === 'boolean') updates.is_active = body.is_active;
+  if (body.sync_mode === 'poll' || body.sync_mode === 'idle') updates.sync_mode = body.sync_mode;
   if ('mattermost_channel_id' in body) updates.mattermost_channel_id = body.mattermost_channel_id || null;
   if (body.type === 'personal' || body.type === 'team') {
     if (body.type === 'team' && session.role !== 'admin') {
