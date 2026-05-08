@@ -9,7 +9,7 @@ const password = { id: '1', secret: secretRaw };
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const cryptoImpl: any = globalThis.crypto;
 
-const INACTIVITY_MS = 30 * 60 * 1000; // 30 minutes
+const INACTIVITY_MS = 4 * 60 * 60 * 1000; // 4 hours
 
 const isHttps = (process.env.NEXT_PUBLIC_APP_URL || '').startsWith('https://');
 
