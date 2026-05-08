@@ -1,6 +1,7 @@
 import webpush from 'web-push';
 import { getSetting } from '@/lib/settings';
 import { prisma } from '@/lib/db';
+import { getUserUnreadCounts } from '@/lib/unread';
 
 export async function ensureWebPushConfigured() {
   const publicKey = await getSetting('VAPID_PUBLIC_KEY');
@@ -18,10 +19,16 @@ export async function ensureWebPushConfigured() {
 
 export async function sendWebPushToUser(userId: string, payload: any) {
   await ensureWebPushConfigured();
+
+  // Attach current total unread count so the SW can update the app badge
+  const counts = await getUserUnreadCounts(userId).catch(() => null);
+  const badge = counts ? counts.personal + counts.team : undefined;
+  const fullPayload = badge != null ? { ...payload, badge } : payload;
+
   const subs = await prisma.push_subscriptions.findMany({ where: { user_id: userId, is_active: true } });
   for (const s of subs) {
     try {
-      await webpush.sendNotification({ endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } } as any, JSON.stringify(payload));
+      await webpush.sendNotification({ endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } } as any, JSON.stringify(fullPayload));
     } catch (e: any) {
       const msg = String(e?.message || e);
       if (/410|404/.test(e?.statusCode?.toString?.() || '')) {

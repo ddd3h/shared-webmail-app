@@ -58,11 +58,28 @@ self.addEventListener('push', (event) => {
     requireInteraction: false,
   };
 
-  event.waitUntil(self.registration.showNotification(title, options));
+  const tasks = [self.registration.showNotification(title, options)];
+
+  // Update home screen app badge with unread count from payload
+  if ('setAppBadge' in self.registration && data.badge != null) {
+    tasks.push(
+      data.badge > 0
+        ? self.registration.setAppBadge(data.badge).catch(() => {})
+        : self.registration.clearAppBadge().catch(() => {})
+    );
+  }
+
+  event.waitUntil(Promise.all(tasks));
 });
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
+
+  // Optimistically clear the badge — the app will sync the real count on focus
+  if ('clearAppBadge' in self.registration) {
+    self.registration.clearAppBadge().catch(() => {});
+  }
+
   const url = event.notification?.data?.url || '/';
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientsArr) => {

@@ -2,6 +2,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
+import { useAppBadge } from '@/hooks/useAppBadge';
 
 const desktopBaseItems = [
   { href: '/', label: 'ダッシュボード' },
@@ -15,6 +16,7 @@ export default function Nav() {
   const pathname = usePathname();
   const [isAdmin, setIsAdmin] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  useAppBadge();
 
   useEffect(() => {
     fetch('/api/auth/session')
