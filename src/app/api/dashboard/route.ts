@@ -4,8 +4,7 @@ import { getSession, requireAuth } from '@/lib/auth';
 
 const MAX_MAILBOX_BYTES = 1 * 1024 * 1024 * 1024; // 1 GB
 
-function mailboxAccessFilter(userId: string, isAdmin: boolean) {
-  if (isAdmin) return {};
+function mailboxAccessFilter(userId: string) {
   return {
     OR: [
       { owner_user_id: userId },
@@ -19,8 +18,7 @@ export async function GET() {
   requireAuth(session);
 
   const userId = session!.userId;
-  const isAdmin = session!.role === 'admin';
-  const mbFilter = mailboxAccessFilter(userId, isAdmin);
+  const mbFilter = mailboxAccessFilter(userId);
 
   const [myAssigned, inProgressCount, recentTeamThreads, user, myMailboxes] = await Promise.all([
     prisma.threads.count({
