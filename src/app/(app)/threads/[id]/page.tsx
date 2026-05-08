@@ -937,12 +937,12 @@ export default function ThreadDetailPage({ params }: Props) {
           <div className="card overflow-hidden shadow-lg border-blue-200">
             {/* Composer header */}
             <div className="flex items-center justify-between px-4 py-2.5 bg-gray-50 border-b border-gray-200">
-              <div className="flex items-center gap-2 text-sm text-gray-700">
-                <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <div className="flex items-center gap-2 text-sm text-gray-700 min-w-0">
+                <svg className="w-4 h-4 text-blue-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
                 </svg>
-                <span className="font-medium">返信を作成</span>
-                <span className="text-gray-400 text-xs">→ {data?.messages?.slice().reverse().find(m => m.direction === 'incoming')?.from.email || ''}</span>
+                <span className="font-medium flex-shrink-0">返信を作成</span>
+                <span className="text-gray-400 text-xs truncate">→ {data?.messages?.slice().reverse().find(m => m.direction === 'incoming')?.from.email || ''}</span>
               </div>
               <button
                 onClick={() => setShowReply(false)}
