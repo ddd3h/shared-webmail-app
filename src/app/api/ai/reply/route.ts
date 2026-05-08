@@ -117,7 +117,7 @@ ${draftText}
       'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
       'Content-Type': 'application/json',
       'HTTP-Referer': APP_URL,
-      'X-Title': '共有メールワークスペース',
+      'X-Title': 'Shared Mail Workspace',
     },
     body: JSON.stringify({
       model: OPENROUTER_MODEL,
