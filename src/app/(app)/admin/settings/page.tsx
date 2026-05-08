@@ -15,10 +15,10 @@ type MbForm = {
 };
 const DEFAULT_MB_FORM: MbForm = {
   type: 'personal', display_name: '', email_address: '', username: '', password: '',
-  imap_host: process.env.NEXT_PUBLIC_DEFAULT_IMAP_HOST || 'imap.chart-inc.com',
+  imap_host: process.env.NEXT_PUBLIC_DEFAULT_IMAP_HOST || 'imap.lolipop.jp',
   imap_port: Number(process.env.NEXT_PUBLIC_DEFAULT_IMAP_PORT) || 993,
   imap_secure: process.env.NEXT_PUBLIC_DEFAULT_IMAP_SECURE !== 'false',
-  smtp_host: process.env.NEXT_PUBLIC_DEFAULT_SMTP_HOST || 'smtp.chart-inc.com',
+  smtp_host: process.env.NEXT_PUBLIC_DEFAULT_SMTP_HOST || 'smtp.lolipop.jp',
   smtp_port: Number(process.env.NEXT_PUBLIC_DEFAULT_SMTP_PORT) || 465,
   smtp_secure: process.env.NEXT_PUBLIC_DEFAULT_SMTP_SECURE !== 'false',
   mattermost_channel_id: ''
