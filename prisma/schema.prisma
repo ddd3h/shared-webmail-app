@@ -481,6 +481,7 @@ model drafts {
   html_body   String?
   text_body   String?
   is_shared   Boolean   @default(false)
+  yjs_state   Bytes?
   created_at  DateTime  @default(now())
   updated_at  DateTime  @updatedAt
 

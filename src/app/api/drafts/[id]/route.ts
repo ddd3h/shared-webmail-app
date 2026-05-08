@@ -27,7 +27,24 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 
   const draft = await prisma.drafts.findUnique({ where: { id } });
   if (!draft) return NextResponse.json({ error: 'not_found' }, { status: 404 });
-  if (draft.user_id !== session.userId) return NextResponse.json({ error: 'forbidden' }, { status: 403 });
+
+  if (draft.user_id !== session.userId) {
+    // Non-owners may update shared drafts if they have mailbox access
+    if (!draft.is_shared || !draft.mailbox_id) {
+      return NextResponse.json({ error: 'forbidden' }, { status: 403 });
+    }
+    const accessible = await prisma.mailboxes.findFirst({
+      where: {
+        id: draft.mailbox_id,
+        OR: [
+          { owner_user_id: session.userId },
+          { permissions: { some: { user_id: session.userId, can_view: true } } },
+        ],
+      },
+      select: { id: true },
+    });
+    if (!accessible) return NextResponse.json({ error: 'forbidden' }, { status: 403 });
+  }
 
   const body = await req.json().catch(() => ({}));
   const updated = await prisma.drafts.update({

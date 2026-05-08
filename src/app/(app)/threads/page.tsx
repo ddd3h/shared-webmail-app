@@ -3,26 +3,30 @@ import { Suspense, useEffect, useState, useCallback, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import type { RichEditorHandle } from '@/components/RichEditor';
+import type { CollabEditorHandle } from '@/components/CollabEditor';
 import { useDraft } from '@/hooks/useDraft';
+import { useCollab } from '@/hooks/useCollab';
 import DraftStatusBar from '@/components/DraftStatus';
 
 const RichEditor = dynamic(() => import('@/components/RichEditor'), { ssr: false });
+const CollabEditor = dynamic(() => import('@/components/CollabEditor'), { ssr: false });
 
 type Mailbox = { id: string; display_name: string; email_address: string; type: string; user_permissions?: { can_reply: boolean } };
 type ContactSuggestion = { name: string | null; email: string };
 
 // Recipient input with contact autocomplete
 function RecipientInput({ value, onChange, placeholder, onScheduleSave }: {
-  value: string; onChange: (v: string) => void; placeholder?: string; onScheduleSave?: () => void
+  value: string; onChange: (v: string) => void; placeholder?: string; onScheduleSave?: (v: string) => void
 }) {
   const [suggestions, setSuggestions] = useState<ContactSuggestion[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
-    onChange(e.target.value);
-    onScheduleSave?.();
-    const token = e.target.value.split(/[,;]/).pop()?.trim() || '';
+    const v = e.target.value;
+    onChange(v);
+    onScheduleSave?.(v);
+    const token = v.split(/[,;]/).pop()?.trim() || '';
     if (token.length < 2) { setSuggestions([]); setShowSuggestions(false); return; }
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(async () => {
@@ -37,10 +41,11 @@ function RecipientInput({ value, onChange, placeholder, onScheduleSave }: {
   function select(c: ContactSuggestion) {
     const parts = value.split(/[,;]/);
     parts[parts.length - 1] = c.email;
-    onChange(parts.map(p => p.trim()).filter(Boolean).join(', ') + ', ');
+    const v = parts.map(p => p.trim()).filter(Boolean).join(', ') + ', ';
+    onChange(v);
     setSuggestions([]);
     setShowSuggestions(false);
-    onScheduleSave?.();
+    onScheduleSave?.(v);
   }
 
   return (
@@ -91,20 +96,28 @@ function ComposeModal({ onClose, onSent, initialDraftId }: { onClose: () => void
   const [initialBody, setInitialBody] = useState('');
   const [attachments, setAttachments] = useState<File[]>([]);
   const [minimized, setMinimized] = useState(false);
-  const editorRef = useRef<RichEditorHandle>(null);
+  const editorRef = useRef<RichEditorHandle | CollabEditorHandle>(null);
   const draft = useDraft(initialDraftId);
+  const isTeam = mailboxes.find(m => m.id === selectedMailbox)?.type === 'team';
+  const collabSessionId = isTeam && draft.draftId ? `draft-${draft.draftId}` : undefined;
+  const collab = useCollab(collabSessionId);
 
-  const scheduleFieldSave = () => {
+  // Accept override values to avoid stale-closure issue when called inside onChange handlers
+  const scheduleFieldSave = (overrides: { subject?: string; to_raw?: string; cc_raw?: string } = {}) => {
     const mb = mailboxes.find(m => m.id === selectedMailbox);
     const isShared = mb?.type === 'team';
+    const inCollabMode = !!(isTeam && collab.doc);
     draft.scheduleSave({
       mailbox_id: selectedMailbox || undefined,
-      to_raw: to,
-      cc_raw: cc,
-      subject,
-      html_body: editorRef.current?.getHTML(),
-      text_body: editorRef.current?.getText(),
-      is_shared: isShared
+      to_raw: overrides.to_raw ?? to,
+      cc_raw: overrides.cc_raw ?? cc,
+      subject: overrides.subject ?? subject,
+      // Yjs manages body in collab mode; avoid overwriting with stale editor state
+      ...(!inCollabMode && {
+        html_body: editorRef.current?.getHTML(),
+        text_body: editorRef.current?.getText(),
+      }),
+      is_shared: isShared,
     });
   };
 
@@ -226,7 +239,7 @@ function ComposeModal({ onClose, onSent, initialDraftId }: { onClose: () => void
             {/* To */}
             <div className="flex items-center gap-3 border-b border-gray-100 py-2.5">
               <span className="text-xs font-medium text-gray-400 w-12 flex-shrink-0">To</span>
-              <RecipientInput value={to} onChange={setTo} placeholder="宛先アドレス（カンマ区切りで複数可）" onScheduleSave={scheduleFieldSave} />
+              <RecipientInput value={to} onChange={setTo} placeholder="宛先アドレス（カンマ区切りで複数可）" onScheduleSave={(v) => scheduleFieldSave({ to_raw: v })} />
               {!showCc && (
                 <button type="button" onClick={() => setShowCc(true)} className="text-xs text-blue-600 hover:underline flex-shrink-0">Cc追加</button>
               )}
@@ -236,7 +249,7 @@ function ComposeModal({ onClose, onSent, initialDraftId }: { onClose: () => void
             {showCc && (
               <div className="flex items-center gap-3 border-b border-gray-100 py-2.5">
                 <span className="text-xs font-medium text-gray-400 w-12 flex-shrink-0">Cc</span>
-                <RecipientInput value={cc} onChange={setCc} placeholder="CC（省略可）" onScheduleSave={scheduleFieldSave} />
+                <RecipientInput value={cc} onChange={setCc} placeholder="CC（省略可）" onScheduleSave={(v) => scheduleFieldSave({ cc_raw: v })} />
                 <button type="button" onClick={() => { setShowCc(false); setCc(''); }} className="text-xs text-gray-400 hover:text-gray-600 flex-shrink-0">×</button>
               </div>
             )}
@@ -249,19 +262,31 @@ function ComposeModal({ onClose, onSent, initialDraftId }: { onClose: () => void
                 className="flex-1 text-sm text-gray-900 focus:outline-none placeholder-gray-400 bg-transparent"
                 placeholder="件名を入力"
                 value={subject}
-                onChange={e => { setSubject(e.target.value); scheduleFieldSave(); }}
+                onChange={e => { setSubject(e.target.value); scheduleFieldSave({ subject: e.target.value }); }}
               />
             </div>
 
             {/* Body */}
             <div className="pt-3 pb-2">
-              <RichEditor
-                ref={editorRef}
-                placeholder="本文を入力してください…"
-                minHeight={240}
-                initialHTML={initialBody}
-                onInput={scheduleFieldSave}
-              />
+              {isTeam && collab.doc && collab.awareness && collab.me ? (
+                <CollabEditor
+                  ref={editorRef as React.Ref<CollabEditorHandle>}
+                  doc={collab.doc}
+                  awareness={collab.awareness}
+                  me={collab.me}
+                  activeUsers={collab.activeUsers}
+                  placeholder="本文を入力してください…"
+                  minHeight={240}
+                />
+              ) : (
+                <RichEditor
+                  ref={editorRef as React.Ref<RichEditorHandle>}
+                  placeholder="本文を入力してください…"
+                  minHeight={240}
+                  initialHTML={initialBody}
+                  onInput={scheduleFieldSave}
+                />
+              )}
             </div>
 
             {/* Attachments list */}
@@ -292,7 +317,14 @@ function ComposeModal({ onClose, onSent, initialDraftId }: { onClose: () => void
               ファイル添付
               <input type="file" multiple className="sr-only" onChange={e => { if (e.target.files) setAttachments(prev => [...prev, ...Array.from(e.target.files!)]); e.target.value = ''; }} />
             </label>
-            <DraftStatusBar status={draft.status} savedAt={draft.savedAt} />
+            {isTeam && collabSessionId ? (
+              <span className={`text-xs flex items-center gap-1 ${collab.connected ? 'text-emerald-600' : 'text-gray-400'}`}>
+                <span className={`w-1.5 h-1.5 rounded-full ${collab.connected ? 'bg-emerald-500 animate-pulse' : 'bg-gray-300'}`} />
+                {collab.connected ? '同期中' : '接続中…'}
+              </span>
+            ) : (
+              <DraftStatusBar status={draft.status} savedAt={draft.savedAt} />
+            )}
           </div>
           <div className="flex gap-2">
             <button onClick={onClose} className="btn btn-secondary btn-sm">キャンセル</button>

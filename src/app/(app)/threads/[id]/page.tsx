@@ -3,7 +3,9 @@ import { use, useEffect, useState, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import RichEditor, { RichEditorHandle } from '@/components/RichEditor';
+import CollabEditor, { CollabEditorHandle } from '@/components/CollabEditor';
 import { useDraft } from '@/hooks/useDraft';
+import { useCollab } from '@/hooks/useCollab';
 import DraftStatusBar from '@/components/DraftStatus';
 
 type Props = { params: Promise<{ id: string }> };
@@ -209,10 +211,11 @@ export default function ThreadDetailPage({ params }: Props) {
   const [moveStep, setMoveStep] = useState<'idle' | 'transferring' | 'done'>('idle');
   const [discussPosting, setDiscussPosting] = useState(false);
   const router = useRouter();
-  const editorRef = useRef<RichEditorHandle>(null);
+  const editorRef = useRef<RichEditorHandle | CollabEditorHandle>(null);
   const forwardEditorRef = useRef<RichEditorHandle>(null);
   const replyBoxRef = useRef<HTMLDivElement>(null);
   const draft = useDraft();
+  const collab = useCollab(id);
   const bottomRef = useRef<HTMLDivElement>(null);
   const signatureRef = useRef('');
   const [showScrollTop, setShowScrollTop] = useState(false);
@@ -931,21 +934,33 @@ export default function ThreadDetailPage({ params }: Props) {
 
             {/* Rich editor */}
             <div className="p-3">
-              <RichEditor
-                ref={editorRef}
-                placeholder="返信内容を入力してください…"
-                minHeight={200}
-                onInput={() => {
-                  const isShared = data?.mailbox?.type === 'team';
-                  draft.scheduleSave({
-                    thread_id: id,
-                    mailbox_id: data?.mailbox?.id,
-                    html_body: editorRef.current?.getHTML(),
-                    text_body: editorRef.current?.getText(),
-                    is_shared: isShared
-                  });
-                }}
-              />
+              {data?.mailbox?.type === 'team' && collab.doc && collab.awareness && collab.me ? (
+                <CollabEditor
+                  ref={editorRef as React.Ref<CollabEditorHandle>}
+                  doc={collab.doc}
+                  awareness={collab.awareness}
+                  me={collab.me}
+                  activeUsers={collab.activeUsers}
+                  placeholder="返信内容を入力してください…"
+                  minHeight={200}
+                />
+              ) : (
+                <RichEditor
+                  ref={editorRef as React.Ref<RichEditorHandle>}
+                  placeholder="返信内容を入力してください…"
+                  minHeight={200}
+                  onInput={() => {
+                    const isShared = data?.mailbox?.type === 'team';
+                    draft.scheduleSave({
+                      thread_id: id,
+                      mailbox_id: data?.mailbox?.id,
+                      html_body: editorRef.current?.getHTML(),
+                      text_body: editorRef.current?.getText(),
+                      is_shared: isShared,
+                    });
+                  }}
+                />
+              )}
             </div>
 
             {/* Quoted content toggle */}
@@ -999,7 +1014,14 @@ export default function ThreadDetailPage({ params }: Props) {
                   </svg>
                   外部に送信されます
                 </p>
-                <DraftStatusBar status={draft.status} savedAt={draft.savedAt} />
+                {data?.mailbox?.type === 'team' ? (
+                  <span className={`text-xs flex items-center gap-1 ${collab.connected ? 'text-emerald-600' : 'text-gray-400'}`}>
+                    <span className={`w-1.5 h-1.5 rounded-full ${collab.connected ? 'bg-emerald-500 animate-pulse' : 'bg-gray-300'}`} />
+                    {collab.connected ? '同期中' : '接続中…'}
+                  </span>
+                ) : (
+                  <DraftStatusBar status={draft.status} savedAt={draft.savedAt} />
+                )}
               </div>
               <div className="flex items-center gap-2">
                 <button onClick={() => setShowReply(false)} className="btn btn-secondary btn-sm">キャンセル</button>
