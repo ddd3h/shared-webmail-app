@@ -26,8 +26,9 @@ export default function Nav() {
   // Close the mobile menu sheet on navigation
   useEffect(() => { setMenuOpen(false); }, [pathname]);
 
-  function handleLogout() {
-    window.location.href = '/api/auth/logout';
+  async function handleLogout() {
+    await fetch('/api/auth/logout', { method: 'POST' }).catch(() => {});
+    window.location.href = '/login';
   }
 
   const isActive = (href: string) =>

@@ -53,3 +53,7 @@ coverage/
 dist/
 build/
 tsconfig.tsbuildinfo
+
+
+# AI
+CLAUDE.md
