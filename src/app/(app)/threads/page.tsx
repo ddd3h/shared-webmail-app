@@ -527,6 +527,7 @@ function ThreadList() {
   const [personalUnread, setPersonalUnread] = useState(0);
   const [teamUnread, setTeamUnread] = useState(0);
   const [nextCursor, setNextCursor] = useState<{ last: string; id: string } | null>(null);
+  const [cursorStack, setCursorStack] = useState<Array<{ last: string; id: string }>>([]);
   const searchParams = useSearchParams();
   const router = useRouter();
   const listRef = useRef<HTMLDivElement>(null);
@@ -642,11 +643,7 @@ function ThreadList() {
       if (cursor) { params.set('cursor', cursor.last); params.set('cursor_id', cursor.id); }
       const res = await fetch(`/api/threads?${params}`);
       const data = await res.json();
-      if (cursor) {
-        setThreads(prev => [...prev, ...(data.items || [])]);
-      } else {
-        setThreads(data.items || []);
-      }
+      setThreads(data.items || []);
       setNextCursor(data.nextCursor || null);
     }
 
@@ -668,7 +665,9 @@ function ThreadList() {
 
   useEffect(() => {
     const savedView = (sessionStorage.getItem('threads-view') as 'personal' | 'team') || 'personal';
-    const t = searchParams.get('tab') || 'unread';
+    const savedTab = sessionStorage.getItem('threads-tab');
+    sessionStorage.removeItem('threads-tab');
+    const t = savedTab ?? searchParams.get('tab') ?? 'unread';
     setMailboxView(savedView);
     setTab(t);
     load(savedView, t, '');
@@ -693,6 +692,7 @@ function ThreadList() {
     setMailboxView(view);
     setTab('unread');
     setNextCursor(null);
+    setCursorStack([]);
     resetFilters();
     setSelected(new Set());
     setConfirmDelete(false);
@@ -704,6 +704,7 @@ function ThreadList() {
   function switchTab(newTab: string) {
     setTab(newTab);
     setNextCursor(null);
+    setCursorStack([]);
     resetFilters();
     setSelected(new Set());
     setConfirmDelete(false);
@@ -725,8 +726,10 @@ function ThreadList() {
     e.preventDefault();
     const q = buildQuery(searchInput, filterFrom, filterAfter, filterBefore, filterAttachment);
     setSearch(q);
+    setTab('');
     setNextCursor(null);
-    load(mailboxView, tab, q);
+    setCursorStack([]);
+    load(mailboxView, '', q);
   }
 
   function clearSearch() {
@@ -738,6 +741,7 @@ function ThreadList() {
     setShowFilters(false);
     setSearch('');
     setNextCursor(null);
+    setCursorStack([]);
     load(mailboxView, tab, '');
   }
 
@@ -748,6 +752,7 @@ function ThreadList() {
       return;
     }
     sessionStorage.setItem('threads-scroll', String(window.scrollY));
+    sessionStorage.setItem('threads-tab', tab);
     router.push(`/threads/${id}`);
   }
 
@@ -1388,17 +1393,40 @@ function ThreadList() {
       {!showSpinner && tab !== 'drafts' && threads.length > 0 && (
         <div className="pt-2 flex items-center justify-between">
           <p className="text-xs text-gray-400">
-            {search ? `${threads.length} 件ヒット` : `${threads.length} 件`}
+            {(() => {
+              const start = cursorStack.length * 50 + 1;
+              const end = cursorStack.length * 50 + threads.length;
+              return search ? `${start}〜${end} 件ヒット` : `${start}〜${end} 件`;
+            })()}
           </p>
-          {nextCursor && (
-            <button
-              onClick={() => load(mailboxView, tab, search, nextCursor!)}
-              disabled={loading}
-              className="btn btn-secondary btn-sm text-xs disabled:opacity-50"
-            >
-              {loading ? '読み込み中…' : 'さらに読み込む'}
-            </button>
-          )}
+          <div className="flex items-center gap-2">
+            {cursorStack.length > 0 && (
+              <button
+                onClick={() => {
+                  const newStack = cursorStack.slice(0, -1);
+                  setCursorStack(newStack);
+                  setNextCursor(null);
+                  load(mailboxView, tab, search, newStack[newStack.length - 1]);
+                }}
+                disabled={loading}
+                className="btn btn-secondary btn-sm text-xs disabled:opacity-50 gap-1"
+              >
+                ← 前へ
+              </button>
+            )}
+            {nextCursor && (
+              <button
+                onClick={() => {
+                  setCursorStack(prev => [...prev, nextCursor!]);
+                  load(mailboxView, tab, search, nextCursor!);
+                }}
+                disabled={loading}
+                className="btn btn-secondary btn-sm text-xs disabled:opacity-50 gap-1"
+              >
+                次へ →
+              </button>
+            )}
+          </div>
         </div>
       )}
     </div>

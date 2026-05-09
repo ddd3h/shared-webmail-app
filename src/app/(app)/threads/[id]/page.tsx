@@ -293,7 +293,11 @@ export default function ThreadDetailPage({ params }: Props) {
   function openReply() {
     setShowReply(true);
     setShowReplyQuote(false);
-    const lastIncoming = data?.messages?.slice().reverse().find(m => m.direction === 'incoming');
+    const mailboxEmail = data?.mailbox?.email_address;
+    // Skip messages where we are the sender (e.g. our sent replies that landed in INBOX)
+    const lastIncoming = data?.messages?.slice().reverse().find(
+      m => m.direction === 'incoming' && m.from.email !== mailboxEmail
+    );
     setReplyFromMailboxId(data?.mailbox?.id || '');
     setReplySigVisible(true);
     if (lastIncoming) {
@@ -304,7 +308,9 @@ export default function ThreadDetailPage({ params }: Props) {
     }
     setTimeout(() => {
       if (editorRef.current) {
-        const lastIncoming = data?.messages?.slice().reverse().find(m => m.direction === 'incoming');
+        const lastIncoming = data?.messages?.slice().reverse().find(
+          m => m.direction === 'incoming' && m.from.email !== mailboxEmail
+        );
         editorRef.current.setHTML('<p></p>');
         if (lastIncoming) {
           const qHtml = lastIncoming.html_body
@@ -325,7 +331,10 @@ export default function ThreadDetailPage({ params }: Props) {
     if (!data?.messages?.length) return;
     setReplySending(true);
     try {
-      const lastIncoming = [...data.messages].reverse().find(m => m.direction === 'incoming') || data.messages[data.messages.length - 1];
+      const mailboxEmail = data?.mailbox?.email_address;
+      const lastIncoming = [...data.messages].reverse().find(
+        m => m.direction === 'incoming' && m.from.email !== mailboxEmail
+      ) || data.messages[data.messages.length - 1];
       const bodyHtml = editorRef.current.getHTML();
       const text = editorRef.current.getText();
       // Append the collapsed quote at the end of the sent email
