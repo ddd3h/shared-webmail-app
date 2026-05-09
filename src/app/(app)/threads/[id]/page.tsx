@@ -585,7 +585,7 @@ export default function ThreadDetailPage({ params }: Props) {
       )}
 
       {/* Sticky header */}
-      <div className="sticky top-14 z-30 bg-white/95 backdrop-blur border-b border-gray-200 -mx-4 sm:-mx-6 lg:-mx-8 px-4 sm:px-6 lg:px-8 py-0 mb-4 shadow-sm">
+      <div className="sticky top-0 md:top-14 z-30 bg-white/95 backdrop-blur border-b border-gray-200 -mx-4 sm:-mx-6 lg:-mx-8 px-4 sm:px-6 lg:px-8 py-0 mb-4 shadow-sm">
         <div>
           {/* Top row: back + subject + reply */}
           <div className="flex items-center gap-3 py-3 border-b border-gray-100">
