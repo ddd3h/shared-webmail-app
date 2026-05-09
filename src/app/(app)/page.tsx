@@ -122,8 +122,11 @@ export default function DashboardPage() {
             </p>
           )}
         </div>
-        <Link href="/threads" className="btn btn-primary btn-sm gap-1.5">
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <Link
+          href="/threads"
+          className="inline-flex items-center gap-2 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 text-white font-semibold shadow-md hover:shadow-lg hover:from-blue-600 hover:to-indigo-700 active:scale-95 transition-all duration-150 px-4 py-2 text-sm"
+        >
+          <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
           </svg>
           メール一覧
@@ -135,12 +138,12 @@ export default function DashboardPage() {
         <div className="card p-5">
           <p className="text-sm font-medium text-gray-500">自分の担当</p>
           <p className="text-3xl font-bold mt-1 text-blue-600">{data?.stats.myAssigned ?? 0}</p>
-          <Link href="/threads?assigned=me" className="text-xs text-blue-500 hover:text-blue-700 mt-2 block">一覧を見る →</Link>
+          <Link href="/threads?view=team&tab=mine" className="text-xs text-blue-500 hover:text-blue-700 mt-2 block">一覧を見る →</Link>
         </div>
         <div className="card p-5">
           <p className="text-sm font-medium text-gray-500">対応中</p>
           <p className="text-3xl font-bold mt-1 text-amber-600">{data?.stats.inProgress ?? 0}</p>
-          <Link href="/threads?status=in_progress" className="text-xs text-amber-500 hover:text-amber-700 mt-2 block">一覧を見る →</Link>
+          <Link href="/threads?view=team&tab=in_progress" className="text-xs text-amber-500 hover:text-amber-700 mt-2 block">一覧を見る →</Link>
         </div>
       </div>
 

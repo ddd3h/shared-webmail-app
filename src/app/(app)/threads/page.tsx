@@ -330,13 +330,16 @@ function ThreadList() {
   }, [threads]);
 
   useEffect(() => {
-    const savedView = (sessionStorage.getItem('threads-view') as 'personal' | 'team') || 'personal';
+    const urlView = searchParams.get('view') as 'personal' | 'team' | null;
+    const savedView = (sessionStorage.getItem('threads-view') as 'personal' | 'team') || urlView || 'personal';
+    const view = urlView ?? savedView;
+    if (urlView) sessionStorage.setItem('threads-view', urlView);
     const savedTab = sessionStorage.getItem('threads-tab');
     sessionStorage.removeItem('threads-tab');
     const t = savedTab ?? searchParams.get('tab') ?? 'unread';
-    setMailboxView(savedView);
+    setMailboxView(view);
     setTab(t);
-    load(savedView, t, '');
+    load(view, t, '');
     // Load unread counts for segment badges (dedicated lightweight endpoint)
     fetch('/api/threads/unread-counts')
       .then(r => r.json())
