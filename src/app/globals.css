@@ -115,3 +115,17 @@ blockquote {
 ::-webkit-scrollbar-thumb:hover {
   background: #9ca3af;
 }
+
+
+/* Paper plane send animation */
+@keyframes planeFly {
+  0%   { transform: translate(-80px, 20px) rotate(0deg); opacity: 0; }
+  10%  { opacity: 1; }
+  40%  { transform: translate(35vw, -40px) rotate(-12deg); }
+  70%  { transform: translate(65vw, 10px) rotate(6deg); }
+  90%  { opacity: 1; }
+  100% { transform: translate(110vw, -20px) rotate(-8deg); opacity: 0; }
+}
+.animate-plane-fly {
+  animation: planeFly 4s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}

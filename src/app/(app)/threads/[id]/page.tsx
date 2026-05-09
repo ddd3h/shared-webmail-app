@@ -8,6 +8,7 @@ import CollabEditor, { CollabEditorHandle } from '@/components/CollabEditor';
 import { useDraft } from '@/hooks/useDraft';
 import { useCollab } from '@/hooks/useCollab';
 import DraftStatusBar from '@/components/DraftStatus';
+import SendingOverlay from '@/components/SendingOverlay';
 
 type Props = { params: Promise<{ id: string }> };
 
@@ -191,6 +192,8 @@ export default function ThreadDetailPage({ params }: Props) {
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [replySending, setReplySending] = useState(false);
+  const [showReplyOverlay, setShowReplyOverlay] = useState(false);
+  const pendingReplyRef = useRef<(() => void) | null>(null);
   const [msg, setMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [showReply, setShowReply] = useState(false);
   const [replyFiles, setReplyFiles] = useState<File[]>([]);
@@ -326,9 +329,16 @@ export default function ThreadDetailPage({ params }: Props) {
     }, 50);
   }
 
-  async function sendReply() {
+  function triggerReply() {
     if (!editorRef.current || editorRef.current.isEmpty()) return;
     if (!data?.messages?.length) return;
+    pendingReplyRef.current = () => sendReply();
+    setShowReplyOverlay(true);
+  }
+
+  async function sendReply() {
+    setShowReplyOverlay(false);
+    if (!editorRef.current || !data?.messages?.length) return;
     setReplySending(true);
     try {
       const mailboxEmail = data?.mailbox?.email_address;
@@ -577,6 +587,13 @@ export default function ThreadDetailPage({ params }: Props) {
 
   return (
     <div className="max-w-full pb-6">
+      {/* Sending overlay */}
+      {showReplyOverlay && (
+        <SendingOverlay
+          onConfirm={() => { pendingReplyRef.current?.(); pendingReplyRef.current = null; }}
+          onCancel={() => { setShowReplyOverlay(false); pendingReplyRef.current = null; }}
+        />
+      )}
       {/* Toast */}
       {msg && (
         <div className={`fixed top-4 right-4 z-50 rounded-lg px-4 py-3 text-sm font-medium shadow-xl transition-all ${msg.type === 'success' ? 'bg-emerald-500 text-white' : 'bg-red-500 text-white'}`}>
@@ -1231,11 +1248,11 @@ export default function ThreadDetailPage({ params }: Props) {
                     <span className="hidden md:inline">キャンセル</span>
                   </button>
                   {/* Send */}
-                  <button onClick={sendReply} disabled={replySending} className="btn btn-primary btn-sm gap-1">
+                  <button onClick={triggerReply} disabled={replySending} className="btn btn-primary btn-sm gap-1">
                     <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
                     </svg>
-                    {replySending ? '送信中…' : '送信する'}
+                    送信する
                   </button>
                 </div>
               </div>
