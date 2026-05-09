@@ -1,9 +1,12 @@
 const path = require('path');
 
+const isDev = process.env.NODE_ENV === 'development';
+
 // Security headers applied to every route.
 // CSP uses 'unsafe-inline' for scripts/styles because Next.js App Router
 // requires inline script injection for hydration when nonces are not used.
-// Tighten by adding nonce support if stricter CSP is needed in the future.
+// 'unsafe-eval' is added in development only — React DevTools and Turbopack
+// require eval() for source maps and stack reconstruction; never used in prod.
 const SECURITY_HEADERS = [
   { key: 'X-Content-Type-Options', value: 'nosniff' },
   { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
@@ -21,7 +24,7 @@ const SECURITY_HEADERS = [
     key: 'Content-Security-Policy',
     value: [
       "default-src 'self'",
-      "script-src 'self' 'unsafe-inline'",
+      isDev ? "script-src 'self' 'unsafe-inline' 'unsafe-eval'" : "script-src 'self' 'unsafe-inline'",
       "style-src 'self' 'unsafe-inline'",
       // Email HTML bodies may reference external images — keep broad
       "img-src 'self' data: blob: https:",
