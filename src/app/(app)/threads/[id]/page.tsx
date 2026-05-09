@@ -456,7 +456,7 @@ export default function ThreadDetailPage({ params }: Props) {
   const canAssign = data.permissions.can_assign;
 
   return (
-    <div className="max-w-full pb-6">
+    <div className="max-w-full pb-6 -mt-6 md:mt-0">
       {/* Toast */}
       {msg && (
         <div className={`fixed top-4 right-4 z-50 rounded-lg px-4 py-3 text-sm font-medium shadow-xl transition-all ${msg.type === 'success' ? 'bg-emerald-500 text-white' : 'bg-red-500 text-white'}`}>
