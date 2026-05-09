@@ -485,7 +485,7 @@ export default function ThreadDetailPage({ params }: Props) {
             </h1>
 
             {canReply ? (
-              <button onClick={openReply} className="flex-shrink-0 btn btn-primary btn-sm gap-1.5">
+              <button onClick={openReply} className="flex-shrink-0 inline-flex items-center gap-1.5 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 text-white text-xs font-semibold shadow-md hover:shadow-lg hover:from-blue-600 hover:to-indigo-700 active:scale-95 transition-all duration-150 px-3 py-1.5">
                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
                 </svg>
