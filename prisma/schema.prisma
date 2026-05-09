@@ -383,6 +383,7 @@ model mailbox_sync_states {
   last_success_at       DateTime?
   last_error            String?
   last_seen_uid         String?
+  last_seen_sent_uid    String?
   status                String
   updated_at            DateTime  @updatedAt
 
