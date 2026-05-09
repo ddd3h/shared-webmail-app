@@ -119,14 +119,21 @@ export async function GET(req: NextRequest) {
       ...(status ? { status: status as any } : { status: { notIn: ['archived'] } }),
       ...(mine ? { assigned_user_id: session!.userId, status: { in: ['open', 'in_progress', 'waiting'] } } : {}),
       ...(assigned ? { assigned_user_id: { not: null } } : {}),
-      
+
+      // Unread filter at DB level for efficient pagination:
+      // - personal: unread_count > 0 (exact)
+      // - team: no read record for this user (threads read-then-updated also
+      //   caught by the client-side isUnreadForUser check below)
+      ...(unread && type === 'personal' ? { unread_count: { gt: 0 } } : {}),
+      ...(unread && type === 'team' ? { reads: { none: { user_id: session!.userId } } } : {}),
+
       // Thread filter logic:
       // - Sent: contains at least one outgoing message
       // - All/Unread (default): show any thread that has messages matching search
       ...(sent
         ? { messages: { some: { direction: 'outgoing' } } }
-        : messageWhere 
-          ? { messages: { some: messageWhere } } 
+        : messageWhere
+          ? { messages: { some: messageWhere } }
           : {}),
 
       mailbox: {
@@ -152,8 +159,8 @@ export async function GET(req: NextRequest) {
       cursor: { id: cursorId },
       skip: 1,
     } : {}),
-    // Fetch one extra to know if there's a next page; cap unread at 200 (typically few)
-    take: unread ? 200 : PAGE_LIMIT + 1,
+    // Always fetch one extra to detect next page
+    take: PAGE_LIMIT + 1,
     select: {
       id: true,
       subject: true,
@@ -212,9 +219,9 @@ export async function GET(req: NextRequest) {
 
   let finalItems = unread ? items.filter(i => i.unread_count > 0) : items;
 
-  // Determine next cursor (only for paginated non-unread requests)
+  // Cursor-based pagination applies to all tabs
   let nextCursor: { last: string; id: string } | null = null;
-  if (!unread && finalItems.length > PAGE_LIMIT) {
+  if (finalItems.length > PAGE_LIMIT) {
     finalItems = finalItems.slice(0, PAGE_LIMIT);
     const lastItem = finalItems[finalItems.length - 1];
     nextCursor = { last: (lastItem.last as unknown as Date).toISOString(), id: lastItem.id };
