@@ -7,7 +7,7 @@ type User = { id: string; name: string; email: string; role: string; mattermost_
 type EditUser = { name: string; email: string; role: string; password: string; mattermost_user_id: string };
 type PermEntry = { can_view: boolean; can_reply: boolean; can_assign: boolean };
 type MbForm = {
-  type: string; display_name: string; email_address: string;
+  type: string; display_name: string; sender_name: string; email_address: string;
   username: string; password: string;
   imap_host: string; imap_port: number; imap_secure: boolean;
   smtp_host: string; smtp_port: number; smtp_secure: boolean;
@@ -15,7 +15,7 @@ type MbForm = {
   sync_mode: string;
 };
 const DEFAULT_MB_FORM: MbForm = {
-  type: 'personal', display_name: '', email_address: '', username: '', password: '',
+  type: 'personal', display_name: '', sender_name: '', email_address: '', username: '', password: '',
   imap_host: process.env.NEXT_PUBLIC_DEFAULT_IMAP_HOST || 'imap.lolipop.jp',
   imap_port: Number(process.env.NEXT_PUBLIC_DEFAULT_IMAP_PORT) || 993,
   imap_secure: process.env.NEXT_PUBLIC_DEFAULT_IMAP_SECURE !== 'false',
@@ -62,6 +62,13 @@ function AdminSettingsContent() {
   const [syncing, setSyncing] = useState<Set<string>>(new Set());
   const [testing, setTesting] = useState<Set<string>>(new Set());
   const [testResults, setTestResults] = useState<Record<string, { ok: boolean; msg: string }>>({});
+
+  // PWA icon
+  const [iconFile, setIconFile] = useState<File | null>(null);
+  const [iconPreview, setIconPreview] = useState<string | null>(null);
+  const [iconUploading, setIconUploading] = useState(false);
+  const [iconMsg, setIconMsg] = useState('');
+  const [iconTs, setIconTs] = useState(Date.now());
 
   // Mailbox modal
   const [showMbModal, setShowMbModal] = useState(false);
@@ -134,6 +141,31 @@ function AdminSettingsContent() {
     });
     if (res.ok) showMsg('success', '設定を保存しました');
     else showMsg('error', '保存に失敗しました');
+  }
+
+  async function uploadIcon() {
+    if (!iconFile) return;
+    setIconUploading(true);
+    setIconMsg('');
+    try {
+      const fd = new FormData();
+      fd.append('icon', iconFile);
+      const res = await fetch('/api/admin/pwa-icon', { method: 'POST', body: fd });
+      if (res.ok) {
+        setIconMsg('アップロードしました');
+        setIconFile(null);
+        if (iconPreview) { URL.revokeObjectURL(iconPreview); setIconPreview(null); }
+        setIconTs(Date.now());
+      } else {
+        const d = await res.json().catch(() => ({}));
+        const msg = d.error === 'too_large' ? 'ファイルが大きすぎます（5MB以下）'
+          : d.error === 'invalid_type' ? 'PNG・JPEG・WebP のみ対応しています'
+          : 'アップロードに失敗しました';
+        setIconMsg(msg);
+      }
+    } finally {
+      setIconUploading(false);
+    }
   }
 
   async function syncGoogleContacts() {
@@ -285,7 +317,7 @@ function AdminSettingsContent() {
       if (!res.ok) { showMsg('error', '設定の取得に失敗しました'); return; }
       const data = await res.json();
       setMbForm({
-        type: data.type, display_name: data.display_name, email_address: data.email_address,
+        type: data.type, display_name: data.display_name, sender_name: data.sender_name ?? '', email_address: data.email_address,
         username: data.credentials?.username ?? '', password: '',
         imap_host: data.credentials?.imap_host ?? 'imap.chart-inc.com',
         imap_port: data.credentials?.imap_port ?? 993,
@@ -309,7 +341,7 @@ function AdminSettingsContent() {
       res = await fetch(`/api/mailboxes/${mbModalId}`, {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          type: mbForm.type, display_name: mbForm.display_name,
+          type: mbForm.type, display_name: mbForm.display_name, sender_name: mbForm.sender_name,
           sync_mode: mbForm.sync_mode,
           mattermost_channel_id: mbForm.mattermost_channel_id || null,
           credentials: {
@@ -324,7 +356,7 @@ function AdminSettingsContent() {
       res = await fetch('/api/mailboxes', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          type: mbForm.type, display_name: mbForm.display_name, email_address: mbForm.email_address,
+          type: mbForm.type, display_name: mbForm.display_name, sender_name: mbForm.sender_name, email_address: mbForm.email_address,
           username: mbForm.username, password: mbForm.password,
           imap: { host: mbForm.imap_host, port: Number(mbForm.imap_port), secure: mbForm.imap_secure },
           smtp: { host: mbForm.smtp_host, port: Number(mbForm.smtp_port), secure: mbForm.smtp_secure }
@@ -502,6 +534,63 @@ function AdminSettingsContent() {
                   Googleアカウントで連携
                 </a>
               )}
+            </div>
+          </div>
+
+          <div className="card p-6">
+            <h2 className="font-semibold text-gray-900 mb-1">PWA アイコン</h2>
+            <p className="text-xs text-gray-500 mb-4">ホーム画面に追加したときに表示されるアイコンです。正方形のPNG画像（512×512px以上推奨）をアップロードしてください。</p>
+            <div className="flex items-start gap-5 flex-wrap">
+              <div className="flex flex-col items-center gap-1.5">
+                <span className="text-xs text-gray-400">現在のアイコン</span>
+                <img
+                  key={iconTs}
+                  src={`/icon-192.png?t=${iconTs}`}
+                  alt="現在のPWAアイコン"
+                  className="w-20 h-20 rounded-2xl border border-gray-200 shadow-sm object-cover bg-gray-50"
+                />
+              </div>
+              {iconPreview && (
+                <div className="flex flex-col items-center gap-1.5">
+                  <span className="text-xs text-gray-400">アップロード後</span>
+                  <img
+                    src={iconPreview}
+                    alt="新アイコンプレビュー"
+                    className="w-20 h-20 rounded-2xl border-2 border-blue-400 shadow-sm object-cover"
+                  />
+                </div>
+              )}
+              <div className="flex flex-col gap-2">
+                <label className="cursor-pointer inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-gray-100 hover:bg-gray-200 transition-colors text-sm text-gray-700 font-medium border border-gray-200">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                  </svg>
+                  画像を選択
+                  <input
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp"
+                    className="sr-only"
+                    onChange={e => {
+                      const f = e.target.files?.[0];
+                      if (!f) return;
+                      setIconFile(f);
+                      if (iconPreview) URL.revokeObjectURL(iconPreview);
+                      setIconPreview(URL.createObjectURL(f));
+                      setIconMsg('');
+                    }}
+                  />
+                </label>
+                {iconFile && (
+                  <button onClick={uploadIcon} disabled={iconUploading} className="btn btn-primary btn-sm">
+                    {iconUploading ? 'アップロード中…' : 'アップロード'}
+                  </button>
+                )}
+                {iconMsg && (
+                  <p className={`text-xs ${iconMsg.includes('失敗') || iconMsg.includes('すぎ') || iconMsg.includes('のみ') ? 'text-red-600' : 'text-emerald-600'}`}>
+                    {iconMsg}
+                  </p>
+                )}
+              </div>
             </div>
           </div>
 
@@ -855,16 +944,19 @@ function AdminSettingsContent() {
                   </select>
                 </div>
                 <div>
-                  <label className="label">表示名</label>
+                  <label className="label">ワークスペース用表示名</label>
                   <input type="text" className="input" value={mbForm.display_name} onChange={e => setMbForm(f => ({ ...f, display_name: e.target.value }))} placeholder="営業チームメール" />
                 </div>
                 <div>
-                  <label className="label">メールアドレス</label>
-                  <input type="email" className="input" value={mbForm.email_address} onChange={e => setMbForm(f => ({ ...f, email_address: e.target.value }))} placeholder="sales@chart-inc.com" disabled={!!mbModalId} />
+                  <label className="label">
+                    表示名（送信者名）
+                    <span className="text-xs text-gray-400 ml-1">（メール送信時のFromに使用）</span>
+                  </label>
+                  <input type="text" className="input" value={mbForm.sender_name} onChange={e => setMbForm(f => ({ ...f, sender_name: e.target.value }))} placeholder={mbForm.display_name || '山田太郎'} />
                 </div>
                 <div>
-                  <label className="label">ユーザー名（IMAP/SMTP）</label>
-                  <input type="text" className="input" value={mbForm.username} onChange={e => setMbForm(f => ({ ...f, username: e.target.value }))} />
+                  <label className="label">メールアドレス（IMAP/SMTPユーザー名）</label>
+                  <input type="email" className="input" value={mbForm.email_address} onChange={e => setMbForm(f => ({ ...f, email_address: e.target.value, username: e.target.value }))} placeholder="sales@chart-inc.com" disabled={!!mbModalId} />
                 </div>
                 <div>
                   <label className="label">
