@@ -150,6 +150,93 @@ const TEAM_TABS = [
   { id: 'drafts', label: '下書き' },
 ] as const;
 
+// ── Search helpers ──────────────────────────────────────────────────────────
+
+const SEARCH_HISTORY_KEY = 'threads-search-history';
+function getSearchHistory(): string[] {
+  try { return JSON.parse(localStorage.getItem(SEARCH_HISTORY_KEY) || '[]'); } catch { return []; }
+}
+function addSearchHistory(q: string) {
+  if (!q.trim()) return;
+  const h = getSearchHistory().filter(x => x !== q);
+  h.unshift(q);
+  localStorage.setItem(SEARCH_HISTORY_KEY, JSON.stringify(h.slice(0, 10)));
+}
+
+type SearchChipType = 'text'|'from'|'to'|'cc'|'bcc'|'subject'|'body'|'mailbox'|'status'|'assigned'|'after'|'before'|'attachment';
+const CHIP_STYLE: Record<SearchChipType, string> = {
+  text: 'bg-blue-100 text-blue-700 border-blue-200', from: 'bg-violet-100 text-violet-700 border-violet-200',
+  to: 'bg-indigo-100 text-indigo-700 border-indigo-200', cc: 'bg-purple-100 text-purple-700 border-purple-200',
+  bcc: 'bg-pink-100 text-pink-700 border-pink-200', subject: 'bg-sky-100 text-sky-700 border-sky-200',
+  body: 'bg-cyan-100 text-cyan-700 border-cyan-200', mailbox: 'bg-amber-100 text-amber-700 border-amber-200',
+  status: 'bg-emerald-100 text-emerald-700 border-emerald-200', assigned: 'bg-teal-100 text-teal-700 border-teal-200',
+  after: 'bg-lime-100 text-lime-700 border-lime-200', before: 'bg-lime-100 text-lime-700 border-lime-200',
+  attachment: 'bg-yellow-100 text-yellow-700 border-yellow-200',
+};
+const CHIP_PREFIX: Record<SearchChipType, string> = {
+  text: '', from: '送信者:', to: '宛先:', cc: 'CC:', bcc: 'BCC:', subject: '件名:', body: '本文:',
+  mailbox: 'MB:', status: 'ST:', assigned: '担当:', after: '以降:', before: '以前:', attachment: '',
+};
+function parseSearchChips(q: string): Array<{type: SearchChipType; value: string; raw: string}> {
+  const chips: Array<{type: SearchChipType; value: string; raw: string}> = [];
+  const prefixes: SearchChipType[] = ['from','to','cc','bcc','subject','body','mailbox','status','assigned','after','before'];
+  for (const tok of q.trim().split(/\s+/)) {
+    if (!tok) continue;
+    if (tok.toLowerCase() === 'has:attachment') { chips.push({ type: 'attachment', value: '添付あり', raw: tok }); continue; }
+    const ci = tok.indexOf(':');
+    if (ci > 0) {
+      const p = tok.toLowerCase().slice(0, ci) as SearchChipType;
+      const v = tok.slice(ci + 1);
+      if (v && prefixes.includes(p)) { chips.push({ type: p, value: v, raw: tok }); continue; }
+    }
+    chips.push({ type: 'text', value: tok, raw: tok });
+  }
+  return chips;
+}
+function removeChipFromQuery(q: string, raw: string): string {
+  return q.split(/\s+/).filter(t => t !== raw).join(' ').trim();
+}
+
+// Contact autocomplete input used in filter panel
+function ContactSuggestInput({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder: string }) {
+  const [suggestions, setSuggestions] = useState<{name: string; email: string}[]>([]);
+  const [open, setOpen] = useState(false);
+  const debRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (debRef.current) clearTimeout(debRef.current);
+    if (value.length < 1) { setSuggestions([]); setOpen(false); return; }
+    debRef.current = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/contacts?q=${encodeURIComponent(value)}`);
+        const data = await res.json();
+        const items = ((data.contacts || []) as {name: string; email: string}[]).filter(c => c.email).slice(0, 6);
+        setSuggestions(items); setOpen(items.length > 0);
+      } catch { setOpen(false); }
+    }, 200);
+    return () => { if (debRef.current) clearTimeout(debRef.current); };
+  }, [value]);
+  return (
+    <div className="relative">
+      <input type="text" value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder}
+        onBlur={() => setTimeout(() => setOpen(false), 150)}
+        className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white" />
+      {open && (
+        <div className="absolute z-20 top-full mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden">
+          {suggestions.map((s, i) => (
+            <button key={i} type="button" onMouseDown={e => { e.preventDefault(); onChange(s.email); setOpen(false); }}
+              className="w-full text-left px-3 py-2 text-sm hover:bg-blue-50 transition-colors">
+              <span className="font-medium text-gray-800">{s.name}</span>
+              <span className="ml-2 text-xs text-gray-400">{s.email}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+
 type DraftItem = {
   id: string;
   to_raw: string | null;
@@ -171,10 +258,20 @@ function ThreadList() {
   const [search, setSearch] = useState('');
   const [searchInput, setSearchInput] = useState('');
   const [filterFrom, setFilterFrom] = useState('');
+  const [filterTo, setFilterTo] = useState('');
+  const [filterCc, setFilterCc] = useState('');
+  const [filterBcc, setFilterBcc] = useState('');
+  const [filterSubject, setFilterSubject] = useState('');
+  const [filterBody, setFilterBody] = useState('');
+  const [filterMailbox, setFilterMailbox] = useState('');
+  const [filterStatus, setFilterStatus] = useState('');
+  const [filterAssigned, setFilterAssigned] = useState('');
   const [filterAfter, setFilterAfter] = useState('');
   const [filterBefore, setFilterBefore] = useState('');
   const [filterAttachment, setFilterAttachment] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
+  const [searchHistory, setSearchHistory] = useState<string[]>([]);
   const [showCompose, setShowCompose] = useState(false);
   const [openDraftId, setOpenDraftId] = useState<string | undefined>(undefined);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -349,11 +446,12 @@ function ThreadList() {
 
   function resetFilters() {
     setSearchInput('');
-    setFilterFrom('');
-    setFilterAfter('');
-    setFilterBefore('');
+    setFilterFrom(''); setFilterTo(''); setFilterCc(''); setFilterBcc('');
+    setFilterSubject(''); setFilterBody(''); setFilterMailbox(''); setFilterStatus(''); setFilterAssigned('');
+    setFilterAfter(''); setFilterBefore('');
     setFilterAttachment(false);
     setShowFilters(false);
+    setShowHistory(false);
     setSearch('');
   }
 
@@ -381,34 +479,52 @@ function ThreadList() {
     load(mailboxView, newTab, '');
   }
 
-  function buildQuery(text: string, from: string, after: string, before: string, attachment: boolean) {
+  function buildQuery() {
     const parts: string[] = [];
-    if (text.trim()) parts.push(text.trim());
-    if (from.trim()) parts.push(`from:${from.trim()}`);
-    if (after) parts.push(`after:${after}`);
-    if (before) parts.push(`before:${before}`);
-    if (attachment) parts.push('has:attachment');
+    if (searchInput.trim()) parts.push(searchInput.trim());
+    if (filterFrom.trim()) parts.push(`from:${filterFrom.trim()}`);
+    if (filterTo.trim()) parts.push(`to:${filterTo.trim()}`);
+    if (filterCc.trim()) parts.push(`cc:${filterCc.trim()}`);
+    if (filterBcc.trim()) parts.push(`bcc:${filterBcc.trim()}`);
+    if (filterSubject.trim()) parts.push(`subject:${filterSubject.trim()}`);
+    if (filterBody.trim()) parts.push(`body:${filterBody.trim()}`);
+    if (filterMailbox.trim()) parts.push(`mailbox:${filterMailbox.trim()}`);
+    if (filterStatus) parts.push(`status:${filterStatus}`);
+    if (filterAssigned.trim()) parts.push(`assigned:${filterAssigned.trim()}`);
+    if (filterAfter) parts.push(`after:${filterAfter}`);
+    if (filterBefore) parts.push(`before:${filterBefore}`);
+    if (filterAttachment) parts.push('has:attachment');
     return parts.join(' ');
   }
 
   function handleSearch(e: React.FormEvent) {
     e.preventDefault();
-    const q = buildQuery(searchInput, filterFrom, filterAfter, filterBefore, filterAttachment);
+    const q = buildQuery();
+    addSearchHistory(q);
     setSearch(q);
+    setSearchInput(q);
+    setShowHistory(false);
     setTab('');
     setNextCursor(null);
     setCursorStack([]);
     load(mailboxView, '', q);
   }
 
+  function handleRemoveChip(raw: string) {
+    const newSearch = removeChipFromQuery(search, raw);
+    setSearch(newSearch);
+    setSearchInput(newSearch);
+    setNextCursor(null);
+    setCursorStack([]);
+    if (!newSearch) {
+      load(mailboxView, tab || 'unread', '');
+    } else {
+      load(mailboxView, '', newSearch);
+    }
+  }
+
   function clearSearch() {
-    setSearchInput('');
-    setFilterFrom('');
-    setFilterAfter('');
-    setFilterBefore('');
-    setFilterAttachment(false);
-    setShowFilters(false);
-    setSearch('');
+    resetFilters();
     setNextCursor(null);
     setCursorStack([]);
     load(mailboxView, tab, '');
@@ -481,17 +597,42 @@ function ThreadList() {
               </svg>
               <input
                 type="search"
-                placeholder="件名・本文・送信者を検索…"
+                placeholder="検索… (from: to: cc: subject: body: mailbox: status: assigned:)"
                 value={searchInput}
-                onChange={(e) => setSearchInput(e.target.value)}
+                onChange={(e) => { setSearchInput(e.target.value); setShowHistory(false); }}
+                onFocus={() => { if (!searchInput) { setSearchHistory(getSearchHistory()); setShowHistory(true); } }}
+                onBlur={() => setTimeout(() => setShowHistory(false), 150)}
                 className="w-full pl-9 pr-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
               />
+              {/* Search history dropdown */}
+              {showHistory && searchHistory.length > 0 && (
+                <div className="absolute z-20 top-full mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden">
+                  <div className="flex items-center justify-between px-3 py-1.5 border-b border-gray-100">
+                    <span className="text-xs font-medium text-gray-400">検索履歴</span>
+                    <button type="button" onMouseDown={e => { e.preventDefault(); localStorage.removeItem(SEARCH_HISTORY_KEY); setSearchHistory([]); setShowHistory(false); }}
+                      className="text-xs text-gray-400 hover:text-red-500 transition-colors">クリア</button>
+                  </div>
+                  {searchHistory.map((h, i) => (
+                    <button key={i} type="button" onMouseDown={e => {
+                      e.preventDefault();
+                      setSearchInput(h); setSearch(h); setShowHistory(false);
+                      setTab(''); setNextCursor(null); setCursorStack([]);
+                      load(mailboxView, '', h);
+                    }} className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors flex items-center gap-2">
+                      <svg className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      <span className="truncate">{h}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
             <button
               type="button"
               onClick={() => setShowFilters(v => !v)}
               className={`flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg border transition-colors ${
-                showFilters || filterFrom || filterAfter || filterBefore || filterAttachment
+                showFilters || filterFrom || filterTo || filterCc || filterBcc || filterSubject || filterBody || filterMailbox || filterStatus || filterAssigned || filterAfter || filterBefore || filterAttachment
                   ? 'border-blue-500 bg-blue-50 text-blue-700'
                   : 'border-gray-300 text-gray-600 hover:bg-gray-50'
               }`}
@@ -521,78 +662,99 @@ function ThreadList() {
           {/* Advanced filters */}
           {showFilters && (
             <div className="bg-gray-50 border border-gray-200 rounded-xl p-3 space-y-2">
+              {/* Row 1: From, To, CC */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                 <div>
-                  <label className="block text-xs font-medium text-gray-500 mb-1">送信者</label>
-                  <input
-                    type="text"
-                    placeholder="名前またはアドレス"
-                    value={filterFrom}
-                    onChange={e => setFilterFrom(e.target.value)}
-                    className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
-                  />
+                  <label className="block text-xs font-medium text-gray-500 mb-1">送信者 (from:)</label>
+                  <ContactSuggestInput value={filterFrom} onChange={setFilterFrom} placeholder="名前またはアドレス" />
                 </div>
                 <div>
+                  <label className="block text-xs font-medium text-gray-500 mb-1">宛先 (to:)</label>
+                  <ContactSuggestInput value={filterTo} onChange={setFilterTo} placeholder="名前またはアドレス" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 mb-1">CC (cc:)</label>
+                  <ContactSuggestInput value={filterCc} onChange={setFilterCc} placeholder="名前またはアドレス" />
+                </div>
+              </div>
+              {/* Row 2: BCC, Subject, Body */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 mb-1">BCC (bcc:)</label>
+                  <input type="text" value={filterBcc} onChange={e => setFilterBcc(e.target.value)} placeholder="名前またはアドレス"
+                    className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 mb-1">件名 (subject:)</label>
+                  <input type="text" value={filterSubject} onChange={e => setFilterSubject(e.target.value)} placeholder="件名キーワード"
+                    className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 mb-1">本文 (body:)</label>
+                  <input type="text" value={filterBody} onChange={e => setFilterBody(e.target.value)} placeholder="本文キーワード"
+                    className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white" />
+                </div>
+              </div>
+              {/* Row 3: Mailbox, Status, Assigned */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 mb-1">メールボックス (mailbox:)</label>
+                  <input type="text" value={filterMailbox} onChange={e => setFilterMailbox(e.target.value)} placeholder="メールボックス名"
+                    className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 mb-1">ステータス (status:)</label>
+                  <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}
+                    className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
+                    <option value="">指定しない</option>
+                    <option value="open">未対応</option>
+                    <option value="in_progress">対応中</option>
+                    <option value="done">完了</option>
+                    <option value="waiting">保留</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 mb-1">担当者 (assigned:)</label>
+                  <input type="text" value={filterAssigned} onChange={e => setFilterAssigned(e.target.value)} placeholder="担当者名"
+                    className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white" />
+                </div>
+              </div>
+              {/* Row 4: Date range */}
+              <div className="grid grid-cols-2 gap-2">
+                <div>
                   <label className="block text-xs font-medium text-gray-500 mb-1">期間（開始）</label>
-                  <input
-                    type="date"
-                    value={filterAfter}
-                    onChange={e => setFilterAfter(e.target.value)}
-                    className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
-                  />
+                  <input type="date" value={filterAfter} onChange={e => setFilterAfter(e.target.value)}
+                    className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white" />
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-gray-500 mb-1">期間（終了）</label>
-                  <input
-                    type="date"
-                    value={filterBefore}
-                    onChange={e => setFilterBefore(e.target.value)}
-                    className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
-                  />
+                  <input type="date" value={filterBefore} onChange={e => setFilterBefore(e.target.value)}
+                    className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white" />
                 </div>
               </div>
               <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={filterAttachment}
-                  onChange={e => setFilterAttachment(e.target.checked)}
-                  className="w-4 h-4 rounded text-blue-600 border-gray-300"
-                />
+                <input type="checkbox" checked={filterAttachment} onChange={e => setFilterAttachment(e.target.checked)}
+                  className="w-4 h-4 rounded text-blue-600 border-gray-300" />
                 添付ファイルあり
               </label>
             </div>
           )}
 
-          {/* Active filter chips */}
+          {/* Active search chips */}
           {search && (
             <div className="flex flex-wrap gap-1.5 items-center">
-              <span className="text-xs text-gray-400">検索中:</span>
-              {searchInput && (
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 text-xs font-medium">
-                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
-                  {searchInput}
+              {parseSearchChips(search).map((chip, i) => (
+                <span key={i} className={`inline-flex items-center gap-1 pl-2 pr-1 py-0.5 rounded-full text-xs font-medium border ${CHIP_STYLE[chip.type]}`}>
+                  {CHIP_PREFIX[chip.type] && <span className="opacity-60 text-[10px]">{CHIP_PREFIX[chip.type]}</span>}
+                  <span>{chip.value}</span>
+                  <button type="button" onClick={() => handleRemoveChip(chip.raw)}
+                    className="ml-0.5 p-0.5 rounded-full hover:bg-black/10 transition-colors flex-shrink-0">
+                    <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
                 </span>
-              )}
-              {filterFrom && (
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-violet-100 text-violet-700 text-xs font-medium">
-                  送信者: {filterFrom}
-                </span>
-              )}
-              {filterAfter && (
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 text-xs font-medium">
-                  {filterAfter} 以降
-                </span>
-              )}
-              {filterBefore && (
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 text-xs font-medium">
-                  {filterBefore} 以前
-                </span>
-              )}
-              {filterAttachment && (
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 text-xs font-medium">
-                  添付あり
-                </span>
-              )}
+              ))}
             </div>
           )}
         </form>

@@ -5,25 +5,46 @@ import { getSession, requireAuth } from '@/lib/auth';
 /**
  * Parse a search query string into structured filters.
  *
- * Supported prefixes:
+ * Message-level prefixes:
  *   from:name/email   - sender filter
  *   to:address        - recipient filter
+ *   cc:address        - CC filter
+ *   bcc:address       - BCC filter
  *   subject:text      - subject-only filter
+ *   body:text         - body-only filter
  *   has:attachment    - has attachments
  *   after:YYYY-MM-DD  - sent after date
  *   before:YYYY-MM-DD - sent before date
- *   everything else   - full-text (subject + body + sender)
+ * Thread-level prefixes:
+ *   mailbox:name      - mailbox display_name filter
+ *   status:value      - thread status filter (open/in_progress/done/waiting)
+ *   assigned:name     - assigned user name filter
+ * Everything else: full-text (subject + body + sender + recipients)
  */
 function parseQuery(raw: string) {
   const tokens = raw.trim().split(/\s+/);
   const filters = {
     from: [] as string[],
     to: [] as string[],
+    cc: [] as string[],
+    bcc: [] as string[],
     subject: [] as string[],
+    body: [] as string[],
     text: [] as string[],
     hasAttachment: false,
     after: null as Date | null,
     before: null as Date | null,
+    mailbox: [] as string[],
+    status: [] as string[],
+    assigned: [] as string[],
+  };
+
+  const STATUS_MAP: Record<string, string> = {
+    '未対応': 'open', 'open': 'open',
+    '対応中': 'in_progress', 'in_progress': 'in_progress',
+    '完了': 'done', 'done': 'done',
+    '保留': 'waiting', 'waiting': 'waiting',
+    'archived': 'archived',
   };
 
   for (const tok of tokens) {
@@ -36,7 +57,13 @@ function parseQuery(raw: string) {
       if (!val) continue;
       if (prefix === 'from') { filters.from.push(val); continue; }
       if (prefix === 'to') { filters.to.push(val); continue; }
+      if (prefix === 'cc') { filters.cc.push(val); continue; }
+      if (prefix === 'bcc') { filters.bcc.push(val); continue; }
       if (prefix === 'subject') { filters.subject.push(val); continue; }
+      if (prefix === 'body') { filters.body.push(val); continue; }
+      if (prefix === 'mailbox') { filters.mailbox.push(val); continue; }
+      if (prefix === 'status') { const s = STATUS_MAP[val] || STATUS_MAP[val.toLowerCase()] || val; filters.status.push(s); continue; }
+      if (prefix === 'assigned') { filters.assigned.push(val); continue; }
       if (prefix === 'after') { const d = new Date(val); if (!isNaN(d.getTime())) { filters.after = d; } continue; }
       if (prefix === 'before') { const d = new Date(val); if (!isNaN(d.getTime())) { filters.before = new Date(d.getTime() + 86400000); } continue; }
     }
@@ -63,13 +90,14 @@ export async function GET(req: NextRequest) {
   const cursorLast = url.searchParams.get('cursor') || undefined;
   const cursorId = url.searchParams.get('cursor_id') || undefined;
 
-  // Build message-level conditions for full-text search
+  // Build message-level and thread-level conditions for search
   let messageWhere: Record<string, unknown> | undefined;
+  const threadSearchClauses: object[] = [];
   if (q) {
     const f = parseQuery(q);
     const andClauses: object[] = [];
 
-    // Free-text terms: match subject OR body OR sender name/email
+    // Free-text terms: match subject OR body OR sender/recipients
     for (const term of f.text) {
       andClauses.push({
         OR: [
@@ -78,6 +106,7 @@ export async function GET(req: NextRequest) {
           { from_name: { contains: term, mode: 'insensitive' } },
           { from_email: { contains: term, mode: 'insensitive' } },
           { to_raw: { contains: term, mode: 'insensitive' } },
+          { cc_raw: { contains: term, mode: 'insensitive' } },
         ]
       });
     }
@@ -97,9 +126,24 @@ export async function GET(req: NextRequest) {
       andClauses.push({ to_raw: { contains: val, mode: 'insensitive' } });
     }
 
+    // cc: filter
+    for (const val of f.cc) {
+      andClauses.push({ cc_raw: { contains: val, mode: 'insensitive' } });
+    }
+
+    // bcc: filter
+    for (const val of f.bcc) {
+      andClauses.push({ bcc_raw: { contains: val, mode: 'insensitive' } });
+    }
+
     // subject: filter
     for (const val of f.subject) {
       andClauses.push({ subject: { contains: val, mode: 'insensitive' } });
+    }
+
+    // body: filter (text body only)
+    for (const val of f.body) {
+      andClauses.push({ text_body: { contains: val, mode: 'insensitive' } });
     }
 
     // has:attachment
@@ -111,6 +155,17 @@ export async function GET(req: NextRequest) {
 
     if (andClauses.length > 0) {
       messageWhere = (andClauses.length === 1 ? andClauses[0] : { AND: andClauses }) as Record<string, unknown>;
+    }
+
+    // Thread-level filters (mailbox, status, assigned)
+    for (const val of f.mailbox) {
+      threadSearchClauses.push({ mailbox: { display_name: { contains: val, mode: 'insensitive' } } });
+    }
+    for (const val of f.status) {
+      threadSearchClauses.push({ status: val as any });
+    }
+    for (const val of f.assigned) {
+      threadSearchClauses.push({ assigned_user: { name: { contains: val, mode: 'insensitive' } } });
     }
   }
 
@@ -135,6 +190,9 @@ export async function GET(req: NextRequest) {
         : messageWhere
           ? { messages: { some: messageWhere } }
           : {}),
+
+      // Thread-level search filters (mailbox:, status:, assigned: from q)
+      ...(threadSearchClauses.length > 0 ? { AND: threadSearchClauses } : {}),
 
       mailbox: {
         ...(type ? { type: type as any } : {}),
