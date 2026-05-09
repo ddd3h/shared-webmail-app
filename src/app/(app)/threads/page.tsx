@@ -8,6 +8,7 @@ import { useDraft } from '@/hooks/useDraft';
 import { useCollab } from '@/hooks/useCollab';
 import DraftStatusBar from '@/components/DraftStatus';
 import EmailChipInput from '@/components/EmailChipInput';
+import SendingOverlay from '@/components/SendingOverlay';
 
 const RichEditor = dynamic(() => import('@/components/RichEditor'), { ssr: false });
 const CollabEditor = dynamic(() => import('@/components/CollabEditor'), { ssr: false });
@@ -100,6 +101,7 @@ function ComposeModal({ onClose, onSent, initialDraftId }: { onClose: () => void
   const [aiLoading, setAiLoading] = useState(false);
   const [composeSig, setComposeSig] = useState('');
   const [composeSigVisible, setComposeSigVisible] = useState(true);
+  const [showSendOverlay, setShowSendOverlay] = useState(false);
   const editorRef = useRef<RichEditorHandle | CollabEditorHandle>(null);
   const richContentRef = useRef('');
   const draft = useDraft(initialDraftId);
@@ -182,11 +184,15 @@ function ComposeModal({ onClose, onSent, initialDraftId }: { onClose: () => void
     }
   }
 
-  async function send() {
+  function triggerSend() {
     if (!toChips.length) { setError('宛先を入力してください'); return; }
     if (!subject.trim()) { setError('件名を入力してください'); return; }
     if (!selectedMailbox) { setError('送信元メールアカウントを選択してください'); return; }
+    setShowSendOverlay(true);
+  }
 
+  async function send() {
+    setShowSendOverlay(false);
     setSending(true);
     setError('');
     try {
@@ -241,6 +247,13 @@ function ComposeModal({ onClose, onSent, initialDraftId }: { onClose: () => void
   // ── Full modal ───────────────────────────────────────────────────
   return (
     <div className="fixed inset-0 z-50 flex flex-col sm:items-center sm:justify-center sm:p-4">
+      {/* Sending overlay */}
+      {showSendOverlay && (
+        <SendingOverlay
+          onConfirm={send}
+          onCancel={() => setShowSendOverlay(false)}
+        />
+      )}
       {/* Backdrop (デスクトップのみ有効) */}
       <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={() => setMinimized(true)} />
 
@@ -449,7 +462,7 @@ function ComposeModal({ onClose, onSent, initialDraftId }: { onClose: () => void
                 <span className="hidden sm:inline">キャンセル</span>
               </button>
               {/* Send */}
-              <button onClick={send} disabled={sending} className="btn btn-primary btn-sm gap-1">
+              <button onClick={triggerSend} disabled={sending} className="btn btn-primary btn-sm gap-1">
                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
                 </svg>
