@@ -615,8 +615,27 @@ export default function ThreadDetailPage({ params }: Props) {
           {/* Bottom row: status + assign + mailbox + more */}
           <div className="flex items-center gap-2 py-2 flex-wrap">
             {/* Mailbox badge */}
-            <span className="text-xs text-gray-400 bg-gray-50 border border-gray-200 rounded-full px-2.5 py-0.5 flex-shrink-0">
-              {data.mailbox.name}
+            <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border flex-shrink-0 ${
+              isTeam
+                ? 'bg-blue-50 text-blue-700 border-blue-200'
+                : 'bg-violet-50 text-violet-700 border-violet-200'
+            }`}>
+              {isTeam ? (
+                <svg className="w-3 h-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+              ) : (
+                <svg className="w-3 h-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                </svg>
+              )}
+              <span>{data.mailbox.name}</span>
+              {data.mailbox.email_address && (
+                <>
+                  <span className="opacity-40">·</span>
+                  <span className="opacity-70 font-normal">{data.mailbox.email_address}</span>
+                </>
+              )}
             </span>
 
             {/* Status dropdown (team only) */}

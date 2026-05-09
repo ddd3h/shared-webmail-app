@@ -171,9 +171,10 @@ export async function syncMailbox(mailboxId: string): Promise<{ synced: number; 
           // Normalize message ID: strip angle brackets so "<id@host>" and "id@host" match
           const externalId = (mid ? mid.trim().replace(/^<|>$/g, '').trim() : '') || `uid:${mailboxId}:${uid}`;
 
-          // Dedup check
+          // Dedup check — scoped to this mailbox so the same email CC'd to
+          // multiple mailboxes gets its own record and thread per mailbox.
           const exists = await prisma.messages.findFirst({
-            where: { external_message_id: externalId }
+            where: { external_message_id: externalId, mailbox_id: mailboxId }
           });
           if (exists) {
             // Update last seen UID even for existing messages
