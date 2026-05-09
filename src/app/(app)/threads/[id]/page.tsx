@@ -293,7 +293,11 @@ export default function ThreadDetailPage({ params }: Props) {
   function openReply() {
     setShowReply(true);
     setShowReplyQuote(false);
-    const lastIncoming = data?.messages?.slice().reverse().find(m => m.direction === 'incoming');
+    const mailboxEmail = data?.mailbox?.email_address;
+    // Skip messages where we are the sender (e.g. our sent replies that landed in INBOX)
+    const lastIncoming = data?.messages?.slice().reverse().find(
+      m => m.direction === 'incoming' && m.from.email !== mailboxEmail
+    );
     setReplyFromMailboxId(data?.mailbox?.id || '');
     setReplySigVisible(true);
     if (lastIncoming) {
@@ -304,7 +308,9 @@ export default function ThreadDetailPage({ params }: Props) {
     }
     setTimeout(() => {
       if (editorRef.current) {
-        const lastIncoming = data?.messages?.slice().reverse().find(m => m.direction === 'incoming');
+        const lastIncoming = data?.messages?.slice().reverse().find(
+          m => m.direction === 'incoming' && m.from.email !== mailboxEmail
+        );
         editorRef.current.setHTML('<p></p>');
         if (lastIncoming) {
           const qHtml = lastIncoming.html_body
@@ -325,7 +331,10 @@ export default function ThreadDetailPage({ params }: Props) {
     if (!data?.messages?.length) return;
     setReplySending(true);
     try {
-      const lastIncoming = [...data.messages].reverse().find(m => m.direction === 'incoming') || data.messages[data.messages.length - 1];
+      const mailboxEmail = data?.mailbox?.email_address;
+      const lastIncoming = [...data.messages].reverse().find(
+        m => m.direction === 'incoming' && m.from.email !== mailboxEmail
+      ) || data.messages[data.messages.length - 1];
       const bodyHtml = editorRef.current.getHTML();
       const text = editorRef.current.getText();
       // Append the collapsed quote at the end of the sent email
@@ -333,7 +342,7 @@ export default function ThreadDetailPage({ params }: Props) {
         ? `<p style="color:#6b7280;font-size:12px;margin-top:16px">${replyQuote.header}</p><blockquote style="border-left:3px solid #d1d5db;margin:8px 0;padding:4px 12px;color:#6b7280">${replyQuote.html}</blockquote>`
         : '';
       const sigSection = replySigVisible && signature
-        ? `<p style="color:#374151;font-size:13px;margin-top:12px">--<br>${signature.replace(/\n/g, '<br>')}</p>`
+        ? `<p>--<br>${signature.replace(/\n/g, '<br>')}</p>`
         : '';
       const html = bodyHtml + sigSection + quoteSection;
       const fd = new FormData();
@@ -427,7 +436,7 @@ export default function ThreadDetailPage({ params }: Props) {
     try {
       const subject = `Fw: ${data?.subject || ''}`;
       const sigSection = forwardSigVisible && signature
-        ? `<p style="color:#374151;font-size:13px;margin-top:12px">--<br>${signature.replace(/\n/g, '<br>')}</p>`
+        ? `<p>--<br>${signature.replace(/\n/g, '<br>')}</p>`
         : '';
       const html = forwardEditorRef.current.getHTML() + sigSection;
       const text = forwardEditorRef.current.getText();
@@ -1084,20 +1093,24 @@ export default function ThreadDetailPage({ params }: Props) {
 
             {/* Signature */}
             {signature && (
-              <div className="mx-3 border-t border-dashed border-gray-200">
-                <div className="flex items-center justify-between py-1.5">
-                  <span className="text-xs text-gray-400">-- 署名</span>
+              <div className="mx-3 border-t border-dashed border-gray-200 pt-2 pb-2">
+                <div className="flex items-start justify-between gap-2">
+                  {replySigVisible ? (
+                    <p className="text-sm text-gray-900 whitespace-pre-wrap flex-1">{'--\n'}{signature}</p>
+                  ) : (
+                    <span className="flex-1" />
+                  )}
                   <button
                     type="button"
                     onClick={() => setReplySigVisible(v => !v)}
-                    className="text-xs text-blue-500 hover:text-blue-700 transition-colors"
+                    title={replySigVisible ? '署名を外す' : '署名を追加'}
+                    className={`flex-shrink-0 p-1 rounded transition-colors ${replySigVisible ? 'text-blue-500 hover:text-blue-700' : 'text-gray-300 hover:text-gray-500'}`}
                   >
-                    {replySigVisible ? '署名を外す' : '署名を追加'}
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                    </svg>
                   </button>
                 </div>
-                {replySigVisible && (
-                  <p className="text-xs text-gray-500 whitespace-pre-wrap pb-2">{signature}</p>
-                )}
               </div>
             )}
 
@@ -1296,20 +1309,24 @@ export default function ThreadDetailPage({ params }: Props) {
 
           {/* Signature */}
           {signature && (
-            <div className="mx-3 border-t border-dashed border-gray-200">
-              <div className="flex items-center justify-between py-1.5">
-                <span className="text-xs text-gray-400">-- 署名</span>
+            <div className="mx-3 border-t border-dashed border-gray-200 pt-2 pb-2">
+              <div className="flex items-start justify-between gap-2">
+                {forwardSigVisible ? (
+                  <p className="text-sm text-gray-900 whitespace-pre-wrap flex-1">{'--\n'}{signature}</p>
+                ) : (
+                  <span className="text-sm text-gray-400">--</span>
+                )}
                 <button
                   type="button"
                   onClick={() => setForwardSigVisible(v => !v)}
-                  className="text-xs text-blue-500 hover:text-blue-700 transition-colors"
+                  title={forwardSigVisible ? '署名を外す' : '署名を追加'}
+                  className={`flex-shrink-0 p-1 rounded transition-colors ${forwardSigVisible ? 'text-blue-500 hover:text-blue-700' : 'text-gray-300 hover:text-gray-500'}`}
                 >
-                  {forwardSigVisible ? '署名を外す' : '署名を追加'}
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                  </svg>
                 </button>
               </div>
-              {forwardSigVisible && (
-                <p className="text-xs text-gray-500 whitespace-pre-wrap pb-2">{signature}</p>
-              )}
             </div>
           )}
 

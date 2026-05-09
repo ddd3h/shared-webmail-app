@@ -7,6 +7,7 @@ import type { CollabEditorHandle } from '@/components/CollabEditor';
 import { useDraft } from '@/hooks/useDraft';
 import { useCollab } from '@/hooks/useCollab';
 import DraftStatusBar from '@/components/DraftStatus';
+import EmailChipInput from '@/components/EmailChipInput';
 
 const RichEditor = dynamic(() => import('@/components/RichEditor'), { ssr: false });
 const CollabEditor = dynamic(() => import('@/components/CollabEditor'), { ssr: false });
@@ -87,8 +88,8 @@ function RecipientInput({ value, onChange, placeholder, onScheduleSave }: {
 function ComposeModal({ onClose, onSent, initialDraftId }: { onClose: () => void; onSent: () => void; initialDraftId?: string }) {
   const [mailboxes, setMailboxes] = useState<Mailbox[]>([]);
   const [selectedMailbox, setSelectedMailbox] = useState('');
-  const [to, setTo] = useState('');
-  const [cc, setCc] = useState('');
+  const [toChips, setToChips] = useState<string[]>([]);
+  const [ccChips, setCcChips] = useState<string[]>([]);
   const [showCc, setShowCc] = useState(false);
   const [subject, setSubject] = useState('');
   const [sending, setSending] = useState(false);
@@ -97,24 +98,24 @@ function ComposeModal({ onClose, onSent, initialDraftId }: { onClose: () => void
   const [attachments, setAttachments] = useState<File[]>([]);
   const [minimized, setMinimized] = useState(false);
   const [aiLoading, setAiLoading] = useState(false);
+  const [composeSig, setComposeSig] = useState('');
+  const [composeSigVisible, setComposeSigVisible] = useState(true);
   const editorRef = useRef<RichEditorHandle | CollabEditorHandle>(null);
-  // Preserve RichEditor content so it can be injected into CollabEditor when collab connects
   const richContentRef = useRef('');
-  const sigHTMLRef = useRef('');
   const draft = useDraft(initialDraftId);
   const isTeam = mailboxes.find(m => m.id === selectedMailbox)?.type === 'team';
   const collabSessionId = isTeam && draft.draftId ? `draft-${draft.draftId}` : undefined;
   const collab = useCollab(collabSessionId);
 
   // Accept override values to avoid stale-closure issue when called inside onChange handlers
-  const scheduleFieldSave = (overrides: { subject?: string; to_raw?: string; cc_raw?: string } = {}) => {
+  const scheduleFieldSave = (overrides: { subject?: string; to_raw?: string; cc_raw?: string; toChips?: string[]; ccChips?: string[] } = {}) => {
     const mb = mailboxes.find(m => m.id === selectedMailbox);
     const isShared = mb?.type === 'team';
     const inCollabMode = !!(isTeam && collab.doc);
     draft.scheduleSave({
       mailbox_id: selectedMailbox || undefined,
-      to_raw: overrides.to_raw ?? to,
-      cc_raw: overrides.cc_raw ?? cc,
+      to_raw: overrides.to_raw ?? (overrides.toChips ?? toChips).join(', '),
+      cc_raw: overrides.cc_raw ?? ((overrides.ccChips ?? ccChips).join(', ') || undefined),
       subject: overrides.subject ?? subject,
       // Yjs manages body in collab mode; avoid overwriting with stale editor state
       ...(!inCollabMode && {
@@ -135,12 +136,7 @@ function ComposeModal({ onClose, onSent, initialDraftId }: { onClose: () => void
     if (!initialDraftId) {
       fetch('/api/user/signature').then(r => r.json()).then(d => {
         const sig = d.signature ?? (d.name ? `${d.name}${d.email ? '\n' + d.email : ''}` : '');
-        if (sig) {
-          const html = `<p></p><p style="color:#111827;font-size:13px">${sig.replace(/\n/g, '<br>')}</p>`;
-          setInitialBody(html);
-          richContentRef.current = html;
-          sigHTMLRef.current = html;
-        }
+        if (sig) setComposeSig(sig);
       }).catch(() => {});
     }
   }, []);
@@ -149,8 +145,9 @@ function ComposeModal({ onClose, onSent, initialDraftId }: { onClose: () => void
     if (!initialDraftId) return;
     fetch(`/api/drafts/${initialDraftId}`).then(r => r.json()).then(d => {
       if (d.id) {
-        setTo(d.to_raw || '');
-        setCc(d.cc_raw || ''); if (d.cc_raw) setShowCc(true);
+        setToChips(d.to_raw ? d.to_raw.split(/[,;]\s*/).map((s: string) => s.trim()).filter(Boolean) : []);
+        const loadedCc = d.cc_raw ? d.cc_raw.split(/[,;]\s*/).map((s: string) => s.trim()).filter(Boolean) : [];
+        setCcChips(loadedCc); if (loadedCc.length > 0) setShowCc(true);
         setSubject(d.subject || '');
         if (d.mailbox_id) setSelectedMailbox(d.mailbox_id);
         if (d.html_body) { setInitialBody(d.html_body); richContentRef.current = d.html_body; }
@@ -172,14 +169,13 @@ function ComposeModal({ onClose, onSent, initialDraftId }: { onClose: () => void
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           subject,
-          to,
+          to: toChips.join(', '),
           draft: editorRef.current.isEmpty() ? '' : editorRef.current.getHTML(),
         }),
       });
       const json = await res.json();
       if (!res.ok) { setError(json.error || 'AI処理に失敗しました'); return; }
-      const sigHtml = sigHTMLRef.current ? `<p></p>${sigHTMLRef.current}` : '';
-      editorRef.current.setHTML(json.text.replace(/\n/g, '<br>') + sigHtml);
+      editorRef.current.setHTML(json.text.replace(/\n/g, '<br>'));
       editorRef.current.focus();
     } finally {
       setAiLoading(false);
@@ -187,21 +183,24 @@ function ComposeModal({ onClose, onSent, initialDraftId }: { onClose: () => void
   }
 
   async function send() {
-    const toList = to.split(/[,;\s]+/).map(s => s.trim()).filter(Boolean);
-    if (!toList.length) { setError('宛先を入力してください'); return; }
+    if (!toChips.length) { setError('宛先を入力してください'); return; }
     if (!subject.trim()) { setError('件名を入力してください'); return; }
     if (!selectedMailbox) { setError('送信元メールアカウントを選択してください'); return; }
 
     setSending(true);
     setError('');
     try {
-      const html = editorRef.current?.getHTML() || '';
-      const text = editorRef.current?.getText() || '';
-      const ccList = cc.split(/[,;\s]+/).map(s => s.trim()).filter(Boolean);
+      const editorHtml = editorRef.current?.getHTML() || '';
+      const editorText = editorRef.current?.getText() || '';
+      const sigSuffix = composeSig && composeSigVisible
+        ? `<p>--<br>${composeSig.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>')}</p>`
+        : '';
+      const html = editorHtml + sigSuffix;
+      const text = composeSig && composeSigVisible ? `${editorText}\n\n-- \n${composeSig}` : editorText;
       const fd = new FormData();
       fd.append('mailbox_id', selectedMailbox);
-      fd.append('to', JSON.stringify(toList));
-      if (ccList.length) fd.append('cc', JSON.stringify(ccList));
+      fd.append('to', JSON.stringify(toChips));
+      if (ccChips.length) fd.append('cc', JSON.stringify(ccChips));
       fd.append('subject', subject);
       fd.append('html', html);
       fd.append('text', text);
@@ -246,7 +245,7 @@ function ComposeModal({ onClose, onSent, initialDraftId }: { onClose: () => void
       <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={() => setMinimized(true)} />
 
       {/* Modal — モバイルは全画面、デスクトップはカード */}
-      <div className="relative w-full h-full sm:h-auto sm:max-w-3xl bg-white sm:rounded-2xl sm:shadow-2xl flex flex-col sm:max-h-[92vh]">
+      <div className="relative w-full h-full sm:h-auto sm:max-w-5xl bg-white sm:rounded-2xl sm:shadow-2xl flex flex-col sm:max-h-[94vh]">
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-3 border-b border-gray-200 flex-shrink-0 bg-gray-800 sm:rounded-t-2xl">
           <h2 className="font-semibold text-white text-sm">新規メール作成</h2>
@@ -272,20 +271,32 @@ function ComposeModal({ onClose, onSent, initialDraftId }: { onClose: () => void
             </div>
 
             {/* To */}
-            <div className="flex items-center gap-3 border-b border-gray-100 py-2.5">
-              <span className="text-xs font-medium text-gray-400 w-12 flex-shrink-0">To</span>
-              <RecipientInput value={to} onChange={setTo} placeholder="宛先アドレス（カンマ区切りで複数可）" onScheduleSave={(v) => scheduleFieldSave({ to_raw: v })} />
+            <div className="flex items-start gap-3 border-b border-gray-100 py-2">
+              <span className="text-xs font-medium text-gray-400 w-12 flex-shrink-0 pt-2">To</span>
+              <div className="flex-1 min-w-0">
+                <EmailChipInput
+                  chips={toChips}
+                  onChange={chips => { setToChips(chips); scheduleFieldSave({ toChips: chips }); }}
+                  placeholder="宛先アドレス（Enter・Tab・カンマで確定）"
+                />
+              </div>
               {!showCc && (
-                <button type="button" onClick={() => setShowCc(true)} className="text-xs text-blue-600 hover:underline flex-shrink-0">Cc追加</button>
+                <button type="button" onClick={() => setShowCc(true)} className="text-xs text-blue-600 hover:underline flex-shrink-0 pt-2">Cc追加</button>
               )}
             </div>
 
             {/* CC */}
             {showCc && (
-              <div className="flex items-center gap-3 border-b border-gray-100 py-2.5">
-                <span className="text-xs font-medium text-gray-400 w-12 flex-shrink-0">Cc</span>
-                <RecipientInput value={cc} onChange={setCc} placeholder="CC（省略可）" onScheduleSave={(v) => scheduleFieldSave({ cc_raw: v })} />
-                <button type="button" onClick={() => { setShowCc(false); setCc(''); }} className="text-xs text-gray-400 hover:text-gray-600 flex-shrink-0">×</button>
+              <div className="flex items-start gap-3 border-b border-gray-100 py-2">
+                <span className="text-xs font-medium text-gray-400 w-12 flex-shrink-0 pt-2">Cc</span>
+                <div className="flex-1 min-w-0">
+                  <EmailChipInput
+                    chips={ccChips}
+                    onChange={chips => { setCcChips(chips); scheduleFieldSave({ ccChips: chips }); }}
+                    placeholder="CC（Enter・Tab・カンマで確定）"
+                  />
+                </div>
+                <button type="button" onClick={() => { setShowCc(false); setCcChips([]); }} className="text-xs text-gray-400 hover:text-gray-600 flex-shrink-0 pt-2">×</button>
               </div>
             )}
 
@@ -311,14 +322,14 @@ function ComposeModal({ onClose, onSent, initialDraftId }: { onClose: () => void
                   me={collab.me}
                   activeUsers={collab.activeUsers}
                   placeholder="本文を入力してください…"
-                  minHeight={240}
+                  minHeight={360}
                   initialHTML={richContentRef.current || undefined}
                 />
               ) : (
                 <RichEditor
                   ref={editorRef as React.Ref<RichEditorHandle>}
                   placeholder="本文を入力してください…"
-                  minHeight={240}
+                  minHeight={360}
                   initialHTML={initialBody}
                   onInput={() => {
                     richContentRef.current = editorRef.current?.getHTML() || richContentRef.current;
@@ -327,6 +338,29 @@ function ComposeModal({ onClose, onSent, initialDraftId }: { onClose: () => void
                 />
               )}
             </div>
+
+            {/* Signature */}
+            {composeSig && (
+              <div className="mx-0 border-t border-dashed border-gray-200 mt-1 pt-2 pb-2">
+                <div className="flex items-start justify-between gap-2">
+                  {composeSigVisible ? (
+                    <p className="text-sm text-gray-900 whitespace-pre-wrap flex-1">{'--\n'}{composeSig}</p>
+                  ) : (
+                    <span className="flex-1" />
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setComposeSigVisible(v => !v)}
+                    title={composeSigVisible ? '署名を外す' : '署名を追加'}
+                    className={`flex-shrink-0 p-1 rounded transition-colors ${composeSigVisible ? 'text-blue-500 hover:text-blue-700' : 'text-gray-300 hover:text-gray-500'}`}
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+            )}
 
             {/* Attachments list */}
             {attachments.length > 0 && (
@@ -439,6 +473,7 @@ type Thread = {
   last: string;
   mailbox: string;
   mailbox_type: string;
+  mailbox_id: string;
   assigned: string | null;
   last_replied_by: string | null;
   from_email: string | null;
@@ -446,6 +481,24 @@ type Thread = {
   has_mattermost: boolean;
   readers: ThreadReader[];
 };
+
+const MAILBOX_COLOR_PALETTE = [
+  'bg-violet-500', 'bg-emerald-500', 'bg-amber-500', 'bg-rose-500',
+  'bg-cyan-500', 'bg-pink-500', 'bg-indigo-500', 'bg-teal-500',
+];
+
+function mailboxColorIndex(id: string): number {
+  let h = 0;
+  for (let i = 0; i < id.length; i++) h = (Math.imul(31, h) + id.charCodeAt(i)) >>> 0;
+  return h % MAILBOX_COLOR_PALETTE.length;
+}
+
+function mailboxDot(mailboxId: string, name: string) {
+  const cls = MAILBOX_COLOR_PALETTE[mailboxColorIndex(mailboxId)];
+  return (
+    <span title={name} className={`inline-block w-2 h-2 rounded-full flex-shrink-0 ${cls}`} />
+  );
+}
 
 const STATUS_LABELS: Record<string, string> = {
   open: '未対応',
@@ -527,6 +580,7 @@ function ThreadList() {
   const [personalUnread, setPersonalUnread] = useState(0);
   const [teamUnread, setTeamUnread] = useState(0);
   const [nextCursor, setNextCursor] = useState<{ last: string; id: string } | null>(null);
+  const [cursorStack, setCursorStack] = useState<Array<{ last: string; id: string }>>([]);
   const searchParams = useSearchParams();
   const router = useRouter();
   const listRef = useRef<HTMLDivElement>(null);
@@ -642,11 +696,7 @@ function ThreadList() {
       if (cursor) { params.set('cursor', cursor.last); params.set('cursor_id', cursor.id); }
       const res = await fetch(`/api/threads?${params}`);
       const data = await res.json();
-      if (cursor) {
-        setThreads(prev => [...prev, ...(data.items || [])]);
-      } else {
-        setThreads(data.items || []);
-      }
+      setThreads(data.items || []);
       setNextCursor(data.nextCursor || null);
     }
 
@@ -668,7 +718,9 @@ function ThreadList() {
 
   useEffect(() => {
     const savedView = (sessionStorage.getItem('threads-view') as 'personal' | 'team') || 'personal';
-    const t = searchParams.get('tab') || 'unread';
+    const savedTab = sessionStorage.getItem('threads-tab');
+    sessionStorage.removeItem('threads-tab');
+    const t = savedTab ?? searchParams.get('tab') ?? 'unread';
     setMailboxView(savedView);
     setTab(t);
     load(savedView, t, '');
@@ -693,6 +745,7 @@ function ThreadList() {
     setMailboxView(view);
     setTab('unread');
     setNextCursor(null);
+    setCursorStack([]);
     resetFilters();
     setSelected(new Set());
     setConfirmDelete(false);
@@ -704,6 +757,7 @@ function ThreadList() {
   function switchTab(newTab: string) {
     setTab(newTab);
     setNextCursor(null);
+    setCursorStack([]);
     resetFilters();
     setSelected(new Set());
     setConfirmDelete(false);
@@ -725,8 +779,10 @@ function ThreadList() {
     e.preventDefault();
     const q = buildQuery(searchInput, filterFrom, filterAfter, filterBefore, filterAttachment);
     setSearch(q);
+    setTab('');
     setNextCursor(null);
-    load(mailboxView, tab, q);
+    setCursorStack([]);
+    load(mailboxView, '', q);
   }
 
   function clearSearch() {
@@ -738,6 +794,7 @@ function ThreadList() {
     setShowFilters(false);
     setSearch('');
     setNextCursor(null);
+    setCursorStack([]);
     load(mailboxView, tab, '');
   }
 
@@ -748,6 +805,7 @@ function ThreadList() {
       return;
     }
     sessionStorage.setItem('threads-scroll', String(window.scrollY));
+    sessionStorage.setItem('threads-tab', tab);
     router.push(`/threads/${id}`);
   }
 
@@ -1274,6 +1332,7 @@ function ThreadList() {
                         </span>
                       </div>
                       <div className="flex items-center gap-1.5 mt-0.5">
+                        {t.mailbox_type === 'team' && mailboxDot(t.mailbox_id, t.mailbox)}
                         <span className={`flex-1 min-w-0 truncate text-sm ${isUnread ? 'font-medium text-gray-800' : 'text-gray-500'}`}>
                           {t.subject || '(件名なし)'}
                         </span>
@@ -1330,6 +1389,7 @@ function ThreadList() {
                     </div>
                     {/* 件名 */}
                     <div className="flex-1 min-w-0 flex items-center gap-2">
+                      {t.mailbox_type === 'team' && mailboxDot(t.mailbox_id, t.mailbox)}
                       <span className={`truncate text-sm ${isUnread ? 'font-semibold text-gray-900' : 'text-gray-700'}`}>
                         {t.subject || '(件名なし)'}
                       </span>
@@ -1388,17 +1448,40 @@ function ThreadList() {
       {!showSpinner && tab !== 'drafts' && threads.length > 0 && (
         <div className="pt-2 flex items-center justify-between">
           <p className="text-xs text-gray-400">
-            {search ? `${threads.length} 件ヒット` : `${threads.length} 件`}
+            {(() => {
+              const start = cursorStack.length * 50 + 1;
+              const end = cursorStack.length * 50 + threads.length;
+              return search ? `${start}〜${end} 件ヒット` : `${start}〜${end} 件`;
+            })()}
           </p>
-          {nextCursor && (
-            <button
-              onClick={() => load(mailboxView, tab, search, nextCursor!)}
-              disabled={loading}
-              className="btn btn-secondary btn-sm text-xs disabled:opacity-50"
-            >
-              {loading ? '読み込み中…' : 'さらに読み込む'}
-            </button>
-          )}
+          <div className="flex items-center gap-2">
+            {cursorStack.length > 0 && (
+              <button
+                onClick={() => {
+                  const newStack = cursorStack.slice(0, -1);
+                  setCursorStack(newStack);
+                  setNextCursor(null);
+                  load(mailboxView, tab, search, newStack[newStack.length - 1]);
+                }}
+                disabled={loading}
+                className="btn btn-secondary btn-sm text-xs disabled:opacity-50 gap-1"
+              >
+                ← 前へ
+              </button>
+            )}
+            {nextCursor && (
+              <button
+                onClick={() => {
+                  setCursorStack(prev => [...prev, nextCursor!]);
+                  load(mailboxView, tab, search, nextCursor!);
+                }}
+                disabled={loading}
+                className="btn btn-secondary btn-sm text-xs disabled:opacity-50 gap-1"
+              >
+                次へ →
+              </button>
+            )}
+          </div>
         </div>
       )}
     </div>

@@ -84,6 +84,7 @@ model mailboxes {
   id                    String      @id @default(cuid())
   type                  MailboxType
   display_name          String
+  sender_name           String?
   email_address         String
   owner_user_id         String?
   is_active             Boolean     @default(true)

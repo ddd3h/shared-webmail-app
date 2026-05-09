@@ -66,7 +66,7 @@ export async function POST(req: NextRequest) {
       mailbox_id,
       external_message_id: `local:${crypto.randomUUID()}`,
       direction: 'outgoing',
-      from_name: mailbox.display_name,
+      from_name: mailbox.sender_name || mailbox.display_name,
       from_email: mailbox.email_address,
       to_raw: to.join(', '),
       cc_raw: cc?.join(', ') || null,

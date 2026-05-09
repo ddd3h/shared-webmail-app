@@ -119,14 +119,21 @@ export async function GET(req: NextRequest) {
       ...(status ? { status: status as any } : { status: { notIn: ['archived'] } }),
       ...(mine ? { assigned_user_id: session!.userId, status: { in: ['open', 'in_progress', 'waiting'] } } : {}),
       ...(assigned ? { assigned_user_id: { not: null } } : {}),
-      
+
+      // Unread filter at DB level for efficient pagination:
+      // - personal: unread_count > 0 (exact)
+      // - team: no read record for this user (threads read-then-updated also
+      //   caught by the client-side isUnreadForUser check below)
+      ...(unread && type === 'personal' ? { unread_count: { gt: 0 } } : {}),
+      ...(unread && type === 'team' ? { reads: { none: { user_id: session!.userId } } } : {}),
+
       // Thread filter logic:
       // - Sent: contains at least one outgoing message
       // - All/Unread (default): show any thread that has messages matching search
       ...(sent
         ? { messages: { some: { direction: 'outgoing' } } }
-        : messageWhere 
-          ? { messages: { some: messageWhere } } 
+        : messageWhere
+          ? { messages: { some: messageWhere } }
           : {}),
 
       mailbox: {
@@ -152,15 +159,15 @@ export async function GET(req: NextRequest) {
       cursor: { id: cursorId },
       skip: 1,
     } : {}),
-    // Fetch one extra to know if there's a next page; cap unread at 200 (typically few)
-    take: unread ? 200 : PAGE_LIMIT + 1,
+    // Always fetch one extra to detect next page
+    take: PAGE_LIMIT + 1,
     select: {
       id: true,
       subject: true,
       status: true,
       last_message_at: true,
       unread_count: true,
-      mailbox: { select: { display_name: true, type: true } },
+      mailbox: { select: { id: true, display_name: true, type: true } },
       assigned_user: { select: { name: true } },
       last_replied_by: { select: { name: true } },
       mattermost: { select: { id: true } },
@@ -201,6 +208,7 @@ export async function GET(req: NextRequest) {
       unread_count: isUnreadForUser ? 1 : 0,
       mailbox: t.mailbox.display_name,
       mailbox_type: t.mailbox.type,
+      mailbox_id: t.mailbox.id,
       assigned: t.assigned_user?.name || null,
       last_replied_by: t.last_replied_by?.name || null,
       has_mattermost: !!t.mattermost,
@@ -212,9 +220,9 @@ export async function GET(req: NextRequest) {
 
   let finalItems = unread ? items.filter(i => i.unread_count > 0) : items;
 
-  // Determine next cursor (only for paginated non-unread requests)
+  // Cursor-based pagination applies to all tabs
   let nextCursor: { last: string; id: string } | null = null;
-  if (!unread && finalItems.length > PAGE_LIMIT) {
+  if (finalItems.length > PAGE_LIMIT) {
     finalItems = finalItems.slice(0, PAGE_LIMIT);
     const lastItem = finalItems[finalItems.length - 1];
     nextCursor = { last: (lastItem.last as unknown as Date).toISOString(), id: lastItem.id };

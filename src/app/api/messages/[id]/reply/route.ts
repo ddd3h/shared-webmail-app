@@ -70,7 +70,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       in_reply_to: inReplyTo || null,
       references_raw: references || null,
       direction: 'outgoing',
-      from_name: sendingMailbox.display_name,
+      from_name: sendingMailbox.sender_name || sendingMailbox.display_name,
       from_email: sendingMailbox.email_address,
       to_raw: toList.join(', '),
       cc_raw: cc?.join(', ') || null,

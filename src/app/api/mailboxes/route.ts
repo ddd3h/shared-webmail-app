@@ -70,6 +70,7 @@ export async function POST(req: NextRequest) {
   const schema = z.object({
     type: z.enum(['personal', 'team']),
     display_name: z.string().min(1),
+    sender_name: z.string().optional(),
     email_address: z.string().email(),
     imap: z.object({ host: z.string(), port: z.number().int(), secure: z.boolean() }),
     smtp: z.object({ host: z.string(), port: z.number().int(), secure: z.boolean() }),
@@ -89,6 +90,7 @@ export async function POST(req: NextRequest) {
     data: {
       type: input.type as any,
       display_name: input.display_name,
+      sender_name: input.sender_name || null,
       email_address: input.email_address,
       owner_user_id: input.type === 'personal' ? session!.userId : null,
       is_active: true,

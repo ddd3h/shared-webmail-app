@@ -24,6 +24,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     id: mb.id,
     type: mb.type,
     display_name: mb.display_name,
+    sender_name: mb.sender_name,
     email_address: mb.email_address,
     is_active: mb.is_active,
     sync_mode: mb.sync_mode,
@@ -53,6 +54,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   const body = await req.json().catch(() => ({}));
   const updates: any = {};
   if (typeof body.display_name === 'string') updates.display_name = body.display_name;
+  if (typeof body.sender_name === 'string') updates.sender_name = body.sender_name || null;
   if (typeof body.is_active === 'boolean') updates.is_active = body.is_active;
   if (body.sync_mode === 'poll' || body.sync_mode === 'idle') updates.sync_mode = body.sync_mode;
   if ('mattermost_channel_id' in body) updates.mattermost_channel_id = body.mattermost_channel_id || null;
