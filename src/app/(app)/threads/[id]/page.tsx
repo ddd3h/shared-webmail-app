@@ -2,13 +2,7 @@
 import { use, useEffect, useState, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import RichEditor, { RichEditorHandle } from '@/components/RichEditor';
-import EmailChipInput from '@/components/EmailChipInput';
-import CollabEditor, { CollabEditorHandle } from '@/components/CollabEditor';
-import { useDraft } from '@/hooks/useDraft';
-import { useCollab } from '@/hooks/useCollab';
-import DraftStatusBar from '@/components/DraftStatus';
-import SendingOverlay from '@/components/SendingOverlay';
+import ComposeForm, { type SendPayload } from '@/components/ComposeForm';
 
 type Props = { params: Promise<{ id: string }> };
 
@@ -191,45 +185,28 @@ export default function ThreadDetailPage({ params }: Props) {
   const [data, setData] = useState<ThreadData | null>(null);
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
-  const [replySending, setReplySending] = useState(false);
-  const [showReplyOverlay, setShowReplyOverlay] = useState(false);
-  const pendingReplyRef = useRef<(() => void) | null>(null);
   const [msg, setMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [showReply, setShowReply] = useState(false);
-  const [replyFiles, setReplyFiles] = useState<File[]>([]);
+  const [replyInitialTo, setReplyInitialTo] = useState<string[]>([]);
+  const [replyInitialCc, setReplyInitialCc] = useState<string[]>([]);
   const [replyQuote, setReplyQuote] = useState<{ header: string; html: string } | null>(null);
-  const [showReplyQuote, setShowReplyQuote] = useState(false);
+  const lastIncomingIdRef = useRef('');
+  const [showForward, setShowForward] = useState(false);
+  const [forwardInitialBody, setForwardInitialBody] = useState('');
+  const [forwardInitialSubject, setForwardInitialSubject] = useState('');
   const [expandedMsgs, setExpandedMsgs] = useState<Set<string>>(new Set());
+  const [expandedInfo, setExpandedInfo] = useState<Set<string>>(new Set());
   const [mmChannelId, setMmChannelId] = useState('');
   const [showMmPanel, setShowMmPanel] = useState(false);
-  const [signature, setSignature] = useState('');
-  const [showForward, setShowForward] = useState(false);
-  const [forwardToChips, setForwardToChips] = useState<string[]>([]);
-  const [forwardFiles, setForwardFiles] = useState<File[]>([]);
-  const [forwardSending, setForwardSending] = useState(false);
-  const [expandedInfo, setExpandedInfo] = useState<Set<string>>(new Set());
   const [showMoveModal, setShowMoveModal] = useState(false);
   const [teamMailboxes, setTeamMailboxes] = useState<{ id: string; display_name: string; email_address: string }[]>([]);
   const [moveTarget, setMoveTarget] = useState('');
   const [moving, setMoving] = useState(false);
   const [moveStep, setMoveStep] = useState<'idle' | 'transferring' | 'done'>('idle');
   const [discussPosting, setDiscussPosting] = useState(false);
-  const [aiLoading, setAiLoading] = useState(false);
-  const [replyToChips, setReplyToChips] = useState<string[]>([]);
-  const [replyCcChips, setReplyCcChips] = useState<string[]>([]);
-  const [showReplyCc, setShowReplyCc] = useState(false);
-  const [replyFromMailboxId, setReplyFromMailboxId] = useState('');
-  const [replyMailboxes, setReplyMailboxes] = useState<{ id: string; display_name: string; email_address: string }[]>([]);
-  const [replySigVisible, setReplySigVisible] = useState(true);
-  const [forwardSigVisible, setForwardSigVisible] = useState(true);
   const router = useRouter();
-  const editorRef = useRef<RichEditorHandle | CollabEditorHandle>(null);
-  const forwardEditorRef = useRef<RichEditorHandle>(null);
   const replyBoxRef = useRef<HTMLDivElement>(null);
-  const draft = useDraft();
-  const collab = useCollab(id);
   const bottomRef = useRef<HTMLDivElement>(null);
-  const signatureRef = useRef('');
   const [showScrollTop, setShowScrollTop] = useState(false);
   const [showScrollBottom, setShowScrollBottom] = useState(false);
 
@@ -252,29 +229,7 @@ export default function ThreadDetailPage({ params }: Props) {
     fetch(`/api/threads/${id}/read`, { method: 'POST' }).catch(() => {});
   }, [id, router]);
 
-  useEffect(() => {
-    fetch('/api/mailboxes?mine=1')
-      .then(r => r.json())
-      .then(d => {
-        const canReply = (d.items || []).filter((m: any) => m.user_permissions?.can_reply);
-        setReplyMailboxes(canReply.map((m: any) => ({ id: m.id, display_name: m.display_name, email_address: m.email_address })));
-      })
-      .catch(() => {});
-  }, []);
-
-  useEffect(() => {
-    load();
-    fetch('/api/user/signature')
-      .then(r => r.json())
-      .then(d => {
-        const sig = d.signature ?? (d.name ? `${d.name}${d.email ? '\n' + d.email : ''}` : '');
-        setSignature(sig);
-        signatureRef.current = sig;
-      })
-      .catch(() => {});
-  }, [load]);
-
-  useEffect(() => { signatureRef.current = signature; }, [signature]);
+  useEffect(() => { load(); }, [load]);
 
   useEffect(() => {
     function onScroll() {
@@ -294,108 +249,72 @@ export default function ThreadDetailPage({ params }: Props) {
   }
 
   function openReply() {
-    setShowReply(true);
-    setShowReplyQuote(false);
     const mailboxEmail = data?.mailbox?.email_address;
-    // Skip messages where we are the sender (e.g. our sent replies that landed in INBOX)
     const lastIncoming = data?.messages?.slice().reverse().find(
       m => m.direction === 'incoming' && m.from.email !== mailboxEmail
     );
-    setReplyFromMailboxId(data?.mailbox?.id || '');
-    setReplySigVisible(true);
+    const replyTarget = lastIncoming || data?.messages?.[data.messages.length - 1];
+    lastIncomingIdRef.current = replyTarget?.id || '';
     if (lastIncoming) {
-      setReplyToChips([lastIncoming.from.email]);
-      const cc = (lastIncoming.cc || '').split(/,\s*/).map((s: string) => s.trim()).filter(Boolean);
-      setReplyCcChips(cc);
-      setShowReplyCc(cc.length > 0);
+      setReplyInitialTo([lastIncoming.from.email]);
+      setReplyInitialCc((lastIncoming.cc || '').split(/,\s*/).map((s: string) => s.trim()).filter(Boolean));
+      const qHtml = lastIncoming.html_body
+        || `<pre style="white-space:pre-wrap;font-family:inherit">${lastIncoming.text_body || ''}</pre>`;
+      setReplyQuote({ header: `${formatDate(lastIncoming.sent_at)}、${lastIncoming.from.name || lastIncoming.from.email || ''}:`, html: qHtml });
+    } else {
+      setReplyInitialTo([]);
+      setReplyInitialCc([]);
+      setReplyQuote(null);
     }
-    setTimeout(() => {
-      if (editorRef.current) {
-        const lastIncoming = data?.messages?.slice().reverse().find(
-          m => m.direction === 'incoming' && m.from.email !== mailboxEmail
-        );
-        editorRef.current.setHTML('<p></p>');
-        if (lastIncoming) {
-          const qHtml = lastIncoming.html_body
-            || `<pre style="white-space:pre-wrap;font-family:inherit">${lastIncoming.text_body || ''}</pre>`;
-          const qHeader = `${formatDate(lastIncoming.sent_at)}、${lastIncoming.from.name || lastIncoming.from.email || ''}:`;
-          setReplyQuote({ header: qHeader, html: qHtml });
-        } else {
-          setReplyQuote(null);
-        }
-        editorRef.current.focus();
-      }
-      replyBoxRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }, 50);
+    setShowReply(true);
+    setTimeout(() => replyBoxRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
   }
 
-  function triggerReply() {
-    if (!editorRef.current || editorRef.current.isEmpty()) return;
-    if (!data?.messages?.length) return;
-    pendingReplyRef.current = () => sendReply();
-    setShowReplyOverlay(true);
+  async function handleReplySend(payload: SendPayload): Promise<string | null> {
+    const msgId = lastIncomingIdRef.current;
+    if (!msgId) return '返信対象のメッセージが見つかりません';
+    const fd = new FormData();
+    fd.append('html', payload.html);
+    fd.append('text', payload.text);
+    if (payload.mailboxId) fd.append('fromMailboxId', payload.mailboxId);
+    if (payload.to.length) fd.append('to', JSON.stringify(payload.to));
+    if (payload.cc.length) fd.append('cc', JSON.stringify(payload.cc));
+    if (payload.bcc.length) fd.append('bcc', JSON.stringify(payload.bcc));
+    payload.files.forEach(f => fd.append('file', f));
+    const res = await fetch(`/api/messages/${msgId}/reply`, { method: 'POST', body: fd });
+    if (res.ok) {
+      flashMsg('success', '返信を送信しました');
+      await load();
+      return null;  // ComposeForm calls onCancel (=setShowReply(false)) after contact prompt
+    }
+    return '送信に失敗しました';
   }
 
-  async function sendReply() {
-    setShowReplyOverlay(false);
-    if (!editorRef.current || !data?.messages?.length) return;
-    setReplySending(true);
-    try {
-      const mailboxEmail = data?.mailbox?.email_address;
-      const lastIncoming = [...data.messages].reverse().find(
-        m => m.direction === 'incoming' && m.from.email !== mailboxEmail
-      ) || data.messages[data.messages.length - 1];
-      const bodyHtml = editorRef.current.getHTML();
-      const text = editorRef.current.getText();
-      // Append the collapsed quote at the end of the sent email
-      const quoteSection = replyQuote
-        ? `<p style="color:#6b7280;font-size:12px;margin-top:16px">${replyQuote.header}</p><blockquote style="border-left:3px solid #d1d5db;margin:8px 0;padding:4px 12px;color:#6b7280">${replyQuote.html}</blockquote>`
-        : '';
-      const sigSection = replySigVisible && signature
-        ? `<p>--<br>${signature.replace(/\n/g, '<br>')}</p>`
-        : '';
-      const html = bodyHtml + sigSection + quoteSection;
-      const fd = new FormData();
-      fd.append('html', html);
-      fd.append('text', text);
-      if (replyFromMailboxId) fd.append('fromMailboxId', replyFromMailboxId);
-      if (replyToChips.length > 0) fd.append('to', JSON.stringify(replyToChips));
-      if (replyCcChips.length > 0) fd.append('cc', JSON.stringify(replyCcChips));
-      replyFiles.forEach(f => fd.append('file', f));
-      const res = await fetch(`/api/messages/${lastIncoming.id}/reply`, { method: 'POST', body: fd });
-      if (res.ok) {
-        await draft.deleteDraft();
-        flashMsg('success', '返信を送信しました');
-        setShowReply(false);
-        setReplyFiles([]);
-        setReplyQuote(null);
-        await load();
-      } else {
-        flashMsg('error', '送信に失敗しました');
-      }
-    } finally {
-      setReplySending(false);
-    }
+  function openForward() {
+    if (!data) return;
+    const lastMsg = data.messages[data.messages.length - 1];
+    const body = lastMsg
+      ? `<p></p><p style="color:#6b7280;font-size:12px">---- 転送メッセージ ----<br>送信元: ${lastMsg.from.name || lastMsg.from.email}<br>日付: ${formatDate(lastMsg.sent_at)}<br>件名: ${data.subject || ''}<br>宛先: ${lastMsg.to}</p><blockquote style="border-left:3px solid #d1d5db;margin:8px 0;padding:4px 12px;color:#6b7280">${lastMsg.html_body || `<pre style="white-space:pre-wrap;font-family:inherit">${lastMsg.text_body || ''}</pre>`}</blockquote>`
+      : '';
+    setForwardInitialBody(body);
+    setForwardInitialSubject(`Fw: ${data.subject || ''}`);
+    setShowForward(true);
+    setTimeout(() => replyBoxRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
   }
 
-  async function handleAiAssist() {
-    if (!editorRef.current) return;
-    setAiLoading(true);
-    try {
-      const draft = editorRef.current.isEmpty() ? '' : editorRef.current.getHTML();
-      const res = await fetch('/api/ai/reply', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ threadId: id, draft }),
-      });
-      const json = await res.json();
-      if (!res.ok) { flashMsg('error', json.error || 'AI処理に失敗しました'); return; }
-      const html = json.text.replace(/\n/g, '<br>');
-      editorRef.current.setHTML(html);
-      editorRef.current.focus();
-    } finally {
-      setAiLoading(false);
-    }
+  async function handleForwardSend(payload: SendPayload): Promise<string | null> {
+    const fd = new FormData();
+    fd.append('to', JSON.stringify(payload.to));
+    if (payload.cc.length) fd.append('cc', JSON.stringify(payload.cc));
+    if (payload.bcc.length) fd.append('bcc', JSON.stringify(payload.bcc));
+    fd.append('subject', payload.subject);
+    fd.append('html', payload.html);
+    fd.append('text', payload.text);
+    fd.append('mailbox_id', payload.mailboxId || data!.mailbox.id);
+    payload.files.forEach(f => fd.append('file', f));
+    const res = await fetch('/api/messages/compose', { method: 'POST', body: fd });
+    if (res.ok) { flashMsg('success', '転送しました'); return null; }  // ComposeForm calls onCancel after contact prompt
+    return '転送に失敗しました';
   }
 
   async function changeAssign(userId: string) {
@@ -420,55 +339,6 @@ export default function ThreadDetailPage({ params }: Props) {
     const res = await fetch(`/api/threads/${id}/unread`, { method: 'POST' });
     if (res.ok) { router.push('/threads'); }
     else flashMsg('error', '未読にするのに失敗しました');
-  }
-
-  function openForward() {
-    setShowForward(true);
-    setForwardToChips([]);
-    setForwardSigVisible(true);
-    setTimeout(() => {
-      if (forwardEditorRef.current && data) {
-        const lastMsg = data.messages[data.messages.length - 1];
-        const quotedContent = lastMsg
-          ? `<p></p><p style="color:#6b7280;font-size:12px">---- 転送メッセージ ----<br>送信元: ${lastMsg.from.name || lastMsg.from.email}<br>日付: ${formatDate(lastMsg.sent_at)}<br>件名: ${data.subject || ''}<br>宛先: ${lastMsg.to}</p><blockquote style="border-left:3px solid #d1d5db;margin:8px 0;padding:4px 12px;color:#6b7280">${lastMsg.html_body || `<pre style="white-space:pre-wrap;font-family:inherit">${lastMsg.text_body || ''}</pre>`}</blockquote>`
-          : '';
-        forwardEditorRef.current.setHTML(`<p></p>${quotedContent}`);
-        forwardEditorRef.current.focus();
-      }
-      replyBoxRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }, 50);
-  }
-
-  async function sendForward() {
-    if (!forwardEditorRef.current || forwardEditorRef.current.isEmpty()) return;
-    if (!forwardToChips.length) { flashMsg('error', '宛先を入力してください'); return; }
-    setForwardSending(true);
-    try {
-      const subject = `Fw: ${data?.subject || ''}`;
-      const sigSection = forwardSigVisible && signature
-        ? `<p>--<br>${signature.replace(/\n/g, '<br>')}</p>`
-        : '';
-      const html = forwardEditorRef.current.getHTML() + sigSection;
-      const text = forwardEditorRef.current.getText();
-      const fd = new FormData();
-      fd.append('to', JSON.stringify(forwardToChips));
-      fd.append('subject', subject);
-      fd.append('html', html);
-      fd.append('text', text);
-      fd.append('mailbox_id', data!.mailbox.id);
-      forwardFiles.forEach(f => fd.append('file', f));
-      const res = await fetch('/api/messages/compose', { method: 'POST', body: fd });
-      if (res.ok) {
-        flashMsg('success', '転送しました');
-        setShowForward(false);
-        setForwardToChips([]);
-        setForwardFiles([]);
-      } else {
-        flashMsg('error', '転送に失敗しました');
-      }
-    } finally {
-      setForwardSending(false);
-    }
   }
 
   async function deleteThread() {
@@ -587,13 +457,6 @@ export default function ThreadDetailPage({ params }: Props) {
 
   return (
     <div className="max-w-full pb-6">
-      {/* Sending overlay */}
-      {showReplyOverlay && (
-        <SendingOverlay
-          onConfirm={() => { pendingReplyRef.current?.(); pendingReplyRef.current = null; }}
-          onCancel={() => { setShowReplyOverlay(false); pendingReplyRef.current = null; }}
-        />
-      )}
       {/* Toast */}
       {msg && (
         <div className={`fixed top-4 right-4 z-50 rounded-lg px-4 py-3 text-sm font-medium shadow-xl transition-all ${msg.type === 'success' ? 'bg-emerald-500 text-white' : 'bg-red-500 text-white'}`}>
@@ -1006,260 +869,17 @@ export default function ThreadDetailPage({ params }: Props) {
       {/* Reply composer */}
       <div ref={replyBoxRef} className="mt-4">
         {showReply ? (
-          <div className="card overflow-hidden shadow-lg border-blue-200">
-            {/* Composer header */}
-            <div className="flex items-center justify-between px-4 py-2.5 bg-gray-50 border-b border-gray-200">
-              <div className="flex items-center gap-2 text-sm text-gray-700 min-w-0">
-                <svg className="w-4 h-4 text-blue-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
-                </svg>
-                <span className="font-medium flex-shrink-0">返信を作成</span>
-                <span className="text-gray-400 text-xs truncate">→ {data?.messages?.slice().reverse().find(m => m.direction === 'incoming')?.from.email || ''}</span>
-              </div>
-              <button
-                onClick={() => setShowReply(false)}
-                className="text-gray-400 hover:text-gray-600 p-1 rounded hover:bg-gray-200 transition-colors"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-
-            {/* Recipients */}
-            <div className="border-b border-gray-100 px-4 py-2 space-y-1 text-xs">
-              <div className="flex items-center gap-2">
-                <span className="text-gray-400 w-7 flex-shrink-0">From</span>
-                {replyMailboxes.length > 1 ? (
-                  <select
-                    value={replyFromMailboxId}
-                    onChange={e => setReplyFromMailboxId(e.target.value)}
-                    className="flex-1 bg-transparent border-0 outline-none text-gray-700 cursor-pointer"
-                  >
-                    {replyMailboxes.map(mb => (
-                      <option key={mb.id} value={mb.id}>{mb.display_name} &lt;{mb.email_address}&gt;</option>
-                    ))}
-                  </select>
-                ) : (
-                  <span className="text-gray-500 truncate">
-                    {replyMailboxes.find(m => m.id === replyFromMailboxId)?.email_address || data?.mailbox?.email_address || ''}
-                  </span>
-                )}
-              </div>
-              <div className="flex items-start gap-2">
-                <span className="text-gray-400 w-7 flex-shrink-0 pt-0.5">To</span>
-                <div className="flex-1">
-                  <EmailChipInput
-                    chips={replyToChips}
-                    onChange={setReplyToChips}
-                    placeholder="送信先（Enter・Tab・カンマで確定）"
-                  />
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setShowReplyCc(v => !v)}
-                  className={`flex-shrink-0 px-1.5 py-0.5 rounded text-xs transition-colors ${showReplyCc ? 'text-blue-600 bg-blue-50' : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'}`}
-                >
-                  CC
-                </button>
-              </div>
-              {showReplyCc && (
-                <div className="flex items-start gap-2">
-                  <span className="text-gray-400 w-7 flex-shrink-0 pt-0.5">CC</span>
-                  <div className="flex-1">
-                    <EmailChipInput
-                      chips={replyCcChips}
-                      onChange={setReplyCcChips}
-                      placeholder="CCアドレス（Enter・Tab・カンマで確定）"
-                    />
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Rich editor */}
-            <div className="p-3">
-              {data?.mailbox?.type === 'team' && collab.doc && collab.awareness && collab.me ? (
-                <CollabEditor
-                  ref={editorRef as React.Ref<CollabEditorHandle>}
-                  doc={collab.doc}
-                  awareness={collab.awareness}
-                  me={collab.me}
-                  activeUsers={collab.activeUsers}
-                  placeholder="返信内容を入力してください…"
-                  minHeight={200}
-                />
-              ) : (
-                <RichEditor
-                  ref={editorRef as React.Ref<RichEditorHandle>}
-                  placeholder="返信内容を入力してください…"
-                  minHeight={200}
-                  onInput={() => {
-                    const isShared = data?.mailbox?.type === 'team';
-                    draft.scheduleSave({
-                      thread_id: id,
-                      mailbox_id: data?.mailbox?.id,
-                      html_body: editorRef.current?.getHTML(),
-                      text_body: editorRef.current?.getText(),
-                      is_shared: isShared,
-                    });
-                  }}
-                />
-              )}
-            </div>
-
-            {/* Signature */}
-            {signature && (
-              <div className="mx-3 border-t border-dashed border-gray-200 pt-2 pb-2">
-                <div className="flex items-start justify-between gap-2">
-                  {replySigVisible ? (
-                    <p className="text-sm text-gray-900 whitespace-pre-wrap flex-1">{'--\n'}{signature}</p>
-                  ) : (
-                    <span className="flex-1" />
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => setReplySigVisible(v => !v)}
-                    title={replySigVisible ? '署名を外す' : '署名を追加'}
-                    className={`flex-shrink-0 p-1 rounded transition-colors ${replySigVisible ? 'text-blue-500 hover:text-blue-700' : 'text-gray-300 hover:text-gray-500'}`}
-                  >
-                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                    </svg>
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* Quoted content toggle */}
-            {replyQuote && (
-              <div className="px-3 pb-2">
-                <button
-                  type="button"
-                  onClick={() => setShowReplyQuote(v => !v)}
-                  className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs text-gray-500 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors"
-                >
-                  <span className="tracking-widest leading-none">···</span>
-                  {showReplyQuote ? '引用を閉じる' : '前のメールを表示'}
-                </button>
-                {showReplyQuote && (
-                  <div className="mt-2 border-l-2 border-gray-200 pl-3">
-                    <p className="text-xs text-gray-400 mb-1">{replyQuote.header}</p>
-                    <div
-                      className="prose prose-sm max-w-none text-gray-500 overflow-x-auto text-xs"
-                      dangerouslySetInnerHTML={{ __html: replyQuote.html }}
-                    />
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Attachment list */}
-            {replyFiles.length > 0 && (
-              <div className="px-3 pb-2 flex flex-wrap gap-2">
-                {replyFiles.map((f, i) => (
-                  <span key={i} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-gray-100 border border-gray-200 text-xs text-gray-700">
-                    <svg className="w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"/></svg>
-                    {f.name}
-                    <button type="button" onClick={() => setReplyFiles(prev => prev.filter((_, j) => j !== i))} className="text-gray-400 hover:text-red-500 ml-0.5">×</button>
-                  </span>
-                ))}
-              </div>
-            )}
-
-            {/* Footer */}
-            <div className="bg-gray-50 border-t border-gray-200">
-              {/* Mobile info row: warning + sync status */}
-              <div className="flex items-center justify-between px-3 pt-2 pb-0 md:hidden">
-                <p className="text-xs text-amber-600 flex items-center gap-1">
-                  <svg className="w-3 h-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                  </svg>
-                  外部に送信されます
-                </p>
-                {data?.mailbox?.type === 'team' ? (
-                  <span className={`text-xs flex items-center gap-1 ${collab.connected ? 'text-emerald-600' : 'text-gray-400'}`}>
-                    <span className={`w-1.5 h-1.5 rounded-full ${collab.connected ? 'bg-emerald-500 animate-pulse' : 'bg-gray-300'}`} />
-                    {collab.connected ? '同期中' : '接続中…'}
-                  </span>
-                ) : (
-                  <DraftStatusBar status={draft.status} savedAt={draft.savedAt} />
-                )}
-              </div>
-
-              {/* Actions row */}
-              <div className="flex items-center justify-between px-3 py-2 md:px-4 md:py-2.5">
-                <div className="flex items-center gap-1.5">
-                  {/* Attach — icon only on mobile */}
-                  <label className="cursor-pointer flex items-center gap-1 text-xs text-gray-500 hover:text-gray-700 p-1.5 rounded-lg hover:bg-gray-200 transition-colors" title="ファイル添付">
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"/></svg>
-                    <span className="hidden md:inline">添付</span>
-                    <input type="file" multiple className="sr-only" onChange={e => { if (e.target.files) setReplyFiles(prev => [...prev, ...Array.from(e.target.files!)]); e.target.value = ''; }} />
-                  </label>
-                  {/* Desktop only: warning + sync */}
-                  <p className="hidden md:flex text-xs text-amber-600 items-center gap-1">
-                    <svg className="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                    </svg>
-                    外部に送信されます
-                  </p>
-                  {data?.mailbox?.type === 'team' ? (
-                    <span className={`hidden md:flex text-xs items-center gap-1 ${collab.connected ? 'text-emerald-600' : 'text-gray-400'}`}>
-                      <span className={`w-1.5 h-1.5 rounded-full ${collab.connected ? 'bg-emerald-500 animate-pulse' : 'bg-gray-300'}`} />
-                      {collab.connected ? '同期中' : '接続中…'}
-                    </span>
-                  ) : (
-                    <span className="hidden md:block">
-                      <DraftStatusBar status={draft.status} savedAt={draft.savedAt} />
-                    </span>
-                  )}
-                </div>
-
-                <div className="flex items-center gap-1.5">
-                  {/* AI */}
-                  <button
-                    type="button"
-                    onClick={handleAiAssist}
-                    disabled={aiLoading}
-                    title={editorRef.current?.isEmpty() ? 'AIで返信文を生成' : 'AIで校正・改善'}
-                    className="inline-flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs font-medium border border-purple-200 bg-purple-50 text-purple-700 hover:bg-purple-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                  >
-                    {aiLoading ? (
-                      <svg className="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
-                      </svg>
-                    ) : (
-                      <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z"/>
-                      </svg>
-                    )}
-                    {aiLoading ? '生成中…' : 'AI'}
-                  </button>
-                  {/* Cancel — × icon on mobile, text on desktop */}
-                  <button
-                    onClick={() => setShowReply(false)}
-                    title="キャンセル"
-                    className="inline-flex items-center justify-center p-1.5 md:px-3 md:py-1.5 rounded-lg text-xs font-medium text-gray-600 bg-white border border-gray-200 hover:bg-gray-100 transition-colors"
-                  >
-                    <svg className="w-4 h-4 md:hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                    <span className="hidden md:inline">キャンセル</span>
-                  </button>
-                  {/* Send */}
-                  <button onClick={triggerReply} disabled={replySending} className="btn btn-primary btn-sm gap-1">
-                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
-                    </svg>
-                    送信する
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
+          <ComposeForm
+            mode="reply"
+            defaultMailboxId={data?.mailbox?.id}
+            initialTo={replyInitialTo}
+            initialCc={replyInitialCc}
+            quote={replyQuote}
+            threadId={id}
+            onSend={handleReplySend}
+            onCancel={() => setShowReply(false)}
+          />
         ) : canReply ? (
-          /* Reply prompt */
           <div
             onClick={openReply}
             className="card px-4 py-3 flex items-center gap-3 cursor-text hover:border-blue-300 hover:shadow-md transition-all group"
@@ -1272,7 +892,6 @@ export default function ThreadDetailPage({ params }: Props) {
             <span className="text-sm text-gray-400 group-hover:text-gray-600">返信を入力… （クリックして返信フォームを開く）</span>
           </div>
         ) : (
-          /* Permission denied message */
           <div className="card px-4 py-3 bg-gray-50 border-gray-200 text-center">
             <span className="text-sm text-gray-400">このメールボックスへの返信権限がありません</span>
           </div>
@@ -1281,107 +900,15 @@ export default function ThreadDetailPage({ params }: Props) {
 
       {/* Forward composer */}
       {showForward && (
-        <div className="mt-4 card overflow-hidden shadow-lg border-green-200">
-          <div className="flex items-center justify-between px-4 py-2.5 bg-gray-50 border-b border-gray-200">
-            <div className="flex items-center gap-2 text-sm text-gray-700">
-              <svg className="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 9l3 3m0 0l-3 3m3-3H8m13 0a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-              <span className="font-medium">転送</span>
-              <span className="text-gray-400 text-xs">Fw: {data?.subject}</span>
-            </div>
-            <button
-              onClick={() => setShowForward(false)}
-              className="text-gray-400 hover:text-gray-600 p-1 rounded hover:bg-gray-200 transition-colors"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
-          </div>
-
-          {/* To field */}
-          <div className="px-4 pt-2 pb-2 border-b border-gray-100">
-            <div className="flex items-start gap-2">
-              <span className="text-xs text-gray-400 w-8 flex-shrink-0 pt-0.5">宛先:</span>
-              <div className="flex-1">
-                <EmailChipInput
-                  chips={forwardToChips}
-                  onChange={setForwardToChips}
-                  placeholder="転送先（Enter・Tab・カンマで確定）"
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* Rich editor */}
-          <div className="p-3">
-            <RichEditor
-              ref={forwardEditorRef}
-              placeholder="メッセージを入力…"
-              minHeight={180}
-              onInput={() => {}}
-            />
-          </div>
-
-          {/* Signature */}
-          {signature && (
-            <div className="mx-3 border-t border-dashed border-gray-200 pt-2 pb-2">
-              <div className="flex items-start justify-between gap-2">
-                {forwardSigVisible ? (
-                  <p className="text-sm text-gray-900 whitespace-pre-wrap flex-1">{'--\n'}{signature}</p>
-                ) : (
-                  <span className="text-sm text-gray-400">--</span>
-                )}
-                <button
-                  type="button"
-                  onClick={() => setForwardSigVisible(v => !v)}
-                  title={forwardSigVisible ? '署名を外す' : '署名を追加'}
-                  className={`flex-shrink-0 p-1 rounded transition-colors ${forwardSigVisible ? 'text-blue-500 hover:text-blue-700' : 'text-gray-300 hover:text-gray-500'}`}
-                >
-                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                  </svg>
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* Attachment list */}
-          {forwardFiles.length > 0 && (
-            <div className="px-3 pb-2 flex flex-wrap gap-2">
-              {forwardFiles.map((f, i) => (
-                <span key={i} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-gray-100 border border-gray-200 text-xs text-gray-700">
-                  <svg className="w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"/></svg>
-                  {f.name}
-                  <button type="button" onClick={() => setForwardFiles(prev => prev.filter((_, j) => j !== i))} className="text-gray-400 hover:text-red-500 ml-0.5">×</button>
-                </span>
-              ))}
-            </div>
-          )}
-
-          {/* Footer */}
-          <div className="flex items-center justify-between px-4 py-2.5 bg-gray-50 border-t border-gray-200">
-            <label className="cursor-pointer flex items-center gap-1 text-xs text-gray-500 hover:text-gray-700 px-2 py-1 rounded hover:bg-gray-200 transition-colors">
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"/></svg>
-              添付
-              <input type="file" multiple className="sr-only" onChange={e => { if (e.target.files) setForwardFiles(prev => [...prev, ...Array.from(e.target.files!)]); e.target.value = ''; }} />
-            </label>
-            <div className="flex items-center gap-2">
-              <button onClick={() => setShowForward(false)} className="btn btn-secondary btn-sm">キャンセル</button>
-              <button
-                onClick={sendForward}
-                disabled={forwardSending}
-                className="btn btn-primary btn-sm gap-1"
-                style={{ backgroundColor: '#16a34a', borderColor: '#16a34a' }}
-              >
-                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 9l3 3m0 0l-3 3m3-3H8m13 0a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                {forwardSending ? '送信中…' : '転送する'}
-              </button>
-            </div>
-          </div>
+        <div className="mt-4">
+          <ComposeForm
+            mode="forward"
+            defaultMailboxId={data?.mailbox?.id}
+            initialSubject={forwardInitialSubject}
+            initialBody={forwardInitialBody}
+            onSend={handleForwardSend}
+            onCancel={() => setShowForward(false)}
+          />
         </div>
       )}
 

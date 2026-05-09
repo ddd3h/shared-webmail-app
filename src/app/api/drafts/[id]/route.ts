@@ -54,6 +54,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       thread_id: body.thread_id ?? draft.thread_id,
       to_raw: body.to_raw ?? draft.to_raw,
       cc_raw: body.cc_raw ?? draft.cc_raw,
+      bcc_raw: body.bcc_raw ?? draft.bcc_raw,
       subject: body.subject ?? draft.subject,
       html_body: body.html_body ?? draft.html_body,
       text_body: body.text_body ?? draft.text_body,

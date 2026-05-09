@@ -1,242 +1,38 @@
 'use client';
 import { Suspense, useEffect, useState, useCallback, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import dynamic from 'next/dynamic';
-import type { RichEditorHandle } from '@/components/RichEditor';
-import type { CollabEditorHandle } from '@/components/CollabEditor';
-import { useDraft } from '@/hooks/useDraft';
-import { useCollab } from '@/hooks/useCollab';
-import DraftStatusBar from '@/components/DraftStatus';
-import EmailChipInput from '@/components/EmailChipInput';
-import SendingOverlay from '@/components/SendingOverlay';
-
-const RichEditor = dynamic(() => import('@/components/RichEditor'), { ssr: false });
-const CollabEditor = dynamic(() => import('@/components/CollabEditor'), { ssr: false });
-
-type Mailbox = { id: string; display_name: string; email_address: string; type: string; user_permissions?: { can_reply: boolean } };
-type ContactSuggestion = { name: string | null; email: string };
-
-// Recipient input with contact autocomplete
-function RecipientInput({ value, onChange, placeholder, onScheduleSave }: {
-  value: string; onChange: (v: string) => void; placeholder?: string; onScheduleSave?: (v: string) => void
-}) {
-  const [suggestions, setSuggestions] = useState<ContactSuggestion[]>([]);
-  const [showSuggestions, setShowSuggestions] = useState(false);
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const v = e.target.value;
-    onChange(v);
-    onScheduleSave?.(v);
-    const token = v.split(/[,;]/).pop()?.trim() || '';
-    if (token.length < 2) { setSuggestions([]); setShowSuggestions(false); return; }
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(async () => {
-      const res = await fetch(`/api/contacts?q=${encodeURIComponent(token)}`);
-      const data = await res.json();
-      const contacts: ContactSuggestion[] = (data.contacts || []).filter((c: any) => c.email).slice(0, 8);
-      setSuggestions(contacts);
-      setShowSuggestions(contacts.length > 0);
-    }, 200);
-  }
-
-  function select(c: ContactSuggestion) {
-    const parts = value.split(/[,;]/);
-    parts[parts.length - 1] = c.email;
-    const v = parts.map(p => p.trim()).filter(Boolean).join(', ') + ', ';
-    onChange(v);
-    setSuggestions([]);
-    setShowSuggestions(false);
-    onScheduleSave?.(v);
-  }
-
-  return (
-    <div className="relative flex-1">
-      <input
-        type="text"
-        className="w-full text-sm text-gray-900 focus:outline-none placeholder-gray-400 bg-transparent"
-        placeholder={placeholder}
-        value={value}
-        onChange={handleChange}
-        onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
-        onFocus={() => { if (suggestions.length > 0) setShowSuggestions(true); }}
-        autoComplete="off"
-      />
-      {showSuggestions && (
-        <div className="absolute top-full left-0 right-0 z-50 mt-1 bg-white border border-gray-200 rounded-xl shadow-xl max-h-52 overflow-y-auto">
-          {suggestions.map((c, i) => (
-            <button
-              key={i}
-              type="button"
-              onMouseDown={(e) => { e.preventDefault(); select(c); }}
-              className="w-full text-left px-3 py-2 text-sm hover:bg-blue-50 flex items-center gap-2.5 transition-colors"
-            >
-              <div className="w-7 h-7 rounded-full bg-blue-100 flex items-center justify-center text-xs font-bold text-blue-600 flex-shrink-0">
-                {(c.name?.[0] || c.email[0]).toUpperCase()}
-              </div>
-              <div className="min-w-0">
-                {c.name && <div className="font-medium text-gray-900 truncate">{c.name}</div>}
-                <div className="text-gray-500 truncate text-xs">{c.email}</div>
-              </div>
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
+import ComposeForm, { type SendPayload } from '@/components/ComposeForm';
 
 function ComposeModal({ onClose, onSent, initialDraftId }: { onClose: () => void; onSent: () => void; initialDraftId?: string }) {
-  const [mailboxes, setMailboxes] = useState<Mailbox[]>([]);
-  const [selectedMailbox, setSelectedMailbox] = useState('');
-  const [toChips, setToChips] = useState<string[]>([]);
-  const [ccChips, setCcChips] = useState<string[]>([]);
-  const [showCc, setShowCc] = useState(false);
-  const [subject, setSubject] = useState('');
-  const [sending, setSending] = useState(false);
-  const [error, setError] = useState('');
-  const [initialBody, setInitialBody] = useState('');
-  const [attachments, setAttachments] = useState<File[]>([]);
   const [minimized, setMinimized] = useState(false);
-  const [aiLoading, setAiLoading] = useState(false);
-  const [composeSig, setComposeSig] = useState('');
-  const [composeSigVisible, setComposeSigVisible] = useState(true);
-  const [showSendOverlay, setShowSendOverlay] = useState(false);
-  const editorRef = useRef<RichEditorHandle | CollabEditorHandle>(null);
-  const richContentRef = useRef('');
-  const draft = useDraft(initialDraftId);
-  const isTeam = mailboxes.find(m => m.id === selectedMailbox)?.type === 'team';
-  const collabSessionId = isTeam && draft.draftId ? `draft-${draft.draftId}` : undefined;
-  const collab = useCollab(collabSessionId);
 
-  // Accept override values to avoid stale-closure issue when called inside onChange handlers
-  const scheduleFieldSave = (overrides: { subject?: string; to_raw?: string; cc_raw?: string; toChips?: string[]; ccChips?: string[] } = {}) => {
-    const mb = mailboxes.find(m => m.id === selectedMailbox);
-    const isShared = mb?.type === 'team';
-    const inCollabMode = !!(isTeam && collab.doc);
-    draft.scheduleSave({
-      mailbox_id: selectedMailbox || undefined,
-      to_raw: overrides.to_raw ?? (overrides.toChips ?? toChips).join(', '),
-      cc_raw: overrides.cc_raw ?? ((overrides.ccChips ?? ccChips).join(', ') || undefined),
-      subject: overrides.subject ?? subject,
-      // Yjs manages body in collab mode; avoid overwriting with stale editor state
-      ...(!inCollabMode && {
-        html_body: editorRef.current?.getHTML(),
-        text_body: editorRef.current?.getText(),
-      }),
-      is_shared: isShared,
-    });
-  };
-
-  useEffect(() => {
-    fetch('/api/mailboxes?mine=1').then(r => r.json()).then(d => {
-      const items = (d.items || []).filter((m: Mailbox) => m.user_permissions?.can_reply !== false);
-      setMailboxes(items);
-      if (!initialDraftId && items.length > 0) setSelectedMailbox(items[0].id);
-    });
-    // Load signature for new compose (not draft)
-    if (!initialDraftId) {
-      fetch('/api/user/signature').then(r => r.json()).then(d => {
-        const sig = d.signature ?? (d.name ? `${d.name}${d.email ? '\n' + d.email : ''}` : '');
-        if (sig) setComposeSig(sig);
-      }).catch(() => {});
-    }
-  }, []);
-
-  useEffect(() => {
-    if (!initialDraftId) return;
-    fetch(`/api/drafts/${initialDraftId}`).then(r => r.json()).then(d => {
-      if (d.id) {
-        setToChips(d.to_raw ? d.to_raw.split(/[,;]\s*/).map((s: string) => s.trim()).filter(Boolean) : []);
-        const loadedCc = d.cc_raw ? d.cc_raw.split(/[,;]\s*/).map((s: string) => s.trim()).filter(Boolean) : [];
-        setCcChips(loadedCc); if (loadedCc.length > 0) setShowCc(true);
-        setSubject(d.subject || '');
-        if (d.mailbox_id) setSelectedMailbox(d.mailbox_id);
-        if (d.html_body) { setInitialBody(d.html_body); richContentRef.current = d.html_body; }
-      }
-    }).catch(() => {});
-  }, [initialDraftId]);
-
-  async function handleAiAssist() {
-    if (!editorRef.current) return;
-    if (editorRef.current.isEmpty() && !subject.trim()) {
-      setError('件名か本文を入力してからAIを使用してください');
-      return;
-    }
-    setAiLoading(true);
-    setError('');
-    try {
-      const res = await fetch('/api/ai/reply', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          subject,
-          to: toChips.join(', '),
-          draft: editorRef.current.isEmpty() ? '' : editorRef.current.getHTML(),
-        }),
-      });
-      const json = await res.json();
-      if (!res.ok) { setError(json.error || 'AI処理に失敗しました'); return; }
-      editorRef.current.setHTML(json.text.replace(/\n/g, '<br>'));
-      editorRef.current.focus();
-    } finally {
-      setAiLoading(false);
-    }
+  async function handleSend(payload: SendPayload): Promise<string | null> {
+    const fd = new FormData();
+    fd.append('mailbox_id', payload.mailboxId);
+    fd.append('to', JSON.stringify(payload.to));
+    if (payload.cc.length) fd.append('cc', JSON.stringify(payload.cc));
+    if (payload.bcc.length) fd.append('bcc', JSON.stringify(payload.bcc));
+    fd.append('subject', payload.subject);
+    fd.append('html', payload.html);
+    fd.append('text', payload.text);
+    payload.files.forEach(f => fd.append('file', f));
+    const res = await fetch('/api/messages/compose', { method: 'POST', body: fd });
+    if (res.ok) { onSent(); return null; }  // ComposeForm calls onCancel (=onClose) after contact prompt
+    const d = await res.json().catch(() => ({}));
+    return d.error || '送信に失敗しました';
   }
 
-  function triggerSend() {
-    if (!toChips.length) { setError('宛先を入力してください'); return; }
-    if (!subject.trim()) { setError('件名を入力してください'); return; }
-    if (!selectedMailbox) { setError('送信元メールアカウントを選択してください'); return; }
-    setShowSendOverlay(true);
-  }
-
-  async function send() {
-    setShowSendOverlay(false);
-    setSending(true);
-    setError('');
-    try {
-      const editorHtml = editorRef.current?.getHTML() || '';
-      const editorText = editorRef.current?.getText() || '';
-      const sigSuffix = composeSig && composeSigVisible
-        ? `<p>--<br>${composeSig.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>')}</p>`
-        : '';
-      const html = editorHtml + sigSuffix;
-      const text = composeSig && composeSigVisible ? `${editorText}\n\n-- \n${composeSig}` : editorText;
-      const fd = new FormData();
-      fd.append('mailbox_id', selectedMailbox);
-      fd.append('to', JSON.stringify(toChips));
-      if (ccChips.length) fd.append('cc', JSON.stringify(ccChips));
-      fd.append('subject', subject);
-      fd.append('html', html);
-      fd.append('text', text);
-      attachments.forEach(f => fd.append('file', f));
-      const res = await fetch('/api/messages/compose', { method: 'POST', body: fd });
-      if (res.ok) { await draft.deleteDraft(); onSent(); onClose(); }
-      else {
-        const d = await res.json().catch(() => ({}));
-        setError(d.error || '送信に失敗しました');
-      }
-    } finally {
-      setSending(false);
-    }
-  }
-
-  // ── Minimized pill ───────────────────────────────────────────────
   if (minimized) {
     return (
       <div className="fixed bottom-0 right-6 z-50 w-80 shadow-2xl rounded-t-xl overflow-hidden">
-        <div
-          className="flex items-center justify-between px-4 py-2.5 bg-gray-800 text-white cursor-pointer hover:bg-gray-700 transition-colors"
-          onClick={() => setMinimized(false)}
-        >
-          <span className="text-sm font-medium truncate">{subject || '新規メール作成'}</span>
+        <div className="flex items-center justify-between px-4 py-2.5 bg-gray-800 text-white cursor-pointer hover:bg-gray-700 transition-colors" onClick={() => setMinimized(false)}>
+          <span className="text-sm font-medium truncate">{initialDraftId ? '下書きを編集' : '新規メール作成'}</span>
           <div className="flex items-center gap-1.5 ml-2 flex-shrink-0" onClick={e => e.stopPropagation()}>
             <button onClick={() => setMinimized(false)} className="p-1 rounded hover:bg-gray-600 transition-colors" title="展開">
-              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7"/></svg>
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" /></svg>
             </button>
             <button onClick={onClose} className="p-1 rounded hover:bg-gray-600 transition-colors" title="閉じる">
-              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12"/></svg>
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
             </button>
           </div>
         </div>
@@ -244,233 +40,27 @@ function ComposeModal({ onClose, onSent, initialDraftId }: { onClose: () => void
     );
   }
 
-  // ── Full modal ───────────────────────────────────────────────────
   return (
     <div className="fixed inset-0 z-50 flex flex-col sm:items-center sm:justify-center sm:p-4">
-      {/* Sending overlay */}
-      {showSendOverlay && (
-        <SendingOverlay
-          onConfirm={send}
-          onCancel={() => setShowSendOverlay(false)}
-        />
-      )}
-      {/* Backdrop (デスクトップのみ有効) */}
       <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={() => setMinimized(true)} />
-
-      {/* Modal — モバイルは全画面、デスクトップはカード */}
       <div className="relative w-full h-full sm:h-auto sm:max-w-5xl bg-white sm:rounded-2xl sm:shadow-2xl flex flex-col sm:max-h-[94vh]">
-        {/* Header */}
         <div className="flex items-center justify-between px-5 py-3 border-b border-gray-200 flex-shrink-0 bg-gray-800 sm:rounded-t-2xl">
-          <h2 className="font-semibold text-white text-sm">新規メール作成</h2>
+          <h2 className="font-semibold text-white text-sm">{initialDraftId ? '下書きを編集' : '新規メール作成'}</h2>
           <div className="flex items-center gap-1">
             <button onClick={() => setMinimized(true)} className="p-1.5 rounded text-gray-300 hover:text-white hover:bg-gray-700 transition-colors" title="最小化">
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4"/></svg>
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" /></svg>
             </button>
             <button onClick={onClose} className="p-1.5 rounded text-gray-300 hover:text-white hover:bg-gray-700 transition-colors" title="閉じる">
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12"/></svg>
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
             </button>
           </div>
         </div>
-
-        {/* Fields */}
-        <div className="flex-1 overflow-y-auto">
-          <div className="px-5 pt-3 space-y-0">
-            {/* From */}
-            <div className="flex items-center gap-3 border-b border-gray-100 py-2.5">
-              <span className="text-xs font-medium text-gray-400 w-12 flex-shrink-0">From</span>
-              <select value={selectedMailbox} onChange={e => setSelectedMailbox(e.target.value)} className="select flex-1 text-sm py-1">
-                {mailboxes.map(m => <option key={m.id} value={m.id}>{m.display_name} &lt;{m.email_address}&gt;</option>)}
-              </select>
-            </div>
-
-            {/* To */}
-            <div className="flex items-start gap-3 border-b border-gray-100 py-2">
-              <span className="text-xs font-medium text-gray-400 w-12 flex-shrink-0 pt-2">To</span>
-              <div className="flex-1 min-w-0">
-                <EmailChipInput
-                  chips={toChips}
-                  onChange={chips => { setToChips(chips); scheduleFieldSave({ toChips: chips }); }}
-                  placeholder="宛先アドレス（Enter・Tab・カンマで確定）"
-                />
-              </div>
-              {!showCc && (
-                <button type="button" onClick={() => setShowCc(true)} className="text-xs text-blue-600 hover:underline flex-shrink-0 pt-2">Cc追加</button>
-              )}
-            </div>
-
-            {/* CC */}
-            {showCc && (
-              <div className="flex items-start gap-3 border-b border-gray-100 py-2">
-                <span className="text-xs font-medium text-gray-400 w-12 flex-shrink-0 pt-2">Cc</span>
-                <div className="flex-1 min-w-0">
-                  <EmailChipInput
-                    chips={ccChips}
-                    onChange={chips => { setCcChips(chips); scheduleFieldSave({ ccChips: chips }); }}
-                    placeholder="CC（Enter・Tab・カンマで確定）"
-                  />
-                </div>
-                <button type="button" onClick={() => { setShowCc(false); setCcChips([]); }} className="text-xs text-gray-400 hover:text-gray-600 flex-shrink-0 pt-2">×</button>
-              </div>
-            )}
-
-            {/* Subject */}
-            <div className="flex items-center gap-3 border-b border-gray-100 py-2.5">
-              <span className="text-xs font-medium text-gray-400 w-12 flex-shrink-0">件名</span>
-              <input
-                type="text"
-                className="flex-1 text-sm text-gray-900 focus:outline-none placeholder-gray-400 bg-transparent"
-                placeholder="件名を入力"
-                value={subject}
-                onChange={e => { setSubject(e.target.value); scheduleFieldSave({ subject: e.target.value }); }}
-              />
-            </div>
-
-            {/* Body */}
-            <div className="pt-3 pb-2">
-              {isTeam && collab.doc && collab.awareness && collab.me ? (
-                <CollabEditor
-                  ref={editorRef as React.Ref<CollabEditorHandle>}
-                  doc={collab.doc}
-                  awareness={collab.awareness}
-                  me={collab.me}
-                  activeUsers={collab.activeUsers}
-                  placeholder="本文を入力してください…"
-                  minHeight={360}
-                  initialHTML={richContentRef.current || undefined}
-                />
-              ) : (
-                <RichEditor
-                  ref={editorRef as React.Ref<RichEditorHandle>}
-                  placeholder="本文を入力してください…"
-                  minHeight={360}
-                  initialHTML={initialBody}
-                  onInput={() => {
-                    richContentRef.current = editorRef.current?.getHTML() || richContentRef.current;
-                    scheduleFieldSave();
-                  }}
-                />
-              )}
-            </div>
-
-            {/* Signature */}
-            {composeSig && (
-              <div className="mx-0 border-t border-dashed border-gray-200 mt-1 pt-2 pb-2">
-                <div className="flex items-start justify-between gap-2">
-                  {composeSigVisible ? (
-                    <p className="text-sm text-gray-900 whitespace-pre-wrap flex-1">{'--\n'}{composeSig}</p>
-                  ) : (
-                    <span className="flex-1" />
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => setComposeSigVisible(v => !v)}
-                    title={composeSigVisible ? '署名を外す' : '署名を追加'}
-                    className={`flex-shrink-0 p-1 rounded transition-colors ${composeSigVisible ? 'text-blue-500 hover:text-blue-700' : 'text-gray-300 hover:text-gray-500'}`}
-                  >
-                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                    </svg>
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* Attachments list */}
-            {attachments.length > 0 && (
-              <div className="pb-3 flex flex-wrap gap-2">
-                {attachments.map((f, i) => (
-                  <span key={i} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-gray-100 border border-gray-200 text-xs text-gray-700">
-                    <svg className="w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"/></svg>
-                    {f.name}
-                    <button type="button" onClick={() => setAttachments(prev => prev.filter((_, j) => j !== i))} className="text-gray-400 hover:text-red-500 ml-0.5">×</button>
-                  </span>
-                ))}
-              </div>
-            )}
-
-            {error && (
-              <p className="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2 mb-3">{error}</p>
-            )}
-          </div>
-        </div>
-
-        {/* Footer */}
-        <div className="border-t border-gray-200 flex-shrink-0 bg-gray-50 sm:rounded-b-2xl" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
-          {/* Mobile info row: sync status */}
-          <div className="flex items-center justify-end px-4 pt-2 pb-0 sm:hidden">
-            {isTeam && collabSessionId ? (
-              <span className={`text-xs flex items-center gap-1 ${collab.connected ? 'text-emerald-600' : 'text-gray-400'}`}>
-                <span className={`w-1.5 h-1.5 rounded-full ${collab.connected ? 'bg-emerald-500 animate-pulse' : 'bg-gray-300'}`} />
-                {collab.connected ? '同期中' : '接続中…'}
-              </span>
-            ) : (
-              <DraftStatusBar status={draft.status} savedAt={draft.savedAt} />
-            )}
-          </div>
-
-          {/* Actions row */}
-          <div className="flex items-center justify-between px-4 py-2.5">
-            <div className="flex items-center gap-1.5">
-              {/* Attach — icon only on mobile */}
-              <label className="cursor-pointer flex items-center gap-1 text-xs text-gray-500 hover:text-gray-700 p-1.5 rounded-lg hover:bg-gray-200 transition-colors border border-gray-200 bg-white" title="ファイル添付">
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"/></svg>
-                <span className="hidden sm:inline">ファイル添付</span>
-                <input type="file" multiple className="sr-only" onChange={e => { if (e.target.files) setAttachments(prev => [...prev, ...Array.from(e.target.files!)]); e.target.value = ''; }} />
-              </label>
-              {/* Desktop only: sync status */}
-              {isTeam && collabSessionId ? (
-                <span className={`hidden sm:flex text-xs items-center gap-1 ${collab.connected ? 'text-emerald-600' : 'text-gray-400'}`}>
-                  <span className={`w-1.5 h-1.5 rounded-full ${collab.connected ? 'bg-emerald-500 animate-pulse' : 'bg-gray-300'}`} />
-                  {collab.connected ? '同期中' : '接続中…'}
-                </span>
-              ) : (
-                <span className="hidden sm:block">
-                  <DraftStatusBar status={draft.status} savedAt={draft.savedAt} />
-                </span>
-              )}
-            </div>
-            <div className="flex items-center gap-1.5">
-              {/* AI */}
-              <button
-                type="button"
-                onClick={handleAiAssist}
-                disabled={aiLoading}
-                title={editorRef.current?.isEmpty() ? 'AIで本文を生成' : 'AIで校正・改善'}
-                className="inline-flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs font-medium border border-purple-200 bg-purple-50 text-purple-700 hover:bg-purple-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              >
-                {aiLoading ? (
-                  <svg className="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
-                  </svg>
-                ) : (
-                  <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z"/>
-                  </svg>
-                )}
-                {aiLoading ? '生成中…' : 'AI'}
-              </button>
-              {/* Cancel — × icon on mobile, text on desktop */}
-              <button
-                onClick={onClose}
-                title="キャンセル"
-                className="inline-flex items-center justify-center p-1.5 sm:px-3 sm:py-1.5 rounded-lg text-xs font-medium text-gray-600 bg-white border border-gray-200 hover:bg-gray-100 transition-colors"
-              >
-                <svg className="w-4 h-4 sm:hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-                <span className="hidden sm:inline">キャンセル</span>
-              </button>
-              {/* Send */}
-              <button onClick={triggerSend} disabled={sending} className="btn btn-primary btn-sm gap-1">
-                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
-                </svg>
-                {sending ? '送信中…' : '送信する'}
-              </button>
-            </div>
-          </div>
-        </div>
+        <ComposeForm
+          mode="compose"
+          draftId={initialDraftId}
+          onSend={handleSend}
+          onCancel={onClose}
+        />
       </div>
     </div>
   );
@@ -640,6 +230,16 @@ function ThreadList() {
     setBulkLoading(true);
     await Promise.all([...selected].map(id =>
       fetch(`/api/threads/${id}/read`, { method: 'POST' })
+    ));
+    setSelected(new Set());
+    setBulkLoading(false);
+    load(mailboxView, tab, search);
+  }
+
+  async function bulkMarkUnread() {
+    setBulkLoading(true);
+    await Promise.all([...selected].map(id =>
+      fetch(`/api/threads/${id}/unread`, { method: 'POST' })
     ));
     setSelected(new Set());
     setBulkLoading(false);
@@ -849,12 +449,13 @@ function ThreadList() {
           <div className="flex items-center gap-2">
             <button
               onClick={() => setShowCompose(true)}
-              className="btn btn-primary btn-sm gap-1.5"
+              className="inline-flex items-center gap-2 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 text-white font-semibold shadow-md hover:shadow-lg hover:from-blue-600 hover:to-indigo-700 active:scale-95 transition-all duration-150 px-3 py-2 sm:px-4"
+              title="新規メール作成"
             >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
               </svg>
-              新規メール
+              <span className="hidden sm:inline text-sm">新規メール</span>
             </button>
             <button
               onClick={() => load(mailboxView, tab, search)}
@@ -1080,85 +681,103 @@ function ThreadList() {
         </div>
       )}
       {selectionMode && tab !== 'drafts' && (
-        <div className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 border-x border-blue-600">
-          <input
-            type="checkbox"
-            checked={selected.size === threads.length && threads.length > 0}
-            ref={el => { if (el) el.indeterminate = selected.size > 0 && selected.size < threads.length; }}
-            onChange={selectAll}
-            className="w-4 h-4 rounded border-white/50 cursor-pointer accent-white"
-          />
-          <span className="text-sm font-semibold text-white">{selected.size} 件選択</span>
-          <div className="flex-1" />
+        <div className="bg-blue-600 border-x border-blue-600">
+          {/* 常時表示行: チェックボックス + 件数 + [PC:アクション] + 閉じる */}
+          <div className="flex items-center gap-2 px-4 py-2.5">
+            <input
+              type="checkbox"
+              checked={selected.size === threads.length && threads.length > 0}
+              ref={el => { if (el) el.indeterminate = selected.size > 0 && selected.size < threads.length; }}
+              onChange={selectAll}
+              className="w-4 h-4 rounded border-white/50 cursor-pointer accent-white flex-shrink-0"
+            />
+            <span className="text-sm font-semibold text-white whitespace-nowrap">{selected.size} 件選択</span>
+            <div className="flex-1" />
 
+            {/* PC のみ表示するアクション群 */}
+            {confirmDelete ? (
+              <div className="hidden sm:flex items-center gap-2">
+                <span className="text-sm text-white/90 font-medium">
+                  {mailboxView === 'team' ? '全ユーザーから削除されます。' : `${selected.size} 件を削除します。`}元に戻せません。
+                </span>
+                <button onClick={bulkDelete} disabled={bulkLoading} className="px-3 py-1.5 rounded-lg text-sm font-semibold bg-white text-red-600 hover:bg-red-50 disabled:opacity-50 transition-colors">
+                  {bulkLoading ? '削除中…' : '削除する'}
+                </button>
+                <button onClick={() => setConfirmDelete(false)} disabled={bulkLoading} className="px-3 py-1.5 rounded-lg text-sm font-medium bg-blue-500 text-white hover:bg-blue-400 border border-white/30 transition-colors">
+                  キャンセル
+                </button>
+              </div>
+            ) : (
+              <div className="hidden sm:flex items-center gap-1.5">
+                <button onClick={bulkMarkRead} disabled={bulkLoading} className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-white/15 text-white hover:bg-white/25 border border-white/20 transition-colors disabled:opacity-50">
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>
+                  既読
+                </button>
+                <button onClick={bulkMarkUnread} disabled={bulkLoading} className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-white/15 text-white hover:bg-white/25 border border-white/20 transition-colors disabled:opacity-50">
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /><circle cx="17" cy="17" r="4" fill="currentColor" stroke="none" /></svg>
+                  未読
+                </button>
+                {mailboxView === 'team' && (
+                  <select defaultValue="" onChange={(e) => { if (e.target.value) { bulkSetStatus(e.target.value); e.target.value = ''; } }} disabled={bulkLoading} className="px-2 py-1.5 rounded-lg text-xs font-medium bg-white/15 text-white border border-white/20 cursor-pointer disabled:opacity-50 focus:outline-none" style={{ colorScheme: 'dark' }}>
+                    <option value="" className="text-gray-900 bg-white">ステータス変更…</option>
+                    <option value="open" className="text-gray-900 bg-white">未対応</option>
+                    <option value="in_progress" className="text-gray-900 bg-white">対応中</option>
+                    <option value="done" className="text-gray-900 bg-white">完了</option>
+                  </select>
+                )}
+                <button onClick={() => setConfirmDelete(true)} disabled={bulkLoading} className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-red-500/80 text-white hover:bg-red-500 border border-red-400/50 transition-colors disabled:opacity-50">
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                  削除
+                </button>
+              </div>
+            )}
+
+            <button
+              onClick={() => { setSelected(new Set()); setConfirmDelete(false); lastSelectedIndexRef.current = null; }}
+              className="p-1.5 rounded-lg text-white/70 hover:text-white hover:bg-white/15 transition-colors ml-1 flex-shrink-0"
+              title="選択解除"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+
+          {/* モバイルのみ: アクション行（2段目）— アイコンのみで1行に収める */}
           {confirmDelete ? (
-            <div className="flex items-center gap-2">
-              <span className="text-sm text-white/90 font-medium hidden sm:inline">
-                {mailboxView === 'team' ? '全ユーザーから削除されます。' : `${selected.size} 件を削除します。`}元に戻せません。
+            <div className="flex items-center gap-2 px-4 pb-2.5 sm:hidden">
+              <span className="flex-1 text-xs text-white/90 font-medium truncate">
+                {mailboxView === 'team' ? '全員から削除。' : `${selected.size}件削除。`}元に戻せません。
               </span>
-              <button
-                onClick={bulkDelete}
-                disabled={bulkLoading}
-                className="px-3 py-1.5 rounded-lg text-sm font-semibold bg-white text-red-600 hover:bg-red-50 disabled:opacity-50 transition-colors"
-              >
+              <button onClick={bulkDelete} disabled={bulkLoading} className="flex-shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold bg-white text-red-600 hover:bg-red-50 disabled:opacity-50 transition-colors">
                 {bulkLoading ? '削除中…' : '削除する'}
               </button>
-              <button
-                onClick={() => setConfirmDelete(false)}
-                disabled={bulkLoading}
-                className="px-3 py-1.5 rounded-lg text-sm font-medium bg-blue-500 text-white hover:bg-blue-400 border border-white/30 transition-colors"
-              >
-                キャンセル
+              <button onClick={() => setConfirmDelete(false)} disabled={bulkLoading} className="flex-shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium bg-blue-500 text-white hover:bg-blue-400 border border-white/30 transition-colors">
+                戻る
               </button>
             </div>
           ) : (
-            <div className="flex items-center gap-1.5">
-              <button
-                onClick={bulkMarkRead}
-                disabled={bulkLoading}
-                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-white/15 text-white hover:bg-white/25 border border-white/20 transition-colors disabled:opacity-50"
-              >
-                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                </svg>
-                <span className="hidden sm:inline">既読</span>
+            <div className="flex items-center gap-1.5 px-4 pb-2.5 sm:hidden">
+              <button onClick={bulkMarkRead} disabled={bulkLoading} title="既読にする" className="p-2 rounded-lg text-white bg-white/15 hover:bg-white/25 border border-white/20 transition-colors disabled:opacity-50">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>
+              </button>
+              <button onClick={bulkMarkUnread} disabled={bulkLoading} title="未読にする" className="p-2 rounded-lg text-white bg-white/15 hover:bg-white/25 border border-white/20 transition-colors disabled:opacity-50 relative">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>
+                <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-blue-300 border border-blue-600" />
               </button>
               {mailboxView === 'team' && (
-                <select
-                  defaultValue=""
-                  onChange={(e) => { if (e.target.value) { bulkSetStatus(e.target.value); e.target.value = ''; } }}
-                  disabled={bulkLoading}
-                  className="px-2 py-1.5 rounded-lg text-xs font-medium bg-white/15 text-white border border-white/20 cursor-pointer disabled:opacity-50 focus:outline-none"
-                  style={{ colorScheme: 'dark' }}
-                >
-                  <option value="" className="text-gray-900 bg-white">ステータス変更…</option>
+                <select defaultValue="" onChange={(e) => { if (e.target.value) { bulkSetStatus(e.target.value); e.target.value = ''; } }} disabled={bulkLoading} className="w-16 px-1 py-2 rounded-lg text-xs font-medium bg-white/15 text-white border border-white/20 cursor-pointer disabled:opacity-50 focus:outline-none" style={{ colorScheme: 'dark' }}>
+                  <option value="" className="text-gray-900 bg-white">状態</option>
                   <option value="open" className="text-gray-900 bg-white">未対応</option>
                   <option value="in_progress" className="text-gray-900 bg-white">対応中</option>
                   <option value="done" className="text-gray-900 bg-white">完了</option>
                 </select>
               )}
-              <button
-                onClick={() => setConfirmDelete(true)}
-                disabled={bulkLoading}
-                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-red-500/80 text-white hover:bg-red-500 border border-red-400/50 transition-colors disabled:opacity-50"
-              >
-                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                </svg>
-                <span className="hidden sm:inline">削除</span>
+              <button onClick={() => setConfirmDelete(true)} disabled={bulkLoading} title="削除" className="p-2 rounded-lg text-white bg-red-500/80 hover:bg-red-500 border border-red-400/50 transition-colors disabled:opacity-50">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
               </button>
             </div>
           )}
-
-          <button
-            onClick={() => { setSelected(new Set()); setConfirmDelete(false); lastSelectedIndexRef.current = null; }}
-            className="p-1.5 rounded-lg text-white/70 hover:text-white hover:bg-white/15 transition-colors ml-1"
-            title="選択解除"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
         </div>
       )}
 

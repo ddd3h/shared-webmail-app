@@ -482,6 +482,7 @@ model drafts {
   thread_id   String?
   to_raw      String?
   cc_raw      String?
+  bcc_raw     String?
   subject     String?
   html_body   String?
   text_body   String?

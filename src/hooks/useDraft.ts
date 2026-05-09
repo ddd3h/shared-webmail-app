@@ -6,6 +6,7 @@ export type DraftData = {
   thread_id?: string;
   to_raw?: string;
   cc_raw?: string;
+  bcc_raw?: string;
   subject?: string;
   html_body?: string;
   text_body?: string;

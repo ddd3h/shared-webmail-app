@@ -13,14 +13,15 @@ export async function POST(req: NextRequest) {
   requireAuth(session);
 
   const contentType = req.headers.get('content-type') || '';
-  let mailbox_id: string, to: string[], cc: string[] | undefined, subject: string,
-    text: string | undefined, html: string | undefined, files: File[] = [];
+  let mailbox_id: string, to: string[], cc: string[] | undefined, bcc: string[] | undefined,
+    subject: string, text: string | undefined, html: string | undefined, files: File[] = [];
 
   if (contentType.includes('multipart/form-data')) {
     const fd = await req.formData();
     mailbox_id = fd.get('mailbox_id') as string;
     to = JSON.parse((fd.get('to') as string) || '[]');
     cc = fd.has('cc') ? JSON.parse(fd.get('cc') as string) : undefined;
+    bcc = fd.has('bcc') ? JSON.parse(fd.get('bcc') as string) : undefined;
     subject = fd.get('subject') as string;
     text = (fd.get('text') as string) || undefined;
     html = (fd.get('html') as string) || undefined;
@@ -30,6 +31,7 @@ export async function POST(req: NextRequest) {
     ({ mailbox_id, subject } = body);
     to = body.to || [];
     cc = body.cc;
+    bcc = body.bcc;
     text = body.text;
     html = body.html;
   }
@@ -70,6 +72,7 @@ export async function POST(req: NextRequest) {
       from_email: mailbox.email_address,
       to_raw: to.join(', '),
       cc_raw: cc?.join(', ') || null,
+      bcc_raw: bcc?.join(', ') || null,
       subject,
       text_body: text || null,
       html_body: html || null,

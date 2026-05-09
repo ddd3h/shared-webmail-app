@@ -6,7 +6,19 @@ export async function GET(req: NextRequest) {
   const session = await getSession();
   requireAuth(session);
 
-  const q = new URL(req.url).searchParams.get('q') || '';
+  const sp = new URL(req.url).searchParams;
+  const q = sp.get('q') || '';
+  const emailsParam = sp.get('emails') || '';
+
+  // Batch exact-match lookup for a list of email addresses
+  if (emailsParam) {
+    const list = emailsParam.split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
+    const contacts = await prisma.contacts.findMany({
+      where: { email: { in: list, mode: 'insensitive' } },
+      select: { id: true, name: true, email: true },
+    });
+    return NextResponse.json({ contacts });
+  }
 
   const contacts = await prisma.contacts.findMany({
     where: q ? {

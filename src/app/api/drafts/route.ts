@@ -47,7 +47,7 @@ export async function POST(req: NextRequest) {
   requireAuth(session);
 
   const body = await req.json().catch(() => ({}));
-  const { mailbox_id, thread_id, to_raw, cc_raw, subject, html_body, text_body, is_shared } = body;
+  const { mailbox_id, thread_id, to_raw, cc_raw, bcc_raw, subject, html_body, text_body, is_shared } = body;
 
   const draft = await prisma.drafts.create({
     data: {
@@ -56,6 +56,7 @@ export async function POST(req: NextRequest) {
       thread_id: thread_id || null,
       to_raw: to_raw || null,
       cc_raw: cc_raw || null,
+      bcc_raw: bcc_raw || null,
       subject: subject || null,
       html_body: html_body || null,
       text_body: text_body || null,
