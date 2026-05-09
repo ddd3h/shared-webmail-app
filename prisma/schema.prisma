@@ -192,7 +192,7 @@ model messages {
   id                  String           @id @default(cuid())
   thread_id           String
   mailbox_id          String
-  external_message_id String           @unique
+  external_message_id String
   imap_uid            Int?
   in_reply_to         String?
   references_raw      String?
@@ -216,6 +216,8 @@ model messages {
   attachments attachments[]
   sends       message_sends[]
   mm_forwards mattermost_forwards[]
+
+  @@unique([external_message_id, mailbox_id])
 }
 
 model attachments {
