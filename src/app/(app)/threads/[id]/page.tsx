@@ -3,6 +3,7 @@ import { use, useEffect, useState, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import RichEditor, { RichEditorHandle } from '@/components/RichEditor';
+import EmailChipInput from '@/components/EmailChipInput';
 import CollabEditor, { CollabEditorHandle } from '@/components/CollabEditor';
 import { useDraft } from '@/hooks/useDraft';
 import { useCollab } from '@/hooks/useCollab';
@@ -200,7 +201,7 @@ export default function ThreadDetailPage({ params }: Props) {
   const [showMmPanel, setShowMmPanel] = useState(false);
   const [signature, setSignature] = useState('');
   const [showForward, setShowForward] = useState(false);
-  const [forwardTo, setForwardTo] = useState('');
+  const [forwardToChips, setForwardToChips] = useState<string[]>([]);
   const [forwardFiles, setForwardFiles] = useState<File[]>([]);
   const [forwardSending, setForwardSending] = useState(false);
   const [expandedInfo, setExpandedInfo] = useState<Set<string>>(new Set());
@@ -211,11 +212,13 @@ export default function ThreadDetailPage({ params }: Props) {
   const [moveStep, setMoveStep] = useState<'idle' | 'transferring' | 'done'>('idle');
   const [discussPosting, setDiscussPosting] = useState(false);
   const [aiLoading, setAiLoading] = useState(false);
-  const [replyTo, setReplyTo] = useState('');
-  const [replyCc, setReplyCc] = useState('');
+  const [replyToChips, setReplyToChips] = useState<string[]>([]);
+  const [replyCcChips, setReplyCcChips] = useState<string[]>([]);
   const [showReplyCc, setShowReplyCc] = useState(false);
   const [replyFromMailboxId, setReplyFromMailboxId] = useState('');
   const [replyMailboxes, setReplyMailboxes] = useState<{ id: string; display_name: string; email_address: string }[]>([]);
+  const [replySigVisible, setReplySigVisible] = useState(true);
+  const [forwardSigVisible, setForwardSigVisible] = useState(true);
   const router = useRouter();
   const editorRef = useRef<RichEditorHandle | CollabEditorHandle>(null);
   const forwardEditorRef = useRef<RichEditorHandle>(null);
@@ -292,21 +295,17 @@ export default function ThreadDetailPage({ params }: Props) {
     setShowReplyQuote(false);
     const lastIncoming = data?.messages?.slice().reverse().find(m => m.direction === 'incoming');
     setReplyFromMailboxId(data?.mailbox?.id || '');
+    setReplySigVisible(true);
     if (lastIncoming) {
-      setReplyTo(lastIncoming.from.email);
-      const cc = lastIncoming.cc || '';
-      setReplyCc(cc);
-      setShowReplyCc(!!cc);
+      setReplyToChips([lastIncoming.from.email]);
+      const cc = (lastIncoming.cc || '').split(/,\s*/).map((s: string) => s.trim()).filter(Boolean);
+      setReplyCcChips(cc);
+      setShowReplyCc(cc.length > 0);
     }
     setTimeout(() => {
       if (editorRef.current) {
         const lastIncoming = data?.messages?.slice().reverse().find(m => m.direction === 'incoming');
-        const currentSig = signatureRef.current;
-        const sigHtml = currentSig
-          ? `<p></p><p style="color:#111827;font-size:13px">${currentSig.replace(/\n/g, '<br>')}</p>`
-          : '<p></p>';
-        // Put only reply text + signature in the editor; store quote separately
-        editorRef.current.setHTML(`<p></p>${sigHtml}`);
+        editorRef.current.setHTML('<p></p>');
         if (lastIncoming) {
           const qHtml = lastIncoming.html_body
             || `<pre style="white-space:pre-wrap;font-family:inherit">${lastIncoming.text_body || ''}</pre>`;
@@ -333,15 +332,16 @@ export default function ThreadDetailPage({ params }: Props) {
       const quoteSection = replyQuote
         ? `<p style="color:#6b7280;font-size:12px;margin-top:16px">${replyQuote.header}</p><blockquote style="border-left:3px solid #d1d5db;margin:8px 0;padding:4px 12px;color:#6b7280">${replyQuote.html}</blockquote>`
         : '';
-      const html = bodyHtml + quoteSection;
+      const sigSection = replySigVisible && signature
+        ? `<p style="color:#374151;font-size:13px;margin-top:12px">--<br>${signature.replace(/\n/g, '<br>')}</p>`
+        : '';
+      const html = bodyHtml + sigSection + quoteSection;
       const fd = new FormData();
       fd.append('html', html);
       fd.append('text', text);
       if (replyFromMailboxId) fd.append('fromMailboxId', replyFromMailboxId);
-      const toList = replyTo.split(',').map(s => s.trim()).filter(Boolean);
-      if (toList.length > 0) fd.append('to', JSON.stringify(toList));
-      const ccList = replyCc.split(',').map(s => s.trim()).filter(Boolean);
-      if (ccList.length > 0) fd.append('cc', JSON.stringify(ccList));
+      if (replyToChips.length > 0) fd.append('to', JSON.stringify(replyToChips));
+      if (replyCcChips.length > 0) fd.append('cc', JSON.stringify(replyCcChips));
       replyFiles.forEach(f => fd.append('file', f));
       const res = await fetch(`/api/messages/${lastIncoming.id}/reply`, { method: 'POST', body: fd });
       if (res.ok) {
@@ -372,11 +372,7 @@ export default function ThreadDetailPage({ params }: Props) {
       const json = await res.json();
       if (!res.ok) { flashMsg('error', json.error || 'AI処理に失敗しました'); return; }
       const html = json.text.replace(/\n/g, '<br>');
-      const sig = signatureRef.current;
-      const sigHtml = sig
-        ? `<p></p><p style="color:#111827;font-size:13px">${sig.replace(/\n/g, '<br>')}</p>`
-        : '';
-      editorRef.current.setHTML(html + sigHtml);
+      editorRef.current.setHTML(html);
       editorRef.current.focus();
     } finally {
       setAiLoading(false);
@@ -409,18 +405,15 @@ export default function ThreadDetailPage({ params }: Props) {
 
   function openForward() {
     setShowForward(true);
-    setForwardTo('');
+    setForwardToChips([]);
+    setForwardSigVisible(true);
     setTimeout(() => {
       if (forwardEditorRef.current && data) {
         const lastMsg = data.messages[data.messages.length - 1];
-        const currentSig = signatureRef.current;
-        const sigHtml = currentSig
-          ? `<p></p><p style="color:#111827;font-size:13px">${currentSig.replace(/\n/g, '<br>')}</p>`
-          : '<p></p>';
         const quotedContent = lastMsg
           ? `<p></p><p style="color:#6b7280;font-size:12px">---- 転送メッセージ ----<br>送信元: ${lastMsg.from.name || lastMsg.from.email}<br>日付: ${formatDate(lastMsg.sent_at)}<br>件名: ${data.subject || ''}<br>宛先: ${lastMsg.to}</p><blockquote style="border-left:3px solid #d1d5db;margin:8px 0;padding:4px 12px;color:#6b7280">${lastMsg.html_body || `<pre style="white-space:pre-wrap;font-family:inherit">${lastMsg.text_body || ''}</pre>`}</blockquote>`
           : '';
-        forwardEditorRef.current.setHTML(`<p></p>${sigHtml}${quotedContent}`);
+        forwardEditorRef.current.setHTML(`<p></p>${quotedContent}`);
         forwardEditorRef.current.focus();
       }
       replyBoxRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -429,14 +422,17 @@ export default function ThreadDetailPage({ params }: Props) {
 
   async function sendForward() {
     if (!forwardEditorRef.current || forwardEditorRef.current.isEmpty()) return;
-    if (!forwardTo.trim()) { flashMsg('error', '宛先を入力してください'); return; }
+    if (!forwardToChips.length) { flashMsg('error', '宛先を入力してください'); return; }
     setForwardSending(true);
     try {
       const subject = `Fw: ${data?.subject || ''}`;
-      const html = forwardEditorRef.current.getHTML();
+      const sigSection = forwardSigVisible && signature
+        ? `<p style="color:#374151;font-size:13px;margin-top:12px">--<br>${signature.replace(/\n/g, '<br>')}</p>`
+        : '';
+      const html = forwardEditorRef.current.getHTML() + sigSection;
       const text = forwardEditorRef.current.getText();
       const fd = new FormData();
-      fd.append('to', forwardTo);
+      fd.append('to', JSON.stringify(forwardToChips));
       fd.append('subject', subject);
       fd.append('html', html);
       fd.append('text', text);
@@ -446,7 +442,7 @@ export default function ThreadDetailPage({ params }: Props) {
       if (res.ok) {
         flashMsg('success', '転送しました');
         setShowForward(false);
-        setForwardTo('');
+        setForwardToChips([]);
         setForwardFiles([]);
       } else {
         flashMsg('error', '転送に失敗しました');
@@ -1005,15 +1001,15 @@ export default function ThreadDetailPage({ params }: Props) {
                   </span>
                 )}
               </div>
-              <div className="flex items-center gap-2">
-                <span className="text-gray-400 w-7 flex-shrink-0">To</span>
-                <input
-                  type="text"
-                  value={replyTo}
-                  onChange={e => setReplyTo(e.target.value)}
-                  className="flex-1 bg-transparent border-0 outline-none text-gray-700 placeholder-gray-400"
-                  placeholder="送信先メールアドレス（カンマ区切り可）"
-                />
+              <div className="flex items-start gap-2">
+                <span className="text-gray-400 w-7 flex-shrink-0 pt-0.5">To</span>
+                <div className="flex-1">
+                  <EmailChipInput
+                    chips={replyToChips}
+                    onChange={setReplyToChips}
+                    placeholder="送信先（Enter・Tab・カンマで確定）"
+                  />
+                </div>
                 <button
                   type="button"
                   onClick={() => setShowReplyCc(v => !v)}
@@ -1023,15 +1019,15 @@ export default function ThreadDetailPage({ params }: Props) {
                 </button>
               </div>
               {showReplyCc && (
-                <div className="flex items-center gap-2">
-                  <span className="text-gray-400 w-7 flex-shrink-0">CC</span>
-                  <input
-                    type="text"
-                    value={replyCc}
-                    onChange={e => setReplyCc(e.target.value)}
-                    className="flex-1 bg-transparent border-0 outline-none text-gray-700 placeholder-gray-400"
-                    placeholder="CCアドレス（カンマ区切り可）"
-                  />
+                <div className="flex items-start gap-2">
+                  <span className="text-gray-400 w-7 flex-shrink-0 pt-0.5">CC</span>
+                  <div className="flex-1">
+                    <EmailChipInput
+                      chips={replyCcChips}
+                      onChange={setReplyCcChips}
+                      placeholder="CCアドレス（Enter・Tab・カンマで確定）"
+                    />
+                  </div>
                 </div>
               )}
             </div>
@@ -1066,6 +1062,25 @@ export default function ThreadDetailPage({ params }: Props) {
                 />
               )}
             </div>
+
+            {/* Signature */}
+            {signature && (
+              <div className="mx-3 border-t border-dashed border-gray-200">
+                <div className="flex items-center justify-between py-1.5">
+                  <span className="text-xs text-gray-400">-- 署名</span>
+                  <button
+                    type="button"
+                    onClick={() => setReplySigVisible(v => !v)}
+                    className="text-xs text-blue-500 hover:text-blue-700 transition-colors"
+                  >
+                    {replySigVisible ? '署名を外す' : '署名を追加'}
+                  </button>
+                </div>
+                {replySigVisible && (
+                  <p className="text-xs text-gray-500 whitespace-pre-wrap pb-2">{signature}</p>
+                )}
+              </div>
+            )}
 
             {/* Quoted content toggle */}
             {replyQuote && (
@@ -1237,16 +1252,16 @@ export default function ThreadDetailPage({ params }: Props) {
           </div>
 
           {/* To field */}
-          <div className="px-4 pt-3 pb-1 border-b border-gray-100">
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-gray-400 w-8 flex-shrink-0">宛先:</span>
-              <input
-                type="email"
-                value={forwardTo}
-                onChange={e => setForwardTo(e.target.value)}
-                placeholder="転送先メールアドレス"
-                className="flex-1 text-sm border-0 outline-none text-gray-900 placeholder-gray-400 py-1"
-              />
+          <div className="px-4 pt-2 pb-2 border-b border-gray-100">
+            <div className="flex items-start gap-2">
+              <span className="text-xs text-gray-400 w-8 flex-shrink-0 pt-0.5">宛先:</span>
+              <div className="flex-1">
+                <EmailChipInput
+                  chips={forwardToChips}
+                  onChange={setForwardToChips}
+                  placeholder="転送先（Enter・Tab・カンマで確定）"
+                />
+              </div>
             </div>
           </div>
 
@@ -1259,6 +1274,25 @@ export default function ThreadDetailPage({ params }: Props) {
               onInput={() => {}}
             />
           </div>
+
+          {/* Signature */}
+          {signature && (
+            <div className="mx-3 border-t border-dashed border-gray-200">
+              <div className="flex items-center justify-between py-1.5">
+                <span className="text-xs text-gray-400">-- 署名</span>
+                <button
+                  type="button"
+                  onClick={() => setForwardSigVisible(v => !v)}
+                  className="text-xs text-blue-500 hover:text-blue-700 transition-colors"
+                >
+                  {forwardSigVisible ? '署名を外す' : '署名を追加'}
+                </button>
+              </div>
+              {forwardSigVisible && (
+                <p className="text-xs text-gray-500 whitespace-pre-wrap pb-2">{signature}</p>
+              )}
+            </div>
+          )}
 
           {/* Attachment list */}
           {forwardFiles.length > 0 && (
