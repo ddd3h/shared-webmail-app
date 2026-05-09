@@ -211,6 +211,9 @@ export default function ThreadDetailPage({ params }: Props) {
   const [moveStep, setMoveStep] = useState<'idle' | 'transferring' | 'done'>('idle');
   const [discussPosting, setDiscussPosting] = useState(false);
   const [aiLoading, setAiLoading] = useState(false);
+  const [replyTo, setReplyTo] = useState('');
+  const [replyCc, setReplyCc] = useState('');
+  const [showReplyCc, setShowReplyCc] = useState(false);
   const router = useRouter();
   const editorRef = useRef<RichEditorHandle | CollabEditorHandle>(null);
   const forwardEditorRef = useRef<RichEditorHandle>(null);
@@ -275,6 +278,13 @@ export default function ThreadDetailPage({ params }: Props) {
   function openReply() {
     setShowReply(true);
     setShowReplyQuote(false);
+    const lastIncoming = data?.messages?.slice().reverse().find(m => m.direction === 'incoming');
+    if (lastIncoming) {
+      setReplyTo(lastIncoming.from.email);
+      const cc = lastIncoming.cc || '';
+      setReplyCc(cc);
+      setShowReplyCc(!!cc);
+    }
     setTimeout(() => {
       if (editorRef.current) {
         const lastIncoming = data?.messages?.slice().reverse().find(m => m.direction === 'incoming');
@@ -314,6 +324,10 @@ export default function ThreadDetailPage({ params }: Props) {
       const fd = new FormData();
       fd.append('html', html);
       fd.append('text', text);
+      const toList = replyTo.split(',').map(s => s.trim()).filter(Boolean);
+      if (toList.length > 0) fd.append('to', JSON.stringify(toList));
+      const ccList = replyCc.split(',').map(s => s.trim()).filter(Boolean);
+      if (ccList.length > 0) fd.append('cc', JSON.stringify(ccList));
       replyFiles.forEach(f => fd.append('file', f));
       const res = await fetch(`/api/messages/${lastIncoming.id}/reply`, { method: 'POST', body: fd });
       if (res.ok) {
@@ -955,6 +969,43 @@ export default function ThreadDetailPage({ params }: Props) {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                 </svg>
               </button>
+            </div>
+
+            {/* Recipients */}
+            <div className="border-b border-gray-100 px-4 py-2 space-y-1 text-xs">
+              <div className="flex items-center gap-2">
+                <span className="text-gray-400 w-7 flex-shrink-0">From</span>
+                <span className="text-gray-500 truncate">{data?.mailbox?.email_address || ''}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-gray-400 w-7 flex-shrink-0">To</span>
+                <input
+                  type="text"
+                  value={replyTo}
+                  onChange={e => setReplyTo(e.target.value)}
+                  className="flex-1 bg-transparent border-0 outline-none text-gray-700 placeholder-gray-400"
+                  placeholder="送信先メールアドレス（カンマ区切り可）"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowReplyCc(v => !v)}
+                  className={`flex-shrink-0 px-1.5 py-0.5 rounded text-xs transition-colors ${showReplyCc ? 'text-blue-600 bg-blue-50' : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'}`}
+                >
+                  CC
+                </button>
+              </div>
+              {showReplyCc && (
+                <div className="flex items-center gap-2">
+                  <span className="text-gray-400 w-7 flex-shrink-0">CC</span>
+                  <input
+                    type="text"
+                    value={replyCc}
+                    onChange={e => setReplyCc(e.target.value)}
+                    className="flex-1 bg-transparent border-0 outline-none text-gray-700 placeholder-gray-400"
+                    placeholder="CCアドレス（カンマ区切り可）"
+                  />
+                </div>
+              )}
             </div>
 
             {/* Rich editor */}
