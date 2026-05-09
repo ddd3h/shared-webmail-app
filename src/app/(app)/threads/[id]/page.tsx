@@ -214,6 +214,8 @@ export default function ThreadDetailPage({ params }: Props) {
   const [replyTo, setReplyTo] = useState('');
   const [replyCc, setReplyCc] = useState('');
   const [showReplyCc, setShowReplyCc] = useState(false);
+  const [replyFromMailboxId, setReplyFromMailboxId] = useState('');
+  const [replyMailboxes, setReplyMailboxes] = useState<{ id: string; display_name: string; email_address: string }[]>([]);
   const router = useRouter();
   const editorRef = useRef<RichEditorHandle | CollabEditorHandle>(null);
   const forwardEditorRef = useRef<RichEditorHandle>(null);
@@ -243,6 +245,16 @@ export default function ThreadDetailPage({ params }: Props) {
     // Always mark as read when opening a thread
     fetch(`/api/threads/${id}/read`, { method: 'POST' }).catch(() => {});
   }, [id, router]);
+
+  useEffect(() => {
+    fetch('/api/mailboxes?mine=1')
+      .then(r => r.json())
+      .then(d => {
+        const canReply = (d.items || []).filter((m: any) => m.user_permissions?.can_reply);
+        setReplyMailboxes(canReply.map((m: any) => ({ id: m.id, display_name: m.display_name, email_address: m.email_address })));
+      })
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     load();
@@ -279,6 +291,7 @@ export default function ThreadDetailPage({ params }: Props) {
     setShowReply(true);
     setShowReplyQuote(false);
     const lastIncoming = data?.messages?.slice().reverse().find(m => m.direction === 'incoming');
+    setReplyFromMailboxId(data?.mailbox?.id || '');
     if (lastIncoming) {
       setReplyTo(lastIncoming.from.email);
       const cc = lastIncoming.cc || '';
@@ -324,6 +337,7 @@ export default function ThreadDetailPage({ params }: Props) {
       const fd = new FormData();
       fd.append('html', html);
       fd.append('text', text);
+      if (replyFromMailboxId) fd.append('fromMailboxId', replyFromMailboxId);
       const toList = replyTo.split(',').map(s => s.trim()).filter(Boolean);
       if (toList.length > 0) fd.append('to', JSON.stringify(toList));
       const ccList = replyCc.split(',').map(s => s.trim()).filter(Boolean);
@@ -975,7 +989,21 @@ export default function ThreadDetailPage({ params }: Props) {
             <div className="border-b border-gray-100 px-4 py-2 space-y-1 text-xs">
               <div className="flex items-center gap-2">
                 <span className="text-gray-400 w-7 flex-shrink-0">From</span>
-                <span className="text-gray-500 truncate">{data?.mailbox?.email_address || ''}</span>
+                {replyMailboxes.length > 1 ? (
+                  <select
+                    value={replyFromMailboxId}
+                    onChange={e => setReplyFromMailboxId(e.target.value)}
+                    className="flex-1 bg-transparent border-0 outline-none text-gray-700 cursor-pointer"
+                  >
+                    {replyMailboxes.map(mb => (
+                      <option key={mb.id} value={mb.id}>{mb.display_name} &lt;{mb.email_address}&gt;</option>
+                    ))}
+                  </select>
+                ) : (
+                  <span className="text-gray-500 truncate">
+                    {replyMailboxes.find(m => m.id === replyFromMailboxId)?.email_address || data?.mailbox?.email_address || ''}
+                  </span>
+                )}
               </div>
               <div className="flex items-center gap-2">
                 <span className="text-gray-400 w-7 flex-shrink-0">To</span>

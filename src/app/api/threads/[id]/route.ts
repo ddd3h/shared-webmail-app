@@ -50,7 +50,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     subject: t.subject,
     status: t.status,
     permissions,
-    mailbox: { id: t.mailbox_id, name: t.mailbox.display_name, type: t.mailbox.type, mattermost_channel_id: t.mailbox.mattermost_channel_id },
+    mailbox: { id: t.mailbox_id, name: t.mailbox.display_name, type: t.mailbox.type, email_address: t.mailbox.email_address, mattermost_channel_id: t.mailbox.mattermost_channel_id },
     assigned_user: t.assigned_user ? { id: t.assigned_user.id, name: t.assigned_user.name } : null,
     last_replied_by: t.last_replied_by ? { id: t.last_replied_by.id, name: t.last_replied_by.name } : null,
     mattermost: t.mattermost?.permalink || null,

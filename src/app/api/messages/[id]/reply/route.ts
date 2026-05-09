@@ -15,10 +15,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const contentType = req.headers.get('content-type') || '';
   let to: string[] | undefined, cc: string[] | undefined, bcc: string[] | undefined,
     subject: string | undefined, text: string | undefined, html: string | undefined,
-    files: File[] = [];
+    files: File[] = [], fromMailboxId: string | undefined;
 
   if (contentType.includes('multipart/form-data')) {
     const fd = await req.formData();
+    fromMailboxId = (fd.get('fromMailboxId') as string) || undefined;
     to = fd.has('to') ? JSON.parse(fd.get('to') as string) : undefined;
     cc = fd.has('cc') ? JSON.parse(fd.get('cc') as string) : undefined;
     bcc = fd.has('bcc') ? JSON.parse(fd.get('bcc') as string) : undefined;
@@ -28,7 +29,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     files = fd.getAll('file').filter(f => f instanceof File && (f as File).size > 0) as File[];
   } else {
     const body = await req.json().catch(() => ({}));
-    ({ to, cc, bcc, subject, text, html } = body);
+    ({ to, cc, bcc, subject, text, html, fromMailboxId } = body);
   }
 
   const orig = await prisma.messages.findUnique({
@@ -38,6 +39,16 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   if (!orig) return NextResponse.json({ error: 'not_found' }, { status: 404 });
   if (!(await canReplyMailbox(session!.userId, orig.mailbox_id))) {
     return NextResponse.json({ error: 'forbidden' }, { status: 403 });
+  }
+
+  // Resolve the sending mailbox (may differ from the thread's mailbox when user selects a different From)
+  let sendingMailbox = orig.mailbox;
+  if (fromMailboxId && fromMailboxId !== orig.mailbox_id) {
+    if (!(await canReplyMailbox(session!.userId, fromMailboxId))) {
+      return NextResponse.json({ error: 'forbidden' }, { status: 403 });
+    }
+    const mb = await prisma.mailboxes.findUnique({ where: { id: fromMailboxId } });
+    if (mb) sendingMailbox = { ...orig.mailbox, ...mb };
   }
 
   const replySubject = subject ?? (orig.subject?.startsWith('Re:') ? orig.subject : `Re: ${orig.subject}`);
@@ -54,13 +65,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const msg = await prisma.messages.create({
     data: {
       thread_id: orig.thread_id,
-      mailbox_id: orig.mailbox_id,
+      mailbox_id: sendingMailbox.id,
       external_message_id: `local:${crypto.randomUUID()}`,
       in_reply_to: inReplyTo || null,
       references_raw: references || null,
       direction: 'outgoing',
-      from_name: orig.mailbox.display_name,
-      from_email: orig.mailbox.email_address,
+      from_name: sendingMailbox.display_name,
+      from_email: sendingMailbox.email_address,
       to_raw: toList.join(', '),
       cc_raw: cc?.join(', ') || null,
       bcc_raw: bcc?.join(', ') || null,
