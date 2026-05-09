@@ -94,13 +94,39 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
 
   await logAudit({ actorUserId: session.userId, actionType: 'delete_mailbox', targetType: 'mailboxes', targetId: id, metadata: { email: mb.email_address } });
 
-  // Delete related data before mailbox
-  await prisma.$transaction([
-    prisma.mailbox_permissions.deleteMany({ where: { mailbox_id: id } }),
-    prisma.drafts.deleteMany({ where: { mailbox_id: id } }),
-    prisma.mailbox_credentials.deleteMany({ where: { mailbox_id: id } }),
-    prisma.mailboxes.delete({ where: { id } }),
+  // Pre-fetch IDs needed for tables that lack a direct mailbox_id FK
+  const [threadRows, messageRows] = await Promise.all([
+    prisma.threads.findMany({ where: { mailbox_id: id }, select: { id: true } }),
+    prisma.messages.findMany({ where: { mailbox_id: id }, select: { id: true } }),
   ]);
+  const threadIds = threadRows.map(t => t.id);
+  const messageIds = messageRows.map(m => m.id);
+  const notifEventIds = threadIds.length > 0
+    ? (await prisma.notification_events.findMany({ where: { thread_id: { in: threadIds } }, select: { id: true } })).map(n => n.id)
+    : [];
+
+  // Delete in FK dependency order (children before parents)
+  await prisma.$transaction(async (tx) => {
+    if (notifEventIds.length > 0) {
+      await tx.notification_deliveries.deleteMany({ where: { notification_event_id: { in: notifEventIds } } });
+    }
+    await tx.notification_events.deleteMany({ where: { thread_id: { in: threadIds } } });
+    await tx.mattermost_forwards.deleteMany({ where: { thread_id: { in: threadIds } } });
+    await tx.mattermost_notifications.deleteMany({ where: { thread_id: { in: threadIds } } });
+    await tx.mattermost_links.deleteMany({ where: { thread_id: { in: threadIds } } });
+    await tx.thread_assignments.deleteMany({ where: { thread_id: { in: threadIds } } });
+    await tx.thread_state_history.deleteMany({ where: { thread_id: { in: threadIds } } });
+    await tx.thread_visibility.deleteMany({ where: { thread_id: { in: threadIds } } });
+    await tx.message_sends.deleteMany({ where: { mailbox_id: id } });
+    await tx.attachments.deleteMany({ where: { message_id: { in: messageIds } } });
+    await tx.messages.deleteMany({ where: { mailbox_id: id } });
+    await tx.drafts.deleteMany({ where: { mailbox_id: id } });
+    await tx.threads.deleteMany({ where: { mailbox_id: id } });
+    await tx.mailbox_sync_states.deleteMany({ where: { mailbox_id: id } });
+    await tx.mailbox_permissions.deleteMany({ where: { mailbox_id: id } });
+    await tx.mailbox_credentials.deleteMany({ where: { mailbox_id: id } });
+    await tx.mailboxes.delete({ where: { id } });
+  }, { timeout: 30000 });
 
   return NextResponse.json({ ok: true });
 }
