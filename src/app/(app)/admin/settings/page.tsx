@@ -439,9 +439,28 @@ function AdminSettingsContent() {
         </nav>
       </div>
 
+      {/* Sticky save bar for system settings */}
+      {tab === 'system' && (
+        <div className="fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur border-t border-gray-200 shadow-[0_-4px_12px_rgba(0,0,0,0.06)]">
+          <div className="max-w-2xl mx-auto px-4 py-3 flex items-center gap-4">
+            <p className="text-xs text-gray-400 hidden sm:block flex-1">一部の設定（NEXT_PUBLIC_APP_URL など）はサーバー再起動・再ビルド後に反映されます</p>
+            <button onClick={save} className="btn btn-primary px-6 ml-auto">設定を保存</button>
+          </div>
+        </div>
+      )}
+
       {/* System Settings */}
       {tab === 'system' && (
-        <div className="space-y-6 max-w-2xl">
+        <div className="space-y-6 max-w-2xl pb-20">
+          <div className="card p-6">
+            <h2 className="font-semibold text-gray-900 mb-4">アプリ基本設定</h2>
+            <div>
+              <label className="label">アプリURL（NEXT_PUBLIC_APP_URL）</label>
+              <input className="input" value={getVal('NEXT_PUBLIC_APP_URL')} onChange={e => setVal('NEXT_PUBLIC_APP_URL', e.target.value)} placeholder="https://mail.example.com" />
+              <p className="text-xs text-gray-400 mt-1">Web Push通知・OAuthコールバックなどで使用。変更後は再ビルドが必要です。</p>
+            </div>
+          </div>
+
           <div className="card p-6">
             <h2 className="font-semibold text-gray-900 mb-4">Web Push (VAPID)</h2>
             <div className="space-y-3">
@@ -499,6 +518,21 @@ function AdminSettingsContent() {
                 <label className="label">使用モデル</label>
                 <input className="input font-mono text-xs" value={getVal('OPENROUTER_MODEL')} onChange={e => setVal('OPENROUTER_MODEL', e.target.value)} placeholder="anthropic/claude-3.5-haiku" />
                 <p className="text-xs text-gray-400 mt-1">例: anthropic/claude-3.5-haiku、openai/gpt-4o-mini</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="card p-6">
+            <h2 className="font-semibold text-gray-900 mb-1">Google OAuth</h2>
+            <p className="text-xs text-gray-500 mb-4">Google連絡帳同期に必要なOAuthクライアント認証情報です。<a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">Google Cloud Console</a> で取得してください。</p>
+            <div className="space-y-3">
+              <div>
+                <label className="label">クライアントID（GOOGLE_CLIENT_ID）</label>
+                <input className="input font-mono text-xs" value={getVal('GOOGLE_CLIENT_ID')} onChange={e => setVal('GOOGLE_CLIENT_ID', e.target.value)} placeholder="xxxxxxxxxx.apps.googleusercontent.com" />
+              </div>
+              <div>
+                <label className="label">クライアントシークレット（GOOGLE_CLIENT_SECRET）</label>
+                <input type="password" className="input font-mono text-xs" value={getVal('GOOGLE_CLIENT_SECRET')} onChange={e => setVal('GOOGLE_CLIENT_SECRET', e.target.value, true)} placeholder="GOCSPX-..." />
               </div>
             </div>
           </div>
@@ -594,7 +628,6 @@ function AdminSettingsContent() {
             </div>
           </div>
 
-          <button onClick={save} className="btn btn-primary">設定を保存</button>
         </div>
       )}
 
