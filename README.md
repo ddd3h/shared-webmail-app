@@ -1,6 +1,8 @@
 <div align="center">
 
-# 📬 Shared Mail Workspace
+<img src="./docs/img/header.png" width="100%" alt="Shared Mail App" />
+
+# 📬 Shared Mail App
 
 **社内向け共有メール運用システム**
 
@@ -13,6 +15,8 @@
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind-3-06B6D4?logo=tailwindcss&logoColor=white)](https://tailwindcss.com/)
 
 </div>
+
+>
 
 ---
 
@@ -41,6 +45,62 @@
 
 ---
 
+## デザイン
+
+### PC版
+
+<div
+  style="
+    display:grid;
+    grid-template-columns:repeat(2, 1fr);
+    gap:16px;
+    justify-items:center;
+    align-items:center;
+    max-width:900px;
+    margin:0 auto;
+  "
+>
+  <img src="docs/img/pc_open.png"
+       style="width:80%; border-radius:12px;">
+
+  <img src="docs/img/pc_send.png"
+       style="width:80%; border-radius:12px;">
+
+  <img src="docs/img/pc_threads.png"
+       style="width:80%; border-radius:12px;">
+
+  <img src="docs/img/pc_compose.png"
+       style="width:80%; border-radius:12px;">
+</div>
+
+
+### スマホ版
+
+<div
+  style="
+    display:grid;
+    grid-template-columns:repeat(2, 1fr);
+    gap:16px;
+    justify-items:center;
+    align-items:center;
+    max-width:900px;
+    margin:0 auto;
+  "
+>
+  <img src="docs/img/smt_home.png"
+       style="width:60%; border-radius:12px;">
+
+  <img src="docs/img/smt_mail.png"
+       style="width:60%; border-radius:12px;">
+
+  <img src="docs/img/smt_noti.jpg"
+       style="width:60%; border-radius:12px;">
+
+  <img src="docs/img/smt_prf.png"
+       style="width:60%; border-radius:12px;">
+</div>
+
+---
 ## 技術スタック
 
 ```
