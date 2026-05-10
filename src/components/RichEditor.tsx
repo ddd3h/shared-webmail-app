@@ -1,5 +1,27 @@
 'use client';
 import { useRef, forwardRef, useImperativeHandle, useEffect, useState } from 'react';
+import DOMPurify from 'dompurify';
+
+const PURIFY_CONFIG = {
+  ALLOWED_TAGS: [
+    'a', 'b', 'blockquote', 'br', 'code', 'col', 'colgroup', 'dd', 'del', 'div', 'dl', 'dt',
+    'em', 'figcaption', 'figure', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'hr', 'i', 'img',
+    'ins', 'kbd', 'li', 'mark', 'ol', 'p', 'pre', 'q', 's', 'small', 'span', 'strong',
+    'sub', 'sup', 'table', 'tbody', 'td', 'tfoot', 'th', 'thead', 'tr', 'u', 'ul', 'wbr',
+  ],
+  ALLOWED_ATTR: [
+    'href', 'src', 'alt', 'title', 'target', 'rel', 'style', 'width', 'height',
+    'colspan', 'rowspan', 'align', 'valign', 'border', 'cellpadding', 'cellspacing',
+    'start', 'type', 'span', 'datetime',
+  ],
+  ALLOW_DATA_ATTR: false,
+  FORCE_BODY: true,
+};
+
+function purify(html: string): string {
+  if (typeof window === 'undefined') return '';
+  return DOMPurify.sanitize(html, PURIFY_CONFIG) as string;
+}
 
 export type RichEditorHandle = {
   getHTML: () => string;
@@ -33,13 +55,13 @@ const RichEditor = forwardRef<RichEditorHandle, Props>(({ placeholder, minHeight
     getHTML: () => editorRef.current?.innerHTML ?? '',
     getText: () => editorRef.current?.innerText ?? '',
     focus: () => editorRef.current?.focus(),
-    setHTML: (html: string) => { if (editorRef.current) editorRef.current.innerHTML = html; },
+    setHTML: (html: string) => { if (editorRef.current) editorRef.current.innerHTML = purify(html); },
     isEmpty: () => !editorRef.current?.innerText?.trim()
   }));
 
   useEffect(() => {
     if (initialHTML && editorRef.current) {
-      editorRef.current.innerHTML = initialHTML;
+      editorRef.current.innerHTML = purify(initialHTML);
     }
   }, [initialHTML]);
 
@@ -226,8 +248,15 @@ const RichEditor = forwardRef<RichEditorHandle, Props>(({ placeholder, minHeight
             return;
           }
 
-          // Allow HTML paste natively (preserves styles from other apps)
-          // Let the browser handle it, just trigger onInput after
+          // Sanitize HTML paste before inserting to block XSS via pasted content
+          if (e.clipboardData.types.includes('text/html')) {
+            e.preventDefault();
+            const raw = e.clipboardData.getData('text/html');
+            document.execCommand('insertHTML', false, purify(raw));
+            setTimeout(() => onInput?.(), 0);
+            return;
+          }
+
           setTimeout(() => onInput?.(), 0);
         }}
         data-placeholder={placeholder}

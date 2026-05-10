@@ -4,6 +4,7 @@ import { getSession, requireAuth } from '@/lib/auth';
 import { canReplyMailbox } from '@/lib/rbac';
 import { logAudit } from '@/lib/audit';
 import { sendMailForMessage } from '@/lib/mail/send-job';
+import { sanitizeEmailHtml } from '@/lib/sanitize';
 import { writeFile, mkdir } from 'fs/promises';
 import path from 'path';
 
@@ -77,7 +78,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       bcc_raw: bcc?.join(', ') || null,
       subject: replySubject,
       text_body: text || null,
-      html_body: html || null,
+      html_body: html ? sanitizeEmailHtml(html) : null,
       sent_at: new Date(),
       received_at: null,
       raw_headers: null,

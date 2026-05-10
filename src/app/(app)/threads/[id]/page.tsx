@@ -101,16 +101,43 @@ function findTextQuoteBoundary(text: string): number | null {
   return null;
 }
 
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
 function MessageBody({ html, text }: { html: string | null; text: string | null }) {
   const [quoteExpanded, setQuoteExpanded] = useState(false);
 
   if (html) {
     const hasQuote = htmlHasQuote(html);
+    const quoteHideStyle = !quoteExpanded && hasQuote
+      ? 'blockquote,.gmail_quote,.gmail_extra,.yahoo_quoted,[id="divRplyFwdMsg"],[id="appendonsend"]{display:none!important}'
+      : '';
+    const srcDoc = `<!DOCTYPE html><html><head><meta charset="utf-8"><base target="_blank"><style>
+html,body{margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:14px;color:#374151;word-break:break-word;overflow-wrap:break-word}
+a{color:#3b82f6}img{max-width:100%;height:auto}
+blockquote{border-left:3px solid #d1d5db;margin:8px 0;padding:4px 12px;color:#9ca3af}
+pre{white-space:pre-wrap;font-family:inherit}
+${quoteHideStyle}
+</style></head><body>${html}</body></html>`;
     return (
       <div>
-        <div
-          className={`prose prose-sm max-w-none text-gray-700 overflow-x-auto ${!quoteExpanded && hasQuote ? 'email-quotes-hidden' : ''}`}
-          dangerouslySetInnerHTML={{ __html: html }}
+        <iframe
+          key={quoteExpanded ? 'expanded' : 'collapsed'}
+          srcDoc={srcDoc}
+          sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
+          className="w-full border-0 block"
+          style={{ minHeight: 24 }}
+          onLoad={(e) => {
+            const iframe = e.currentTarget;
+            const doc = iframe.contentDocument;
+            if (doc) {
+              const h = Math.max(doc.body.scrollHeight, doc.documentElement.scrollHeight);
+              iframe.style.height = h + 'px';
+            }
+          }}
+          title="メール本文"
         />
         {hasQuote && (
           <button
@@ -259,7 +286,7 @@ export default function ThreadDetailPage({ params }: Props) {
       setReplyInitialTo([lastIncoming.from.email]);
       setReplyInitialCc((lastIncoming.cc || '').split(/,\s*/).map((s: string) => s.trim()).filter(Boolean));
       const qHtml = lastIncoming.html_body
-        || `<pre style="white-space:pre-wrap;font-family:inherit">${lastIncoming.text_body || ''}</pre>`;
+        || `<pre style="white-space:pre-wrap;font-family:inherit">${escapeHtml(lastIncoming.text_body || '')}</pre>`;
       setReplyQuote({ header: `${formatDate(lastIncoming.sent_at)}、${lastIncoming.from.name || lastIncoming.from.email || ''}:`, html: qHtml });
     } else {
       setReplyInitialTo([]);
@@ -294,7 +321,7 @@ export default function ThreadDetailPage({ params }: Props) {
     if (!data) return;
     const lastMsg = data.messages[data.messages.length - 1];
     const body = lastMsg
-      ? `<p></p><p style="color:#6b7280;font-size:12px">---- 転送メッセージ ----<br>送信元: ${lastMsg.from.name || lastMsg.from.email}<br>日付: ${formatDate(lastMsg.sent_at)}<br>件名: ${data.subject || ''}<br>宛先: ${lastMsg.to}</p><blockquote style="border-left:3px solid #d1d5db;margin:8px 0;padding:4px 12px;color:#6b7280">${lastMsg.html_body || `<pre style="white-space:pre-wrap;font-family:inherit">${lastMsg.text_body || ''}</pre>`}</blockquote>`
+      ? `<p></p><p style="color:#6b7280;font-size:12px">---- 転送メッセージ ----<br>送信元: ${escapeHtml(lastMsg.from.name || lastMsg.from.email)}<br>日付: ${escapeHtml(formatDate(lastMsg.sent_at))}<br>件名: ${escapeHtml(data.subject || '')}<br>宛先: ${escapeHtml(lastMsg.to)}</p><blockquote style="border-left:3px solid #d1d5db;margin:8px 0;padding:4px 12px;color:#6b7280">${lastMsg.html_body || `<pre style="white-space:pre-wrap;font-family:inherit">${escapeHtml(lastMsg.text_body || '')}</pre>`}</blockquote>`
       : '';
     setForwardInitialBody(body);
     setForwardInitialSubject(`Fw: ${data.subject || ''}`);
