@@ -8,20 +8,37 @@ import {
 import { sendMfiBelowThresholdDm } from '@/lib/mattermost-dm';
 
 export async function computeAndStoreMfi(userId: string, email: string) {
-  // Fetch unread threads the user can access
-  const threads = await prisma.threads.findMany({
+  // Personal threads: unread_count is the IMAP-sourced unread count
+  const personalThreads = await prisma.threads.findMany({
     where: {
       unread_count: { gt: 0 },
       is_archived: false,
-      mailbox: {
-        OR: [
-          { type: 'personal', owner_user_id: userId },
-          { permissions: { some: { user_id: userId, can_view: true } } },
-        ],
-      },
+      mailbox: { type: 'personal', owner_user_id: userId },
     },
     select: { unread_count: true, last_message_at: true },
   });
+
+  // Team threads: use per-user reads table (same logic as the thread list UI)
+  const teamThreadsRaw = await prisma.threads.findMany({
+    where: {
+      is_archived: false,
+      mailbox: { type: 'team', permissions: { some: { user_id: userId, can_view: true } } },
+    },
+    select: {
+      last_message_at: true,
+      unread_count: true,
+      reads: { where: { user_id: userId }, select: { last_read_at: true } },
+    },
+  });
+
+  const teamThreads = teamThreadsRaw
+    .filter(t => {
+      const userRead = t.reads[0];
+      return !userRead || t.last_message_at > userRead.last_read_at;
+    })
+    .map(t => ({ unread_count: 1, last_message_at: t.last_message_at }));
+
+  const threads = [...personalThreads, ...teamThreads];
 
   const breakdown = computeDebt(threads);
 

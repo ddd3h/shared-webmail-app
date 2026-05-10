@@ -4,6 +4,7 @@ import { syncMailbox } from '@/lib/mail/sync';
 import { checkRateLimit, getClientIp } from '@/lib/rate-limit';
 import { sendDosAlert } from '@/lib/dos-alert';
 import { computeAndStoreMfi } from '@/app/api/mfi/compute';
+import { getActiveUsers } from '@/lib/background-jobs';
 
 // 5 calls per minute per IP — prevents sync DoS even when CRON_SECRET is set
 const WINDOW_MS = 60 * 1000;
@@ -48,12 +49,9 @@ export async function GET(req: NextRequest) {
 
   const totalSynced = results.reduce((sum, r) => sum + r.synced, 0);
 
-  // Compute MFI for all users with personal mailboxes (fire-and-forget)
-  const owners = await prisma.users.findMany({
-    where: { owned_mailboxes: { some: { type: 'personal', is_active: true } } },
-    select: { id: true, email: true },
-  });
-  Promise.allSettled(owners.map(u => computeAndStoreMfi(u.id, u.email))).catch(() => {});
+  // Compute MFI for all users with mailbox access — personal + team (fire-and-forget)
+  const users = await getActiveUsers();
+  Promise.allSettled(users.map(u => computeAndStoreMfi(u.id, u.email))).catch(() => {});
 
   return NextResponse.json({ ok: true, mailboxes: results.length, totalSynced, results });
 }
