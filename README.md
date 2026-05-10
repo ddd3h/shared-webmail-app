@@ -1,8 +1,8 @@
 <div align="center">
 
-<img src="./docs/img/header.png" width="100%" alt="Shared Mail App" />
+<img src="./docs/img/header.png" width="100%" alt="Shared Webmail App" />
 
-# 📬 Shared Mail App
+# 📬 Shared Webmail App
 
 **社内向け共有メール運用システム**
 
