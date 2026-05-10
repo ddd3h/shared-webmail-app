@@ -387,7 +387,7 @@ export default function ComposeForm({
     <div className={`border-t border-dashed border-gray-200 pt-2 pb-2 ${px} mx-0`}>
       <div className="flex items-start justify-between gap-2">
         {sigVisible
-          ? <p className="text-sm text-gray-900 whitespace-pre-wrap flex-1">{'--\n'}{signature}</p>
+          ? <p className="text-sm text-gray-900 whitespace-pre-wrap flex-1">{'\n'}{signature}</p>
           : <span className="flex-1" />}
         <button
           type="button"
