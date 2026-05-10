@@ -1,5 +1,6 @@
 'use client';
 import { useEffect, useState, useCallback, useRef } from 'react';
+import Link from 'next/link';
 
 type Contact = {
   id: string;
@@ -225,9 +226,13 @@ export default function ContactsPage() {
                   </div>
                   <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-0.5">
                     {c.email && (
-                      <a href={`mailto:${c.email}`} className="text-xs text-blue-600 hover:underline truncate" onClick={e => e.stopPropagation()}>
+                      <Link
+                        href={`/threads?compose=${c.email}&name=${encodeURIComponent(c.name)}`}
+                        className="text-xs text-blue-600 hover:underline truncate"
+                        onClick={e => e.stopPropagation()}
+                      >
                         {c.email}
-                      </a>
+                      </Link>
                     )}
                     {c.phone && <span className="text-xs text-gray-500">{c.phone}</span>}
                     {(c.company || c.department) && (

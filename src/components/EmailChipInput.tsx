@@ -51,7 +51,8 @@ export default function EmailChipInput({ chips, onChange, placeholder }: Props) 
   }
 
   function selectSuggestion(s: Suggestion) {
-    addChip(s.email);
+    const value = s.name ? `${s.name} <${s.email}>` : s.email;
+    addChip(value);
     inputRef.current?.focus();
   }
 
@@ -88,7 +89,7 @@ export default function EmailChipInput({ chips, onChange, placeholder }: Props) 
   function handlePaste(e: ClipboardEvent<HTMLInputElement>) {
     const text = e.clipboardData.getData('text');
     const parsed = text.split(/[\s,;]+/).map(s => s.trim()).filter(Boolean);
-    if (parsed.length > 1 || (parsed.length === 1 && EMAIL_RE.test(parsed[0]))) {
+    if (parsed.length > 1 || (parsed.length === 1 && (EMAIL_RE.test(parsed[0]) || parsed[0].includes('<')))) {
       e.preventDefault();
       const next = [...chips];
       for (const v of parsed) if (v && !next.includes(v)) next.push(v);
@@ -103,21 +104,28 @@ export default function EmailChipInput({ chips, onChange, placeholder }: Props) 
         onClick={() => inputRef.current?.focus()}
       >
         {chips.map((chip, i) => {
-          const valid = EMAIL_RE.test(chip);
+          const hasName = chip.includes('<') && chip.endsWith('>');
+          const email = hasName ? chip.split('<')[1].replace('>', '').trim() : chip;
+          const name = hasName ? chip.split('<')[0].trim() : null;
+          const valid = EMAIL_RE.test(email);
+
           return (
             <span
               key={i}
-              className={`inline-flex items-center gap-1 pl-2 pr-1 py-0.5 rounded-full text-xs font-medium border ${
+              className={`inline-flex items-center gap-1 pl-2 pr-1 py-0.5 rounded-full text-xs font-medium border max-w-[200px] ${
                 valid
                   ? 'bg-blue-50 text-blue-700 border-blue-200'
                   : 'bg-red-50 text-red-700 border-red-200'
               }`}
             >
-              {chip}
+              <span className="truncate">
+                {name ? <span className="mr-1">{name}</span> : null}
+                {name ? <span className="opacity-50 font-normal">&lt;{email}&gt;</span> : email}
+              </span>
               <button
                 type="button"
                 onClick={e => { e.stopPropagation(); onChange(chips.filter((_, j) => j !== i)); }}
-                className="w-3.5 h-3.5 rounded-full flex items-center justify-center opacity-50 hover:opacity-100 hover:bg-black/10 transition-opacity leading-none"
+                className="w-3.5 h-3.5 rounded-full flex items-center justify-center opacity-50 hover:opacity-100 hover:bg-black/10 transition-opacity leading-none flex-shrink-0"
               >
                 ×
               </button>

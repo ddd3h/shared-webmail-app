@@ -4,7 +4,19 @@ import useSWR from 'swr';
 import { useRouter, useSearchParams } from 'next/navigation';
 import ComposeForm, { type SendPayload } from '@/components/ComposeForm';
 
-function ComposeModal({ onClose, onSent, initialDraftId }: { onClose: () => void; onSent: () => void; initialDraftId?: string }) {
+function ComposeModal({
+  onClose,
+  onSent,
+  initialDraftId,
+  initialTo,
+  initialSubject,
+}: {
+  onClose: () => void;
+  onSent: () => void;
+  initialDraftId?: string;
+  initialTo?: string[];
+  initialSubject?: string;
+}) {
   const [minimized, setMinimized] = useState(false);
 
   async function handleSend(payload: SendPayload): Promise<string | null> {
@@ -59,6 +71,8 @@ function ComposeModal({ onClose, onSent, initialDraftId }: { onClose: () => void
         <ComposeForm
           mode="compose"
           draftId={initialDraftId}
+          initialTo={initialTo}
+          initialSubject={initialSubject}
           onSend={handleSend}
           onCancel={onClose}
         />
@@ -287,6 +301,8 @@ function ThreadList() {
   const [searchHistory, setSearchHistory] = useState<string[]>([]);
   const [showCompose, setShowCompose] = useState(false);
   const [openDraftId, setOpenDraftId] = useState<string | undefined>(undefined);
+  const [initialTo, setInitialTo] = useState<string[] | undefined>(undefined);
+  const [initialSubject, setInitialSubject] = useState<string | undefined>(undefined);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkLoading, setBulkLoading] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -295,6 +311,25 @@ function ThreadList() {
   const router = useRouter();
   const listRef = useRef<HTMLDivElement>(null);
   const lastSelectedIndexRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    const compose = searchParams.get('compose');
+    const name = searchParams.get('name');
+    const subjectParam = searchParams.get('subject');
+    if (compose) {
+      const to = name ? [`${name} <${compose}>`] : [compose];
+      setInitialTo(to);
+      if (subjectParam) setInitialSubject(subjectParam);
+      setShowCompose(true);
+      // Clean up URL
+      const newParams = new URLSearchParams(searchParams.toString());
+      newParams.delete('compose');
+      newParams.delete('name');
+      newParams.delete('subject');
+      const newQuery = newParams.toString();
+      router.replace(`/threads${newQuery ? '?' + newQuery : ''}`);
+    }
+  }, [searchParams, router]);
 
   const currentCursor = cursorStack[cursorStack.length - 1];
   const isSearching = search.trim().length > 0;
@@ -547,9 +582,11 @@ function ThreadList() {
     <div className="space-y-0">
       {showCompose && (
         <ComposeModal
-          onClose={() => { setShowCompose(false); setOpenDraftId(undefined); }}
+          onClose={() => { setShowCompose(false); setOpenDraftId(undefined); setInitialTo(undefined); setInitialSubject(undefined); }}
           onSent={() => { mutateThreads(); }}
           initialDraftId={openDraftId}
+          initialTo={initialTo}
+          initialSubject={initialSubject}
         />
       )}
 
