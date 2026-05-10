@@ -37,11 +37,11 @@
 
 <p align="center">
   <img src="https://is1-ssl.mzstatic.com/image/thumb/Purple211/v4/32/d7/41/32d741e2-d765-cefe-0d42-192a4f8c8505/icon.png/1200x630bb.png"
-  width="20%"
+  width="10%"
   alt="Mattermost Logo"/>
   <img
     src="https://upload.wikimedia.org/wikipedia/commons/b/b7/Google_Contacts_logo.png"
-    width="20%"
+    width="10%"
     alt="Google Contacts Logo"
   />
 </p>
