@@ -49,56 +49,27 @@
 
 ### PC版
 
-<div
-  style="
-    display:grid;
-    grid-template-columns:repeat(2, 1fr);
-    gap:16px;
-    justify-items:center;
-    align-items:center;
-    max-width:900px;
-    margin:0 auto;
-  "
->
-  <img src="docs/img/pc_open.png"
-       style="width:80%; border-radius:12px;">
-
-  <img src="docs/img/pc_send.png"
-       style="width:80%; border-radius:12px;">
-
-  <img src="docs/img/pc_threads.png"
-       style="width:80%; border-radius:12px;">
-
-  <img src="docs/img/pc_compose.png"
-       style="width:80%; border-radius:12px;">
-</div>
-
+<table>
+  <tr>
+    <td><img src="docs/img/pc_open.png" width="100%"></td>
+    <td><img src="docs/img/pc_send.png" width="100%"></td>
+  </tr>
+  <tr>
+    <td><img src="docs/img/pc_threads.png" width="100%"></td>
+    <td><img src="docs/img/pc_compose.png" width="100%"></td>
+  </tr>
+</table>
 
 ### スマホ版
 
-<div
-  style="
-    display:grid;
-    grid-template-columns:repeat(2, 1fr);
-    gap:16px;
-    justify-items:center;
-    align-items:center;
-    max-width:900px;
-    margin:0 auto;
-  "
->
-  <img src="docs/img/smt_home.png"
-       style="width:60%; border-radius:12px;">
-
-  <img src="docs/img/smt_mail.png"
-       style="width:60%; border-radius:12px;">
-
-  <img src="docs/img/smt_noti.jpg"
-       style="width:60%; border-radius:12px;">
-
-  <img src="docs/img/smt_prf.png"
-       style="width:60%; border-radius:12px;">
-</div>
+<table>
+  <tr>
+    <td align="center"><img src="docs/img/smt_home.png" width="80%"></td>
+    <td align="center"><img src="docs/img/smt_mail.png" width="80%"></td>
+    <td align="center"><img src="docs/img/smt_noti.jpg" width="80%"></td>
+    <td align="center"><img src="docs/img/smt_prf.png" width="80%"></td>
+  </tr>
+</table>
 
 ---
 ## 技術スタック
