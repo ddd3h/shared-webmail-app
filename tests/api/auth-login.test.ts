@@ -4,7 +4,7 @@ import { NextRequest } from 'next/server';
 // モック: データベース
 vi.mock('@/lib/db', () => ({
   prisma: {
-    users: { findUnique: vi.fn() },
+    users: { findUnique: vi.fn(), update: vi.fn().mockResolvedValue({}) },
     audit_logs: { create: vi.fn() },
   }
 }));

@@ -2,6 +2,9 @@
 import Link from 'next/link';
 import { useState } from 'react';
 import useSWR from 'swr';
+import dynamic from 'next/dynamic';
+
+const MfiChart = dynamic(() => import('@/components/MfiChart'), { ssr: false });
 
 type Stats = { myAssigned: number; inProgress: number };
 type Thread = {
@@ -10,7 +13,15 @@ type Thread = {
   mailbox: { display_name: string };
   assigned_user: { name: string } | null;
 };
-type User = { name: string; email: string; role: string };
+type User = { name: string; email: string; role: string; last_login_at: string | null };
+type MfiData = {
+  mfi: number; price: number; change24h: number; ath: number;
+  debt: number; streak_hours: number; oldest_unread_ms: number;
+  repaid_today: number; action_hint: string | null;
+  breakdown: { count_under1h: number; count_h1_24h: number; count_d1_3d: number; count_over3d: number };
+};
+type CandleData = { candles: { time: number; open: number; high: number; low: number; close: number; volume: number }[] };
+type AlertsData = { threshold: number; users: { id: string; name: string; mfi: number; recorded_at: string }[] };
 type MailboxStorage = {
   id: string; display_name: string; email_address: string;
   used_bytes: number; max_bytes: number; percent: number;
@@ -72,6 +83,20 @@ function StoragePie({ percent }: { percent: number }) {
   );
 }
 
+function formatAge(ms: number): string {
+  if (ms <= 0) return 'なし';
+  const h = ms / 3600000;
+  if (h < 1) return `${Math.floor(ms / 60000)}分`;
+  if (h < 24) return `${Math.floor(h)}時間`;
+  return `${Math.floor(h / 24)}日`;
+}
+
+function formatStreakHours(h: number): string {
+  if (h < 1) return `${Math.round(h * 60)}分`;
+  if (h < 24) return `${h.toFixed(1)}時間`;
+  return `${(h / 24).toFixed(1)}日`;
+}
+
 const fetcher = (url: string) => fetch(url).then(r => r.json());
 
 export default function DashboardPage() {
@@ -80,6 +105,9 @@ export default function DashboardPage() {
     recentTeamThreads: Thread[];
     mailboxStorage: MailboxStorage[];
   }>('/api/dashboard', fetcher);
+  const { data: mfiData } = useSWR<MfiData>('/api/mfi/current', fetcher, { refreshInterval: 5 * 60 * 1000 });
+  const { data: candleData } = useSWR<CandleData>('/api/mfi/candles?hours=48', fetcher, { refreshInterval: 5 * 60 * 1000 });
+  const { data: alertsData } = useSWR<AlertsData>('/api/mfi/alerts', fetcher, { refreshInterval: 5 * 60 * 1000 });
   const [recalculating, setRecalculating] = useState(false);
 
   const recalc = async () => {
@@ -107,10 +135,15 @@ export default function DashboardPage() {
         <div className="min-w-0">
           <h1 className="text-2xl font-bold text-gray-900">ダッシュボード</h1>
           {data?.user && (
-            <div className="flex items-center gap-1.5 mt-0.5">
+            <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
               <span className="text-sm text-gray-500 truncate">ようこそ、{data.user.name}さん</span>
               {data.user.role === 'admin' && (
                 <span className="flex-shrink-0 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-700">管理者</span>
+              )}
+              {data.user.last_login_at && (
+                <span className="flex-shrink-0 text-xs text-gray-400">
+                  前回ログイン: {formatDate(data.user.last_login_at)}
+                </span>
               )}
             </div>
           )}
@@ -200,6 +233,125 @@ export default function DashboardPage() {
               </div>
             ))}
           </div>
+        </div>
+      )}
+
+      {/* MFI Dashboard */}
+      <div className="card p-5 space-y-4">
+        {/* MFI header — MFI (0-100) is the hero number; Price is secondary */}
+        <div className="flex items-start justify-between gap-4 flex-wrap">
+          <div>
+            <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Mail Freshness Index</p>
+            {/* MFI score 0-100 */}
+            <div className="flex items-baseline gap-3">
+              <span className={`text-5xl font-bold tabular-nums ${
+                mfiData
+                  ? mfiData.mfi >= 70 ? 'text-green-600'
+                  : mfiData.mfi >= 40 ? 'text-amber-500'
+                  : 'text-red-500'
+                : 'text-gray-300'
+              }`}>
+                {mfiData ? mfiData.mfi.toFixed(1) : '—'}
+              </span>
+              <span className="text-sm text-gray-400 font-normal">/ 100</span>
+              {mfiData && (
+                <span className={`text-sm font-semibold ${mfiData.change24h >= 0 ? 'text-green-600' : 'text-red-500'}`}>
+                  {mfiData.change24h >= 0 ? '▲' : '▼'} {Math.abs(mfiData.change24h).toFixed(1)}%
+                  <span className="text-gray-400 font-normal ml-1">24h</span>
+                </span>
+              )}
+            </div>
+            {/* Price as secondary */}
+            {mfiData && (
+              <p className="text-xs text-gray-400 mt-1.5">
+                Price: <span className="font-semibold text-gray-600 tabular-nums">{mfiData.price.toFixed(2)}</span>
+                <span className="ml-2">ATH: <span className="font-semibold text-amber-600">{mfiData.ath.toFixed(2)}</span></span>
+              </p>
+            )}
+          </div>
+          {mfiData && mfiData.streak_hours > 0 && (
+            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs bg-green-50 text-green-700 border border-green-200 self-start">
+              🔥 {formatStreakHours(mfiData.streak_hours)} ストリーク
+            </span>
+          )}
+        </div>
+
+        {/* Chart */}
+        <MfiChart candles={candleData?.candles ?? []} />
+
+        {/* Sub metrics */}
+        {mfiData && (
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            {[
+              { label: '現在のDebt', value: mfiData.debt.toFixed(1) },
+              { label: '最古未読', value: formatAge(mfiData.oldest_unread_ms) },
+              { label: '本日返済', value: mfiData.repaid_today.toFixed(1) },
+              { label: 'ストリーク', value: formatStreakHours(mfiData.streak_hours) },
+            ].map(({ label, value }) => (
+              <div key={label} className="bg-gray-50 rounded-lg p-3">
+                <p className="text-xs text-gray-500">{label}</p>
+                <p className="text-lg font-semibold tabular-nums text-gray-900 mt-0.5">{value}</p>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Action hint */}
+        {mfiData?.action_hint && (
+          <div className="bg-blue-50 border border-blue-200 rounded-lg px-4 py-2.5 text-sm text-blue-700">
+            💡 {mfiData.action_hint}
+          </div>
+        )}
+
+        {/* Unread breakdown */}
+        {mfiData && (mfiData.breakdown.count_over3d > 0 || mfiData.breakdown.count_d1_3d > 0) && (
+          <div className="flex gap-2 flex-wrap text-xs">
+            {mfiData.breakdown.count_over3d > 0 && (
+              <span className="px-2 py-1 bg-red-50 text-red-600 rounded-full border border-red-100">
+                3日超: {mfiData.breakdown.count_over3d}件 (×8)
+              </span>
+            )}
+            {mfiData.breakdown.count_d1_3d > 0 && (
+              <span className="px-2 py-1 bg-orange-50 text-orange-600 rounded-full border border-orange-100">
+                1〜3日: {mfiData.breakdown.count_d1_3d}件 (×3)
+              </span>
+            )}
+            {mfiData.breakdown.count_h1_24h > 0 && (
+              <span className="px-2 py-1 bg-yellow-50 text-yellow-600 rounded-full border border-yellow-100">
+                1〜24h: {mfiData.breakdown.count_h1_24h}件 (×1)
+              </span>
+            )}
+            {mfiData.breakdown.count_under1h > 0 && (
+              <span className="px-2 py-1 bg-gray-100 text-gray-500 rounded-full">
+                1時間以内: {mfiData.breakdown.count_under1h}件 (×0.2)
+              </span>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* MFI alert users */}
+      {alertsData && alertsData.users.length > 0 && (
+        <div className="card p-5">
+          <h2 className="font-semibold text-gray-900 flex items-center gap-2 mb-3">
+            <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-red-100 text-red-600 text-xs font-bold flex-shrink-0">
+              {alertsData.users.length}
+            </span>
+            MFI {alertsData.threshold} 以下のメンバー
+          </h2>
+          <ul className="divide-y divide-gray-50">
+            {alertsData.users.map(u => (
+              <li key={u.id} className="flex items-center justify-between py-2.5 gap-4">
+                <span className="text-sm font-medium text-gray-900">{u.name}</span>
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  <span className={`text-sm font-bold tabular-nums ${u.mfi >= 40 ? 'text-amber-500' : 'text-red-500'}`}>
+                    {u.mfi.toFixed(1)}
+                  </span>
+                  <span className="text-xs text-gray-400">/ 100</span>
+                </div>
+              </li>
+            ))}
+          </ul>
         </div>
       )}
 
