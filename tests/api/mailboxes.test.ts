@@ -97,7 +97,7 @@ describe('GET /api/mailboxes', () => {
     expect(prisma.mailboxes.findMany).toHaveBeenCalledWith(expect.objectContaining({
       where: {
         OR: [
-          { owner_user_id: 'u1' },
+          { type: 'personal', owner_user_id: 'u1' },
           { permissions: { some: { user_id: 'u1', can_view: true } } }
         ]
       }
