@@ -441,10 +441,10 @@ function AdminSettingsContent() {
 
       {/* Sticky save bar for system settings */}
       {tab === 'system' && (
-        <div className="fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur border-t border-gray-200 shadow-[0_-4px_12px_rgba(0,0,0,0.06)]">
+        <div className="fixed bottom-[calc(env(safe-area-inset-bottom)+96px)] md:bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur border-t border-gray-200 shadow-[0_-4px_12px_rgba(0,0,0,0.06)]">
           <div className="max-w-2xl mx-auto px-4 py-3 flex items-center gap-4">
             <p className="text-xs text-gray-400 hidden sm:block flex-1">一部の設定（NEXT_PUBLIC_APP_URL など）はサーバー再起動・再ビルド後に反映されます</p>
-            <button onClick={save} className="btn btn-primary px-6 ml-auto">設定を保存</button>
+            <button onClick={save} className="btn btn-primary px-6 w-full md:w-auto md:ml-auto">設定を保存</button>
           </div>
         </div>
       )}
@@ -454,10 +454,143 @@ function AdminSettingsContent() {
         <div className="space-y-6 max-w-2xl pb-20">
           <div className="card p-6">
             <h2 className="font-semibold text-gray-900 mb-4">アプリ基本設定</h2>
-            <div>
-              <label className="label">アプリURL（NEXT_PUBLIC_APP_URL）</label>
-              <input className="input" value={getVal('NEXT_PUBLIC_APP_URL')} onChange={e => setVal('NEXT_PUBLIC_APP_URL', e.target.value)} placeholder="https://mail.example.com" />
-              <p className="text-xs text-gray-400 mt-1">Web Push通知・OAuthコールバックなどで使用。変更後は再ビルドが必要です。</p>
+            <div className="space-y-4">
+              <div>
+                <label className="label">アプリURL（NEXT_PUBLIC_APP_URL）</label>
+                <input className="input" value={getVal('NEXT_PUBLIC_APP_URL')} onChange={e => setVal('NEXT_PUBLIC_APP_URL', e.target.value)} placeholder="https://mail.example.com" />
+                <p className="text-xs text-gray-400 mt-1">Web Push通知・OAuthコールバックなどで使用。変更後は再ビルドが必要です。</p>
+              </div>
+              <div>
+                <label className="label">同期間隔（秒）</label>
+                <input type="number" className="input" value={getVal('SYNC_DEFAULT_INTERVAL_SEC')} onChange={e => setVal('SYNC_DEFAULT_INTERVAL_SEC', e.target.value)} placeholder="180" />
+              </div>
+              <div>
+                <label className="label">署名テンプレート</label>
+                <textarea className="input min-h-[100px] font-mono text-xs" value={getVal('DEFAULT_SIGNATURE_TEMPLATE')} onChange={e => setVal('DEFAULT_SIGNATURE_TEMPLATE', e.target.value)} placeholder="───────────────\n{{name}}\n\nEmail: {{email}}\n───────────────" />
+                <p className="text-xs text-gray-400 mt-1">{"{{name}} と {{email}} が使えます。"}</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="card p-6 border-red-100 bg-red-50/10">
+            <h2 className="font-semibold text-red-900 mb-4 flex items-center gap-2">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m0 0v2m0-2h2m-2 0H10m11-3V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2h11l4 4V12z" /></svg>
+              セキュリティ設定
+            </h2>
+            <div className="space-y-4">
+              <div>
+                <label className="label">SESSION_SECRET</label>
+                <input type="password" className="input font-mono text-xs" value={getVal('SESSION_SECRET')} onChange={e => setVal('SESSION_SECRET', e.target.value, true)} placeholder="CHANGE_ME_at_least_32_chars_long_random_string" />
+              </div>
+              <div>
+                <label className="label">ENCRYPTION_KEY_HEX (32 bytes HEX)</label>
+                <input type="password" className="input font-mono text-xs" value={getVal('ENCRYPTION_KEY_HEX')} onChange={e => setVal('ENCRYPTION_KEY_HEX', e.target.value, true)} placeholder="64 characters HEX" />
+                <p className="text-xs text-red-500 mt-1 italic">※注意: これを変更すると既存の保存済みメールパスワードが復号できなくなります。</p>
+              </div>
+              <div>
+                <label className="label">CRON_SECRET</label>
+                <input type="password" className="input font-mono text-xs" value={getVal('CRON_SECRET')} onChange={e => setVal('CRON_SECRET', e.target.value, true)} placeholder="API認証用トークン" />
+              </div>
+            </div>
+          </div>
+
+          <div className="card p-6">
+            <h2 className="font-semibold text-gray-900 mb-4">インフラ設定</h2>
+            <div className="space-y-4">
+              <div>
+                <label className="label">REDIS_URL (キュー管理用)</label>
+                <input className="input font-mono text-xs" value={getVal('REDIS_URL')} onChange={e => setVal('REDIS_URL', e.target.value)} placeholder="redis://localhost:6379" />
+              </div>
+              <div>
+                <label className="label">IMAP接続タイムアウト (ms)</label>
+                <input type="number" className="input" value={getVal('EMAIL_CONNECT_TIMEOUT_MS')} onChange={e => setVal('EMAIL_CONNECT_TIMEOUT_MS', e.target.value)} placeholder="10000" />
+              </div>
+            </div>
+          </div>
+
+          <div className="card p-6">
+            <h2 className="font-semibold text-gray-900 mb-4">アカウント追加時のデフォルト</h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="space-y-3">
+                <h3 className="text-xs font-bold text-gray-400 uppercase">IMAP (受信)</h3>
+                <div>
+                  <label className="label text-[10px]">デフォルトホスト</label>
+                  <input className="input text-sm" value={getVal('NEXT_PUBLIC_DEFAULT_IMAP_HOST')} onChange={e => setVal('NEXT_PUBLIC_DEFAULT_IMAP_HOST', e.target.value)} />
+                </div>
+                <div className="flex gap-4">
+                  <div className="flex-1">
+                    <label className="label text-[10px]">ポート</label>
+                    <input className="input text-sm" value={getVal('NEXT_PUBLIC_DEFAULT_IMAP_PORT')} onChange={e => setVal('NEXT_PUBLIC_DEFAULT_IMAP_PORT', e.target.value)} />
+                  </div>
+                  <div className="pt-6">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input type="checkbox" checked={getVal('NEXT_PUBLIC_DEFAULT_IMAP_SECURE') === 'true'} onChange={e => setVal('NEXT_PUBLIC_DEFAULT_IMAP_SECURE', String(e.target.checked))} className="h-4 w-4 rounded border-gray-300 text-blue-600" />
+                      <span className="text-xs">SSL/TLS</span>
+                    </label>
+                  </div>
+                </div>
+              </div>
+              <div className="space-y-3">
+                <h3 className="text-xs font-bold text-gray-400 uppercase">SMTP (送信)</h3>
+                <div>
+                  <label className="label text-[10px]">デフォルトホスト</label>
+                  <input className="input text-sm" value={getVal('NEXT_PUBLIC_DEFAULT_SMTP_HOST')} onChange={e => setVal('NEXT_PUBLIC_DEFAULT_SMTP_HOST', e.target.value)} />
+                </div>
+                <div className="flex gap-4">
+                  <div className="flex-1">
+                    <label className="label text-[10px]">ポート</label>
+                    <input className="input text-sm" value={getVal('NEXT_PUBLIC_DEFAULT_SMTP_PORT')} onChange={e => setVal('NEXT_PUBLIC_DEFAULT_SMTP_PORT', e.target.value)} />
+                  </div>
+                  <div className="pt-6">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input type="checkbox" checked={getVal('NEXT_PUBLIC_DEFAULT_SMTP_SECURE') === 'true'} onChange={e => setVal('NEXT_PUBLIC_DEFAULT_SMTP_SECURE', String(e.target.checked))} className="h-4 w-4 rounded border-gray-300 text-blue-600" />
+                      <span className="text-xs">SSL/TLS</span>
+                    </label>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="card p-6">
+            <h2 className="font-semibold text-gray-900 mb-4">管理者通知設定 (SMTP)</h2>
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="md:col-span-2">
+                  <label className="label">ホスト</label>
+                  <input className="input" value={getVal('NOTIFY_SMTP_HOST')} onChange={e => setVal('NOTIFY_SMTP_HOST', e.target.value)} placeholder="smtp.gmail.com" />
+                </div>
+                <div>
+                  <label className="label">ポート</label>
+                  <input type="number" className="input" value={getVal('NOTIFY_SMTP_PORT')} onChange={e => setVal('NOTIFY_SMTP_PORT', e.target.value)} placeholder="587" />
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input type="checkbox" checked={getVal('NOTIFY_SMTP_SECURE') === 'true'} onChange={e => setVal('NOTIFY_SMTP_SECURE', String(e.target.checked))} className="h-4 w-4 rounded border-gray-300 text-blue-600" />
+                  <span className="text-sm">SSL/TLS</span>
+                </label>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="label">ユーザー名</label>
+                  <input className="input" value={getVal('NOTIFY_SMTP_USER')} onChange={e => setVal('NOTIFY_SMTP_USER', e.target.value)} />
+                </div>
+                <div>
+                  <label className="label">パスワード</label>
+                  <input type="password" className="input" value={getVal('NOTIFY_SMTP_PASS')} onChange={e => setVal('NOTIFY_SMTP_PASS', e.target.value, true)} />
+                </div>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="label">送信元メールアドレス</label>
+                  <input className="input" value={getVal('NOTIFY_FROM_EMAIL')} onChange={e => setVal('NOTIFY_FROM_EMAIL', e.target.value)} placeholder="noreply@example.com" />
+                </div>
+                <div>
+                  <label className="label">通知先管理者アドレス</label>
+                  <input className="input" value={getVal('NOTIFY_ADMIN_EMAIL')} onChange={e => setVal('NOTIFY_ADMIN_EMAIL', e.target.value)} placeholder="admin@example.com" />
+                </div>
+              </div>
             </div>
           </div>
 
@@ -634,13 +767,14 @@ function AdminSettingsContent() {
       {/* Mailbox Management */}
       {tab === 'mailboxes' && (
         <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <p className="text-sm text-gray-500">全メールアカウントの設定・同期状態・担当ユーザー管理</p>
-            <div className="flex gap-2">
-              <button onClick={loadMailboxes} disabled={mbLoading} className="btn btn-secondary btn-sm">
+          <div className="flex items-center justify-between gap-4">
+            <p className="text-sm text-gray-500 hidden sm:block">全メールアカウントの設定・同期状態・担当ユーザー管理</p>
+            <p className="text-sm text-gray-500 sm:hidden">メールアカウント管理</p>
+            <div className="flex gap-2 flex-nowrap shrink-0">
+              <button onClick={loadMailboxes} disabled={mbLoading} className="btn btn-secondary btn-sm whitespace-nowrap">
                 {mbLoading ? '更新中…' : '更新'}
               </button>
-              <button onClick={() => openMailboxModal(null)} className="btn btn-primary btn-sm">+ 追加</button>
+              <button onClick={() => openMailboxModal(null)} className="btn btn-primary btn-sm whitespace-nowrap">+ 追加</button>
             </div>
           </div>
 
@@ -760,41 +894,43 @@ function AdminSettingsContent() {
                     {isPermsOpen && mb.type === 'team' && (
                       <div className="border-t border-gray-100 bg-gray-50 px-4 py-3">
                         <p className="text-xs font-medium text-gray-500 mb-3">ユーザーごとのアクセス権限</p>
-                        <div className="mb-3 rounded-lg border border-gray-200 overflow-hidden bg-white">
-                          {/* Header */}
-                          <div className="grid grid-cols-[1fr_56px_56px_72px] bg-gray-50 border-b border-gray-200 text-xs font-medium text-gray-400">
-                            <div className="px-3 py-2">ユーザー</div>
-                            <div className="py-2 text-center">閲覧</div>
-                            <div className="py-2 text-center">返信</div>
-                            <div className="py-2 text-center">担当変更</div>
-                          </div>
-                          {/* Rows */}
-                          {users.map((u, i) => (
-                            <div
-                              key={u.id}
-                              className={`grid grid-cols-[1fr_56px_56px_72px] items-center ${i !== 0 ? 'border-t border-gray-100' : ''} hover:bg-blue-50/40 transition-colors`}
-                            >
-                              <div className="px-3 py-2.5">
-                                <p className="text-sm font-medium text-gray-800 truncate">{u.name}</p>
-                                <p className="text-xs text-gray-400 truncate">{u.email}</p>
-                              </div>
-                              {(['can_view', 'can_reply', 'can_assign'] as const).map(key => (
-                                <div key={key} className="flex items-center justify-center py-2.5">
-                                  <label className="flex items-center justify-center w-full h-full cursor-pointer">
-                                    <input
-                                      type="checkbox"
-                                      checked={!!permsEdit[u.id]?.[key]}
-                                      onChange={e => setPermsEdit(prev => ({
-                                        ...prev,
-                                        [u.id]: { ...prev[u.id], [key]: e.target.checked }
-                                      }))}
-                                      className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
-                                    />
-                                  </label>
-                                </div>
-                              ))}
+                        <div className="mb-3 rounded-lg border border-gray-200 overflow-hidden bg-white overflow-x-auto">
+                          <div className="min-w-[400px]">
+                            {/* Header */}
+                            <div className="grid grid-cols-[1fr_60px_60px_72px] bg-gray-50 border-b border-gray-200 text-[10px] font-medium text-gray-400 uppercase tracking-wider">
+                              <div className="px-3 py-2">ユーザー</div>
+                              <div className="py-2 text-center">閲覧</div>
+                              <div className="py-2 text-center">返信</div>
+                              <div className="py-2 text-center">担当変更</div>
                             </div>
-                          ))}
+                            {/* Rows */}
+                            {users.map((u, i) => (
+                              <div
+                                key={u.id}
+                                className={`grid grid-cols-[1fr_60px_60px_72px] items-center ${i !== 0 ? 'border-t border-gray-100' : ''} hover:bg-blue-50/40 transition-colors`}
+                              >
+                                <div className="px-3 py-2">
+                                  <p className="text-sm font-medium text-gray-800 truncate">{u.name}</p>
+                                  <p className="text-[10px] text-gray-400 truncate">{u.email}</p>
+                                </div>
+                                {(['can_view', 'can_reply', 'can_assign'] as const).map(key => (
+                                  <div key={key} className="flex items-center justify-center py-2">
+                                    <label className="flex items-center justify-center w-full h-full cursor-pointer py-1">
+                                      <input
+                                        type="checkbox"
+                                        checked={!!permsEdit[u.id]?.[key]}
+                                        onChange={e => setPermsEdit(prev => ({
+                                          ...prev,
+                                          [u.id]: { ...prev[u.id], [key]: e.target.checked }
+                                        }))}
+                                        className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                                      />
+                                    </label>
+                                  </div>
+                                ))}
+                              </div>
+                            ))}
+                          </div>
                         </div>
                         <div className="flex gap-2">
                           <button onClick={() => savePerms(mb.id)} disabled={savingPerms} className="btn btn-primary btn-sm">
@@ -895,59 +1031,61 @@ function AdminSettingsContent() {
 
           {/* Users table */}
           <div className="card overflow-hidden">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-gray-100 bg-gray-50">
-                  <th className="text-left px-4 py-3 font-medium text-gray-500">名前</th>
-                  <th className="text-left px-4 py-3 font-medium text-gray-500">メール</th>
-                  <th className="text-left px-4 py-3 font-medium text-gray-500">権限</th>
-                  <th className="text-left px-4 py-3 font-medium text-gray-500 hidden md:table-cell">Mattermost ID</th>
-                  <th className="px-4 py-3" />
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-50">
-                {users.map(u => (
-                  <tr key={u.id} className={editingId === u.id ? 'bg-amber-50' : 'hover:bg-gray-50'}>
-                    <td className="px-4 py-3 font-medium text-gray-900">{u.name}</td>
-                    <td className="px-4 py-3 text-gray-500 text-xs">{u.email}</td>
-                    <td className="px-4 py-3">
-                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ring-1 ring-inset ${
-                        u.role === 'admin'
-                          ? 'bg-purple-50 text-purple-700 ring-purple-200'
-                          : 'bg-gray-100 text-gray-600 ring-gray-200'
-                      }`}>
-                        {u.role === 'admin' ? '管理者' : '一般'}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-xs text-gray-400 hidden md:table-cell">
-                      {u.mattermost_user_id ? `@${u.mattermost_user_id}` : '—'}
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center justify-end gap-1">
-                        <button
-                          onClick={() => editingId === u.id ? setEditingId(null) : openEdit(u)}
-                          className="p-1.5 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
-                          title="編集"
-                        >
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                          </svg>
-                        </button>
-                        <button
-                          onClick={() => deleteUser(u)}
-                          className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors"
-                          title="削除"
-                        >
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                          </svg>
-                        </button>
-                      </div>
-                    </td>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm min-w-[500px]">
+                <thead>
+                  <tr className="border-b border-gray-100 bg-gray-50">
+                    <th className="text-left px-4 py-3 font-medium text-gray-500 whitespace-nowrap">名前</th>
+                    <th className="text-left px-4 py-3 font-medium text-gray-500 whitespace-nowrap">メール</th>
+                    <th className="text-left px-4 py-3 font-medium text-gray-500 whitespace-nowrap">権限</th>
+                    <th className="text-left px-4 py-3 font-medium text-gray-500 hidden md:table-cell whitespace-nowrap">Mattermost ID</th>
+                    <th className="px-4 py-3" />
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="divide-y divide-gray-50">
+                  {users.map(u => (
+                    <tr key={u.id} className={editingId === u.id ? 'bg-amber-50' : 'hover:bg-gray-50'}>
+                      <td className="px-4 py-3 font-medium text-gray-900 whitespace-nowrap">{u.name}</td>
+                      <td className="px-4 py-3 text-gray-500 text-xs">{u.email}</td>
+                      <td className="px-4 py-3 whitespace-nowrap">
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ring-1 ring-inset ${
+                          u.role === 'admin'
+                            ? 'bg-purple-50 text-purple-700 ring-purple-200'
+                            : 'bg-gray-100 text-gray-600 ring-gray-200'
+                        }`}>
+                          {u.role === 'admin' ? '管理者' : '一般'}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-xs text-gray-400 hidden md:table-cell whitespace-nowrap">
+                        {u.mattermost_user_id ? `@${u.mattermost_user_id}` : '—'}
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <div className="flex items-center justify-end gap-1 pr-1">
+                          <button
+                            onClick={() => editingId === u.id ? setEditingId(null) : openEdit(u)}
+                            className="p-1.5 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
+                            title="編集"
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                            </svg>
+                          </button>
+                          <button
+                            onClick={() => deleteUser(u)}
+                            className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+                            title="削除"
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            </svg>
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       )}
