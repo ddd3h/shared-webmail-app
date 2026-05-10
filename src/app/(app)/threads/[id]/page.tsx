@@ -238,13 +238,17 @@ export default function ThreadDetailPage({ params }: Props) {
   const [showScrollBottom, setShowScrollBottom] = useState(false);
 
   const load = useCallback(async () => {
-    const [tRes, uRes] = await Promise.all([
-      fetch(`/api/threads/${id}`),
-      fetch('/api/users')
-    ]);
+    const tRes = await fetch(`/api/threads/${id}`);
     if (!tRes.ok) { router.push('/threads'); return; }
     const tData = await tRes.json();
-    const uData = await uRes.json();
+
+    // Filter assignable users to those with can_reply on this mailbox (team),
+    // or all users for personal mailboxes (owner manages their own inbox)
+    const usersUrl = tData.mailbox?.type === 'team'
+      ? `/api/users?mailbox_id=${tData.mailbox.id}`
+      : '/api/users';
+    const uData = await fetch(usersUrl).then(r => r.json());
+
     setData(tData);
     setUsers(uData.items || []);
     if (tData.messages?.length) {

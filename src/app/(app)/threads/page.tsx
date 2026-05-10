@@ -297,21 +297,30 @@ function ThreadList() {
   const lastSelectedIndexRef = useRef<number | null>(null);
 
   const currentCursor = cursorStack[cursorStack.length - 1];
-  const threadsKey = initialized && tab !== 'drafts' ? buildThreadsKey(mailboxView, tab, search, currentCursor) : null;
+  const isSearching = search.trim().length > 0;
+  const threadsKey = initialized && tab !== 'drafts' && !isSearching ? buildThreadsKey(mailboxView, tab, search, currentCursor) : null;
+  const searchPersonalKey = initialized && isSearching ? buildThreadsKey('personal', '', search) : null;
+  const searchTeamKey = initialized && isSearching ? buildThreadsKey('team', '', search) : null;
   const draftsKey = initialized && tab === 'drafts' ? '/api/drafts' : null;
   const unreadCountsKey = initialized ? '/api/threads/unread-counts' : null;
 
   const { data: threadResult, isValidating: threadsValidating, mutate: mutateThreads } = useSWR(threadsKey, fetcher);
+  const { data: searchPersonalResult, isValidating: searchPersonalValidating } = useSWR(searchPersonalKey, fetcher);
+  const { data: searchTeamResult, isValidating: searchTeamValidating } = useSWR(searchTeamKey, fetcher);
   const { data: draftResult, isValidating: draftsValidating, mutate: mutateDrafts } = useSWR(draftsKey, fetcher);
   const { data: unreadResult } = useSWR(unreadCountsKey, fetcher);
 
-  const threads: Thread[] = threadResult?.items || [];
+  const threads: Thread[] = isSearching
+    ? [...(searchPersonalResult?.items || []), ...(searchTeamResult?.items || [])]
+        .sort((a, b) => new Date(b.last).getTime() - new Date(a.last).getTime())
+    : threadResult?.items || [];
   const drafts: DraftItem[] = draftResult?.drafts || [];
-  const nextCursor: { last: string; id: string } | null = threadResult?.nextCursor || null;
+  const nextCursor: { last: string; id: string } | null = (!isSearching && threadResult?.nextCursor) || null;
   const personalUnread: number = unreadResult?.personal || 0;
   const teamUnread: number = unreadResult?.team || 0;
 
-  const isLoading = (tab !== 'drafts' && !threadResult && threadsValidating) ||
+  const isLoading = (tab !== 'drafts' && !isSearching && !threadResult && threadsValidating) ||
+                    (isSearching && (searchPersonalValidating || searchTeamValidating) && !searchPersonalResult && !searchTeamResult) ||
                     (tab === 'drafts' && !draftResult && draftsValidating);
 
   useEffect(() => {
@@ -742,8 +751,8 @@ function ThreadList() {
         </form>
       </div>
 
-      {/* Segment switcher */}
-      <div className="flex bg-gray-100 rounded-xl p-1 gap-1 mb-4">
+      {/* Segment switcher — hidden while searching */}
+      <div className={`flex bg-gray-100 rounded-xl p-1 gap-1 mb-4 ${isSearching ? 'hidden' : ''}`}>
         {/* 個人メール */}
         <button
           onClick={() => switchView('personal')}
@@ -784,8 +793,8 @@ function ThreadList() {
         </button>
       </div>
 
-      {/* Tab bar */}
-      <div className="border-b border-gray-200 mb-0">
+      {/* Tab bar — hidden while searching */}
+      <div className={`border-b border-gray-200 mb-0 ${isSearching ? 'hidden' : ''}`}>
         <nav className="flex overflow-x-auto">
           {currentTabs.map((t) => (
             <button
@@ -1111,7 +1120,13 @@ function ThreadList() {
                         </span>
                       </div>
                       <div className="flex items-center gap-1.5 mt-0.5">
-                        {t.mailbox_type === 'team' && mailboxDot(t.mailbox_id, t.mailbox)}
+                        {isSearching
+                          ? <span className="flex-shrink-0 inline-flex items-center gap-1 text-[11px] text-gray-500 font-medium">
+                              {mailboxDot(t.mailbox_id, t.mailbox)}
+                              <span className="truncate max-w-[80px]">{t.mailbox}</span>
+                            </span>
+                          : t.mailbox_type === 'team' && mailboxDot(t.mailbox_id, t.mailbox)
+                        }
                         <span className={`flex-1 min-w-0 truncate text-sm ${isUnread ? 'font-medium text-gray-800' : 'text-gray-500'}`}>
                           {t.subject || '(件名なし)'}
                         </span>
@@ -1168,7 +1183,13 @@ function ThreadList() {
                     </div>
                     {/* 件名 */}
                     <div className="flex-1 min-w-0 flex items-center gap-2">
-                      {t.mailbox_type === 'team' && mailboxDot(t.mailbox_id, t.mailbox)}
+                      {isSearching
+                        ? <span className="flex-shrink-0 inline-flex items-center gap-1 text-[11px] text-gray-500 font-medium whitespace-nowrap">
+                            {mailboxDot(t.mailbox_id, t.mailbox)}
+                            <span className="truncate max-w-[100px]">{t.mailbox}</span>
+                          </span>
+                        : t.mailbox_type === 'team' && mailboxDot(t.mailbox_id, t.mailbox)
+                      }
                       <span className={`truncate text-sm ${isUnread ? 'font-semibold text-gray-900' : 'text-gray-700'}`}>
                         {t.subject || '(件名なし)'}
                       </span>

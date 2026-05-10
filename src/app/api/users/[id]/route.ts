@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db';
 import { getSession, requireAuth } from '@/lib/auth';
 import { hashPassword } from '@/lib/password';
 import { logAudit } from '@/lib/audit';
+import { clearAvatarCache } from '@/lib/avatar-cache';
 import { z } from 'zod';
 
 // PUT /api/users/[id] - edit user (admin only)
@@ -42,10 +43,14 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   if (input.role) data.role = input.role;
   if (input.password) data.password_hash = await hashPassword(input.password);
   
-  if ('mattermost_user_id' in input) data.mattermost_user_id = input.mattermost_user_id || null;
+  const mattermostIdChanged = 'mattermost_user_id' in input;
+  if (mattermostIdChanged) data.mattermost_user_id = input.mattermost_user_id || null;
 
   try {
     const updated = await prisma.users.update({ where: { id }, data });
+
+    // Clear avatar cache so the new Mattermost ID's image is fetched immediately
+    if (mattermostIdChanged) clearAvatarCache(id).catch(() => {});
 
     await logAudit({
       actorUserId: session.userId,

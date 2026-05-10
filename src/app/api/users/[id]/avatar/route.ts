@@ -15,7 +15,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     return new NextResponse(cached.data as unknown as BodyInit, {
       headers: {
         'Content-Type': cached.contentType,
-        'Cache-Control': 'private, max-age=3600',
+        'Cache-Control': 'private, no-cache',
         'X-Avatar-Source': 'cache',
       },
     });
@@ -59,7 +59,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     return new NextResponse(buf as unknown as BodyInit, {
       headers: {
         'Content-Type': contentType,
-        'Cache-Control': 'private, max-age=3600',
+        'Cache-Control': 'private, no-cache',
         'X-Avatar-Source': 'mattermost',
       },
     });

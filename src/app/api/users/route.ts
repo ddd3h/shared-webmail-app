@@ -4,10 +4,16 @@ import { getSession, requireAuth } from '@/lib/auth';
 import { hashPassword } from '@/lib/password';
 import { z } from 'zod';
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   const session = await getSession();
   requireAuth(session);
+
+  const mailboxId = new URL(req.url).searchParams.get('mailbox_id');
+
   const users = await prisma.users.findMany({
+    where: mailboxId
+      ? { mailbox_permissions: { some: { mailbox_id: mailboxId, can_reply: true } } }
+      : undefined,
     select: {
       id: true,
       name: true,
