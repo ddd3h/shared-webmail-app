@@ -18,6 +18,18 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
   });
   if (!thread) return NextResponse.json({ error: 'not_found' }, { status: 404 });
 
+  // Permission check: must have view access to the mailbox
+  const canAccess = await prisma.mailboxes.findFirst({
+    where: {
+      id: thread.mailbox_id,
+      OR: [
+        { type: 'personal', owner_user_id: session.userId },
+        { permissions: { some: { user_id: session.userId, can_view: true } } }
+      ]
+    }
+  });
+  if (!canAccess) return NextResponse.json({ error: 'forbidden' }, { status: 403 });
+
   // Collect IMAP UIDs before deletion
   const imapUids = thread.messages
     .map(m => m.imap_uid)

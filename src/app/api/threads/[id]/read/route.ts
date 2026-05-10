@@ -21,6 +21,17 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
   });
   if (!thread) return NextResponse.json({ ok: true });
 
+  const canAccess = await prisma.mailboxes.findFirst({
+    where: {
+      id: thread.mailbox_id,
+      OR: [
+        { type: 'personal', owner_user_id: session!.userId },
+        { permissions: { some: { user_id: session!.userId, can_view: true } } }
+      ]
+    }
+  });
+  if (!canAccess) return NextResponse.json({ error: 'forbidden' }, { status: 403 });
+
   // Upsert per-user read record
   await prisma.thread_reads.upsert({
     where: { thread_id_user_id: { thread_id: id, user_id: session!.userId } },

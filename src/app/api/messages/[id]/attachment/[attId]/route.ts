@@ -10,7 +10,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   requireAuth(session);
   const msg = await prisma.messages.findUnique({ where: { id }, include: { mailbox: true } });
   if (!msg) return NextResponse.json({ error: 'not_found' }, { status: 404 });
-  const canView = await prisma.mailboxes.findFirst({ where: { id: msg.mailbox_id, OR: [{ owner_user_id: session!.userId }, { permissions: { some: { user_id: session!.userId, can_view: true } } }] } });
+  const canView = await prisma.mailboxes.findFirst({ where: { id: msg.mailbox_id, OR: [{ type: 'personal', owner_user_id: session!.userId }, { permissions: { some: { user_id: session!.userId, can_view: true } } }] } });
   if (!canView) return NextResponse.json({ error: 'forbidden' }, { status: 403 });
 
   const att = await prisma.attachments.findUnique({ where: { id: attId } });

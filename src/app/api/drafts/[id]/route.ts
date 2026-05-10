@@ -37,7 +37,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       where: {
         id: draft.mailbox_id,
         OR: [
-          { owner_user_id: session.userId },
+          { type: 'personal', owner_user_id: session.userId },
           { permissions: { some: { user_id: session.userId, can_view: true } } },
         ],
       },

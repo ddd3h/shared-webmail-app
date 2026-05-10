@@ -21,7 +21,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   if (!thread) return NextResponse.json({ error: 'not_found' }, { status: 404 });
 
   // Only owner of personal mailbox (or admin) can move
-  const isOwner = thread.mailbox.owner_user_id === session!.userId;
+  const isOwner = thread.mailbox.type === 'personal' && thread.mailbox.owner_user_id === session!.userId;
   const actor = await prisma.users.findUnique({ where: { id: session!.userId }, select: { role: true } });
   if (!isOwner && actor?.role !== 'admin') return NextResponse.json({ error: 'forbidden' }, { status: 403 });
 

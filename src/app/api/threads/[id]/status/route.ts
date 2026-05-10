@@ -12,7 +12,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const t = await prisma.threads.findUnique({ where: { id }, include: { mailbox: true } });
   if (!t) return NextResponse.json({ error: 'not_found' }, { status: 404 });
   // View permission required
-  const canView = await prisma.mailboxes.findFirst({ where: { id: t.mailbox_id, OR: [{ owner_user_id: session!.userId }, { permissions: { some: { user_id: session!.userId, can_view: true } } }] } });
+  const canView = await prisma.mailboxes.findFirst({ where: { id: t.mailbox_id, OR: [{ type: 'personal', owner_user_id: session!.userId }, { permissions: { some: { user_id: session!.userId, can_view: true } } }] } });
   if (!canView) return NextResponse.json({ error: 'forbidden' }, { status: 403 });
   await prisma.$transaction([
     prisma.threads.update({ where: { id: t.id }, data: { status, is_archived: status === 'archived' } }),

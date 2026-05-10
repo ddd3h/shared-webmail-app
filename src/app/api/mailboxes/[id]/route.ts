@@ -63,6 +63,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       return NextResponse.json({ error: 'forbidden' }, { status: 403 });
     }
     updates.type = body.type;
+    if (body.type === 'team') updates.owner_user_id = null;
   }
   // Admin can reassign personal mailbox owner
   if (session.role === 'admin' && 'owner_user_id' in body) {

@@ -13,7 +13,7 @@ async function canAccessSession(sessionId: string, userId: string) {
         is_shared: true,
         OR: [
           { user_id: userId },
-          { mailbox: { OR: [{ owner_user_id: userId }, { permissions: { some: { user_id: userId, can_view: true } } }] } },
+          { mailbox: { OR: [{ type: 'personal', owner_user_id: userId }, { permissions: { some: { user_id: userId, can_view: true } } }] } },
         ],
       },
       select: { id: true },
@@ -26,7 +26,7 @@ async function canAccessSession(sessionId: string, userId: string) {
       id: sessionId,
       mailbox: {
         OR: [
-          { owner_user_id: userId },
+          { type: 'personal', owner_user_id: userId },
           { permissions: { some: { user_id: userId, can_view: true } } },
         ],
       },

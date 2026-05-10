@@ -196,10 +196,12 @@ export async function GET(req: NextRequest) {
 
       mailbox: {
         ...(type ? { type: type as any } : {}),
-        // Everyone (including admins) sees only their own + permitted mailboxes.
-        // Admins can manage these permissions in Settings.
+        // Personal mailboxes: accessible via ownership.
+        // Team mailboxes: accessible only via explicit can_view permission.
+        // owner_user_id is intentionally excluded for team mailboxes to ensure
+        // permission revocation works even if owner_user_id was set erroneously.
         OR: [
-          { owner_user_id: session!.userId },
+          { type: 'personal', owner_user_id: session!.userId },
           { permissions: { some: { user_id: session!.userId, can_view: true } } }
         ]
       },

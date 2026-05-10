@@ -17,7 +17,7 @@ export async function GET(req: NextRequest) {
   const where = (mine || !isAdmin)
     ? {
         OR: [
-          { owner_user_id: session!.userId },
+          { type: 'personal' as const, owner_user_id: session!.userId },
           { permissions: { some: { user_id: session!.userId, can_view: true } } }
         ]
       }
@@ -37,7 +37,7 @@ export async function GET(req: NextRequest) {
   });
 
   const result = boxes.map(mb => {
-    const isOwner = mb.owner_user_id === session!.userId;
+    const isOwner = mb.type === 'personal' && mb.owner_user_id === session!.userId;
     const p = mb.permissions.find(p => p.user_id === session!.userId);
     
     // Resolve effective permissions:

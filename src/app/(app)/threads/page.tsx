@@ -1,5 +1,6 @@
 'use client';
-import { Suspense, useEffect, useState, useCallback, useRef } from 'react';
+import { Suspense, useEffect, useState, useRef } from 'react';
+import useSWR from 'swr';
 import { useRouter, useSearchParams } from 'next/navigation';
 import ComposeForm, { type SendPayload } from '@/components/ComposeForm';
 
@@ -247,10 +248,22 @@ type DraftItem = {
   user: { name: string };
 };
 
+const fetcher = (url: string) => fetch(url).then(r => r.json());
+
+function buildThreadsKey(view: string, tab: string, q: string, cursor?: { last: string; id: string }) {
+  const params = new URLSearchParams();
+  params.set('type', view);
+  if (tab === 'unread') params.set('unread', '1');
+  else if (tab === 'mine') params.set('mine', '1');
+  else if (tab === 'sent') params.set('sent', '1');
+  else if (tab) params.set('status', tab);
+  if (q) params.set('q', q);
+  if (cursor) { params.set('cursor', cursor.last); params.set('cursor_id', cursor.id); }
+  return `/api/threads?${params}`;
+}
+
 function ThreadList() {
-  const [threads, setThreads] = useState<Thread[]>([]);
-  const [drafts, setDrafts] = useState<DraftItem[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [initialized, setInitialized] = useState(false);
   const [showSpinner, setShowSpinner] = useState(false);
   const spinnerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [mailboxView, setMailboxView] = useState<'personal' | 'team'>('personal');
@@ -277,14 +290,39 @@ function ThreadList() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkLoading, setBulkLoading] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const [personalUnread, setPersonalUnread] = useState(0);
-  const [teamUnread, setTeamUnread] = useState(0);
-  const [nextCursor, setNextCursor] = useState<{ last: string; id: string } | null>(null);
   const [cursorStack, setCursorStack] = useState<Array<{ last: string; id: string }>>([]);
   const searchParams = useSearchParams();
   const router = useRouter();
   const listRef = useRef<HTMLDivElement>(null);
   const lastSelectedIndexRef = useRef<number | null>(null);
+
+  const currentCursor = cursorStack[cursorStack.length - 1];
+  const threadsKey = initialized && tab !== 'drafts' ? buildThreadsKey(mailboxView, tab, search, currentCursor) : null;
+  const draftsKey = initialized && tab === 'drafts' ? '/api/drafts' : null;
+  const unreadCountsKey = initialized ? '/api/threads/unread-counts' : null;
+
+  const { data: threadResult, isValidating: threadsValidating, mutate: mutateThreads } = useSWR(threadsKey, fetcher);
+  const { data: draftResult, isValidating: draftsValidating, mutate: mutateDrafts } = useSWR(draftsKey, fetcher);
+  const { data: unreadResult } = useSWR(unreadCountsKey, fetcher);
+
+  const threads: Thread[] = threadResult?.items || [];
+  const drafts: DraftItem[] = draftResult?.drafts || [];
+  const nextCursor: { last: string; id: string } | null = threadResult?.nextCursor || null;
+  const personalUnread: number = unreadResult?.personal || 0;
+  const teamUnread: number = unreadResult?.team || 0;
+
+  const isLoading = (tab !== 'drafts' && !threadResult && threadsValidating) ||
+                    (tab === 'drafts' && !draftResult && draftsValidating);
+
+  useEffect(() => {
+    if (isLoading) {
+      spinnerTimerRef.current = setTimeout(() => setShowSpinner(true), 200);
+    } else {
+      if (spinnerTimerRef.current) clearTimeout(spinnerTimerRef.current);
+      setShowSpinner(false);
+    }
+    return () => { if (spinnerTimerRef.current) clearTimeout(spinnerTimerRef.current); };
+  }, [isLoading]);
 
   const selectionMode = selected.size > 0;
   const currentTabs = mailboxView === 'personal' ? PERSONAL_TABS : TEAM_TABS;
@@ -330,7 +368,7 @@ function ThreadList() {
     ));
     setSelected(new Set());
     setBulkLoading(false);
-    load(mailboxView, tab, search);
+    mutateThreads();
   }
 
   async function bulkMarkUnread() {
@@ -340,7 +378,7 @@ function ThreadList() {
     ));
     setSelected(new Set());
     setBulkLoading(false);
-    load(mailboxView, tab, search);
+    mutateThreads();
   }
 
   async function bulkSetStatus(status: string) {
@@ -354,7 +392,7 @@ function ThreadList() {
     ));
     setSelected(new Set());
     setBulkLoading(false);
-    load(mailboxView, tab, search);
+    mutateThreads();
   }
 
   async function bulkDelete() {
@@ -365,7 +403,7 @@ function ThreadList() {
     setSelected(new Set());
     setConfirmDelete(false);
     setBulkLoading(false);
-    load(mailboxView, tab, search);
+    mutateThreads();
   }
 
   async function bulkDeleteDrafts() {
@@ -376,44 +414,8 @@ function ThreadList() {
     ));
     setSelected(new Set());
     setBulkLoading(false);
-    load(mailboxView, 'drafts', '');
+    mutateDrafts();
   }
-
-  const load = useCallback(async (
-    view: 'personal' | 'team',
-    activeTab: string,
-    q: string,
-    cursor?: { last: string; id: string },
-  ) => {
-    setLoading(true);
-    // Only show the spinner if loading takes longer than 200 ms
-    if (spinnerTimerRef.current) clearTimeout(spinnerTimerRef.current);
-    spinnerTimerRef.current = setTimeout(() => setShowSpinner(true), 200);
-
-    if (activeTab === 'drafts') {
-      const res = await fetch('/api/drafts');
-      const data = await res.json();
-      setDrafts(data.drafts || []);
-      setNextCursor(null);
-    } else {
-      const params = new URLSearchParams();
-      params.set('type', view);
-      if (activeTab === 'unread') params.set('unread', '1');
-      else if (activeTab === 'mine') params.set('mine', '1');
-      else if (activeTab === 'sent') params.set('sent', '1');
-      else if (activeTab) params.set('status', activeTab);
-      if (q) params.set('q', q);
-      if (cursor) { params.set('cursor', cursor.last); params.set('cursor_id', cursor.id); }
-      const res = await fetch(`/api/threads?${params}`);
-      const data = await res.json();
-      setThreads(data.items || []);
-      setNextCursor(data.nextCursor || null);
-    }
-
-    if (spinnerTimerRef.current) clearTimeout(spinnerTimerRef.current);
-    setLoading(false);
-    setShowSpinner(false);
-  }, []);
 
   // Restore scroll position when coming back
   useEffect(() => {
@@ -424,7 +426,7 @@ function ThreadList() {
         sessionStorage.removeItem('threads-scroll');
       });
     }
-  }, [threads]);
+  }, [threadResult]);
 
   useEffect(() => {
     const urlView = searchParams.get('view') as 'personal' | 'team' | null;
@@ -436,12 +438,7 @@ function ThreadList() {
     const t = savedTab ?? searchParams.get('tab') ?? 'unread';
     setMailboxView(view);
     setTab(t);
-    load(view, t, '');
-    // Load unread counts for segment badges (dedicated lightweight endpoint)
-    fetch('/api/threads/unread-counts')
-      .then(r => r.json())
-      .then(d => { setPersonalUnread(d.personal || 0); setTeamUnread(d.team || 0); })
-      .catch(() => {});
+    setInitialized(true);
   }, []);
 
   function resetFilters() {
@@ -458,25 +455,21 @@ function ThreadList() {
   function switchView(view: 'personal' | 'team') {
     setMailboxView(view);
     setTab('unread');
-    setNextCursor(null);
     setCursorStack([]);
     resetFilters();
     setSelected(new Set());
     setConfirmDelete(false);
     lastSelectedIndexRef.current = null;
     sessionStorage.setItem('threads-view', view);
-    load(view, 'unread', '');
   }
 
   function switchTab(newTab: string) {
     setTab(newTab);
-    setNextCursor(null);
     setCursorStack([]);
     resetFilters();
     setSelected(new Set());
     setConfirmDelete(false);
     lastSelectedIndexRef.current = null;
-    load(mailboxView, newTab, '');
   }
 
   function buildQuery() {
@@ -505,29 +498,19 @@ function ThreadList() {
     setSearchInput(q);
     setShowHistory(false);
     setTab('');
-    setNextCursor(null);
     setCursorStack([]);
-    load(mailboxView, '', q);
   }
 
   function handleRemoveChip(raw: string) {
     const newSearch = removeChipFromQuery(search, raw);
     setSearch(newSearch);
     setSearchInput(newSearch);
-    setNextCursor(null);
     setCursorStack([]);
-    if (!newSearch) {
-      load(mailboxView, tab || 'unread', '');
-    } else {
-      load(mailboxView, '', newSearch);
-    }
   }
 
   function clearSearch() {
     resetFilters();
-    setNextCursor(null);
     setCursorStack([]);
-    load(mailboxView, tab, '');
   }
 
   function handleRowClick(e: React.MouseEvent, id: string, index: number) {
@@ -556,7 +539,7 @@ function ThreadList() {
       {showCompose && (
         <ComposeModal
           onClose={() => { setShowCompose(false); setOpenDraftId(undefined); }}
-          onSent={() => { load(mailboxView, tab, search); }}
+          onSent={() => { mutateThreads(); }}
           initialDraftId={openDraftId}
         />
       )}
@@ -577,7 +560,7 @@ function ThreadList() {
               <span className="hidden sm:inline text-sm">新規メール</span>
             </button>
             <button
-              onClick={() => load(mailboxView, tab, search)}
+              onClick={() => { if (tab === 'drafts') mutateDrafts(); else mutateThreads(); }}
               className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
               title="更新"
             >
@@ -616,8 +599,7 @@ function ThreadList() {
                     <button key={i} type="button" onMouseDown={e => {
                       e.preventDefault();
                       setSearchInput(h); setSearch(h); setShowHistory(false);
-                      setTab(''); setNextCursor(null); setCursorStack([]);
-                      load(mailboxView, '', h);
+                      setTab(''); setCursorStack([]);
                     }} className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors flex items-center gap-2">
                       <svg className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -1049,7 +1031,7 @@ function ThreadList() {
                           e.stopPropagation();
                           if (!confirm('この下書きを削除しますか？')) return;
                           await fetch(`/api/drafts/${d.id}`, { method: 'DELETE' });
-                          load(mailboxView, 'drafts', '');
+                          mutateDrafts();
                         }}
                         className="flex-shrink-0 p-1.5 rounded text-gray-300 hover:text-red-500 hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-all"
                         title="削除"
@@ -1255,12 +1237,9 @@ function ThreadList() {
             {cursorStack.length > 0 && (
               <button
                 onClick={() => {
-                  const newStack = cursorStack.slice(0, -1);
-                  setCursorStack(newStack);
-                  setNextCursor(null);
-                  load(mailboxView, tab, search, newStack[newStack.length - 1]);
+                  setCursorStack(prev => prev.slice(0, -1));
                 }}
-                disabled={loading}
+                disabled={threadsValidating}
                 className="btn btn-secondary btn-sm text-xs disabled:opacity-50 gap-1"
               >
                 ← 前へ
@@ -1270,9 +1249,8 @@ function ThreadList() {
               <button
                 onClick={() => {
                   setCursorStack(prev => [...prev, nextCursor!]);
-                  load(mailboxView, tab, search, nextCursor!);
                 }}
-                disabled={loading}
+                disabled={threadsValidating}
                 className="btn btn-secondary btn-sm text-xs disabled:opacity-50 gap-1"
               >
                 次へ →

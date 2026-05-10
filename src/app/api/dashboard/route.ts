@@ -7,7 +7,7 @@ const MAX_MAILBOX_BYTES = 1 * 1024 * 1024 * 1024; // 1 GB
 function mailboxAccessFilter(userId: string) {
   return {
     OR: [
-      { owner_user_id: userId },
+      { type: 'personal' as const, owner_user_id: userId },
       { permissions: { some: { user_id: userId, can_view: true } } }
     ]
   };

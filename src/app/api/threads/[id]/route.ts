@@ -23,18 +23,18 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     where: {
       id: t.mailbox_id,
       OR: [
-        { owner_user_id: session!.userId },
+        { type: 'personal', owner_user_id: session!.userId },
         { permissions: { some: { user_id: session!.userId, can_view: true } } }
       ]
     }
   });
   if (!canView) return NextResponse.json({ error: 'forbidden' }, { status: 403 });
 
-  const isOwner = t.mailbox.owner_user_id === session!.userId;
+  const isOwner = t.mailbox.type === 'personal' && t.mailbox.owner_user_id === session!.userId;
 
   // Resolve effective permissions for the current user
   let permissions = { can_view: true, can_reply: true, can_assign: true };
-  if (!isOwner && t.mailbox.type === 'team') {
+  if (!isOwner) {
     const perm = await prisma.mailbox_permissions.findFirst({
       where: { mailbox_id: t.mailbox_id, user_id: session!.userId }
     });

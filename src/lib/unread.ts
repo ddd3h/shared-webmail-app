@@ -24,12 +24,9 @@ export async function getUserUnreadCounts(userId: string): Promise<{ personal: n
     WHERE t.is_archived = false
       AND t.status != 'archived'
       AND mb.type = 'team'
-      AND (
-        mb.owner_user_id = ${userId}
-        OR EXISTS (
-          SELECT 1 FROM mailbox_permissions mp
-          WHERE mp.mailbox_id = mb.id AND mp.user_id = ${userId} AND mp.can_view = true
-        )
+      AND EXISTS (
+        SELECT 1 FROM mailbox_permissions mp
+        WHERE mp.mailbox_id = mb.id AND mp.user_id = ${userId} AND mp.can_view = true
       )
       AND NOT EXISTS (
         SELECT 1 FROM thread_visibility tv

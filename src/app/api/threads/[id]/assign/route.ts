@@ -13,10 +13,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const { user_id } = z.object({ user_id: z.string().nullable() }).parse(body);
   const thread = await prisma.threads.findUnique({ where: { id }, include: { mailbox: true } });
   if (!thread) return NextResponse.json({ error: 'not_found' }, { status: 404 });
-  // Permission: admin and mailbox owner always allowed; others need can_assign
-  const isAdmin = session!.role === 'admin';
-  const isOwner = thread.mailbox.owner_user_id === session!.userId;
-  if (!isAdmin && !isOwner) {
+  // Permission: personal mailbox owner always allowed; team mailbox requires can_assign
+  const isOwner = thread.mailbox.type === 'personal' && thread.mailbox.owner_user_id === session!.userId;
+  if (!isOwner) {
     const perm = await prisma.mailbox_permissions.findFirst({ where: { mailbox_id: thread.mailbox_id, user_id: session!.userId, can_assign: true } });
     if (!perm) return NextResponse.json({ error: 'forbidden' }, { status: 403 });
   }

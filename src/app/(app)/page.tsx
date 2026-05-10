@@ -1,6 +1,7 @@
 'use client';
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
+import useSWR from 'swr';
 
 type Stats = { myAssigned: number; inProgress: number };
 type Thread = {
@@ -71,35 +72,27 @@ function StoragePie({ percent }: { percent: number }) {
   );
 }
 
+const fetcher = (url: string) => fetch(url).then(r => r.json());
+
 export default function DashboardPage() {
-  const [data, setData] = useState<{
+  const { data, mutate } = useSWR<{
     user: User; stats: Stats;
     recentTeamThreads: Thread[];
     mailboxStorage: MailboxStorage[];
-  } | null>(null);
-  const [loading, setLoading] = useState(true);
+  }>('/api/dashboard', fetcher);
   const [recalculating, setRecalculating] = useState(false);
-
-  const fetchDashboard = () => {
-    return fetch('/api/dashboard')
-      .then(r => r.json())
-      .then(d => { setData(d); setLoading(false); })
-      .catch(() => setLoading(false));
-  };
-
-  useEffect(() => { fetchDashboard(); }, []);
 
   const recalc = async () => {
     setRecalculating(true);
     try {
       await fetch('/api/user/storage-recalc', { method: 'POST' });
-      await fetchDashboard();
+      await mutate();
     } finally {
       setRecalculating(false);
     }
   };
 
-  if (loading) {
+  if (!data) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="text-gray-400 text-sm">読み込み中…</div>
@@ -111,25 +104,25 @@ export default function DashboardPage() {
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <div>
+        <div className="min-w-0">
           <h1 className="text-2xl font-bold text-gray-900">ダッシュボード</h1>
           {data?.user && (
-            <p className="text-sm text-gray-500 mt-0.5">
-              ようこそ、{data.user.name}さん
+            <div className="flex items-center gap-1.5 mt-0.5">
+              <span className="text-sm text-gray-500 truncate">ようこそ、{data.user.name}さん</span>
               {data.user.role === 'admin' && (
-                <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-700">管理者</span>
+                <span className="flex-shrink-0 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-700">管理者</span>
               )}
-            </p>
+            </div>
           )}
         </div>
         <Link
           href="/threads"
-          className="inline-flex items-center gap-2 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 text-white font-semibold shadow-md hover:shadow-lg hover:from-blue-600 hover:to-indigo-700 active:scale-95 transition-all duration-150 px-4 py-2 text-sm"
+          className="inline-flex items-center gap-2 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 text-white font-semibold shadow-md hover:shadow-lg hover:from-blue-600 hover:to-indigo-700 active:scale-95 transition-all duration-150 px-4 py-2 text-sm whitespace-nowrap flex-shrink-0"
         >
           <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
           </svg>
-          メール一覧
+          一覧
         </Link>
       </div>
 

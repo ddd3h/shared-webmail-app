@@ -11,6 +11,17 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
   const thread = await prisma.threads.findUnique({ where: { id }, include: { mailbox: true } });
   if (!thread) return NextResponse.json({ ok: true });
 
+  const canAccess = await prisma.mailboxes.findFirst({
+    where: {
+      id: thread.mailbox_id,
+      OR: [
+        { type: 'personal', owner_user_id: session!.userId },
+        { permissions: { some: { user_id: session!.userId, can_view: true } } }
+      ]
+    }
+  });
+  if (!canAccess) return NextResponse.json({ error: 'forbidden' }, { status: 403 });
+
   if (thread.mailbox.type === 'team') {
     // Remove per-user read record so thread appears unread
     await prisma.thread_reads.deleteMany({

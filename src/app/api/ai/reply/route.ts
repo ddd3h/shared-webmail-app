@@ -60,7 +60,7 @@ export async function POST(req: NextRequest) {
         id: body.threadId,
         mailbox: {
           OR: [
-            { owner_user_id: session!.userId },
+            { type: 'personal', owner_user_id: session!.userId },
             { permissions: { some: { user_id: session!.userId, can_view: true } } },
           ],
         },

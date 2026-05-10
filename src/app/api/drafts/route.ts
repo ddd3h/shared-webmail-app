@@ -15,7 +15,7 @@ export async function GET(req: NextRequest) {
   const accessibleMailboxIds = (await prisma.mailboxes.findMany({
     where: {
       OR: [
-        { owner_user_id: session.userId },
+        { type: 'personal', owner_user_id: session.userId },
         { permissions: { some: { user_id: session.userId, can_view: true } } }
       ]
     },
