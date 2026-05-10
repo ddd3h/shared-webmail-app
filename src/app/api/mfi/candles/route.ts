@@ -17,11 +17,15 @@ export async function GET(req: NextRequest) {
     select: { recorded_at: true, price: true, volume: true },
   });
 
-  // Group into 1-hour buckets
+  // Group into 1-hour buckets (JST = UTC+9).
+  // Shift timestamps by +9h before bucketing so bucket boundaries align to JST hours,
+  // then return the shifted value so lightweight-charts (which treats numbers as UTC)
+  // displays the correct JST wall-clock time.
+  const JST_OFFSET_MS = 9 * 3600 * 1000;
   const buckets = new Map<number, { open: number; high: number; low: number; close: number; volume: number }>();
 
   for (const s of snapshots) {
-    const hourTs = Math.floor(s.recorded_at.getTime() / 3600000) * 3600; // Unix seconds, hour-aligned
+    const hourTs = Math.floor((s.recorded_at.getTime() + JST_OFFSET_MS) / 3600000) * 3600; // JST hour-aligned Unix seconds
     if (!buckets.has(hourTs)) {
       buckets.set(hourTs, { open: s.price, high: s.price, low: s.price, close: s.price, volume: s.volume });
     } else {
