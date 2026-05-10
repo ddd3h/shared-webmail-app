@@ -1,6 +1,23 @@
 'use client';
 import { useEffect } from 'react';
 
+async function updateAppBadge() {
+  if (!('setAppBadge' in navigator)) return;
+  try {
+    const res = await fetch('/api/threads/unread-counts');
+    if (!res.ok) return;
+    const { personal, team } = await res.json();
+    const total = personal + team;
+    if (total > 0) {
+      await (navigator as any).setAppBadge(total);
+    } else {
+      await (navigator as any).clearAppBadge();
+    }
+  } catch {
+    // Badge API is best-effort; ignore errors
+  }
+}
+
 async function registerPushSubscription(registration: ServiceWorkerRegistration) {
   try {
     if (!('PushManager' in self) && !('PushManager' in window)) return;
@@ -63,6 +80,19 @@ export default function SWClient() {
       .catch((err) => {
         console.debug('[SW] Registration failed:', err);
       });
+
+    // Update app badge on load and whenever the app comes to the foreground
+    updateAppBadge();
+    const onVisible = () => { if (document.visibilityState === 'visible') updateAppBadge(); };
+    document.addEventListener('visibilitychange', onVisible);
+
+    // Poll every 60 seconds while the app is open
+    const timer = setInterval(updateAppBadge, 60_000);
+
+    return () => {
+      document.removeEventListener('visibilitychange', onVisible);
+      clearInterval(timer);
+    };
   }, []);
 
   return null;
