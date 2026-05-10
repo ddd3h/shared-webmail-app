@@ -18,7 +18,7 @@
 
 </div>
 
-> <br />
+<br />
 
 ***
 
@@ -35,7 +35,7 @@
 
 社内コミュニケーションツールMattermostとの連携や、Google連絡帳との同期も可能です。
 
-<div align="center">
+<p align="center">
   <img
     src="https://is1-ssl.mzstatic.com/image/thumb/Purple211/v4/32/d7/41/32d741e2-d765-cefe-0d42-192a4f8c8505/icon.png/1200x630bb.png"
     width="20%"
@@ -47,7 +47,7 @@
     width="20%"
     alt="Google Contacts Logo"
   />
-</div>
+</p>
 
 ***
 
