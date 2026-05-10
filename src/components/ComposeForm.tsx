@@ -184,13 +184,13 @@ export default function ComposeForm({
       const editorHtml = editorRef.current?.getHTML() || '';
       const editorText = editorRef.current?.getText() || '';
       const sigSection = signature && sigVisible
-        ? `<p>--<br>${signature.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>')}</p>`
+        ? `<p>${signature.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>')}</p>`
         : '';
       let html = editorHtml + sigSection;
       if (mode === 'reply' && quote) {
         html += `<p style="color:#6b7280;font-size:12px;margin-top:16px">${quote.header}</p><blockquote style="border-left:3px solid #d1d5db;margin:8px 0;padding:4px 12px;color:#6b7280">${quote.html}</blockquote>`;
       }
-      const text = signature && sigVisible ? `${editorText}\n\n--\n${signature}` : editorText;
+      const text = signature && sigVisible ? `${editorText}\n\n${signature}` : editorText;
       const err = await onSend({ mailboxId: selectedMailbox, to: toChips, cc: ccChips, bcc: bccChips, subject, html, text, files });
       if (err) { setError(err); return; }
       await draft.deleteDraft();
