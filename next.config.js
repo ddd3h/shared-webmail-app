@@ -45,10 +45,7 @@ const nextConfig = {
   // Docker/本番向け: standalone出力でイメージサイズを最小化
   output: 'standalone',
 
-  // 10 files × 10 MB each = up to 100 MB of attachments; add buffer for form fields.
-  serverBodySizeLimit: '110mb',
-
-// Suppress server identity disclosure
+  // Suppress server identity disclosure
   poweredByHeader: false,
 
   // Force a single yjs instance to prevent "Yjs was already imported" error
