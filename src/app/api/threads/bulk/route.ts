@@ -5,6 +5,7 @@ import { buildThreadsWhere } from '@/lib/threads-filter';
 import { sendBulkDeleteApprovalDm } from '@/lib/mattermost-dm';
 import { randomUUID } from 'crypto';
 import { deleteImapMessagesBulk } from '@/lib/mail/delete-utils';
+import { getSetting } from '@/lib/settings';
 
 // POST /api/threads/bulk
 export async function POST(req: NextRequest) {
@@ -30,7 +31,7 @@ export async function POST(req: NextRequest) {
     assigned: filters?.assigned === '1'
   });
 
-  // Security Check: Approval required for deleting > 30% of any team mailbox's active emails
+  // Security Check: Approval required for deleting > X% of any team mailbox's active emails
   if (action === 'delete' && filters?.type === 'team') {
     console.log('[bulk-delete-check] Protected path active');
     
@@ -54,11 +55,12 @@ export async function POST(req: NextRequest) {
       affectedMailboxIds = threads.map(t => t.mailbox_id);
     }
     
-    console.log(`[bulk-delete-check] Mailboxes to check: ${affectedMailboxIds.length}`);
-
-    // 2. Check each affected mailbox for 30% threshold
+    // 2. Check each affected mailbox for threshold
     let exceedsThreshold = false;
     let totalTargetCount = 0;
+
+    const thresholdSetting = await getSetting('BULK_DELETE_THRESHOLD');
+    const threshold = thresholdSetting ? parseFloat(thresholdSetting) : 0.3;
 
     for (const mid of affectedMailboxIds) {
       const mailboxTotal = await prisma.threads.count({
@@ -84,26 +86,23 @@ export async function POST(req: NextRequest) {
       totalTargetCount += mailboxTarget;
       const ratio = mailboxTarget / mailboxTotal;
       
-      console.log(`[bulk-delete-check] Mailbox ${mid}: target=${mailboxTarget}, total=${mailboxTotal}, ratio=${ratio.toFixed(4)}`);
+      console.log(`[bulk-delete-check] Mailbox ${mid}: target=${mailboxTarget}, total=${mailboxTotal}, ratio=${ratio.toFixed(4)}, threshold=${threshold}`);
 
-      if (ratio >= 0.3) {
+      if (ratio >= threshold) {
         exceedsThreshold = true;
       }
     }
 
     if (exceedsThreshold) {
       if (validate_only) {
-        console.log('[bulk-delete-check] Exceeded threshold (validation mode)');
         return NextResponse.json({ 
           ok: false, 
           error: 'approval_required_warning',
-          message: `削除対象の ${totalTargetCount} 件の中に、メールボックスの30%を超える大量削除が含まれています。実行には管理者の承認が必要ですが、リクエストを送信しますか？`
+          message: `削除対象の ${totalTargetCount} 件の中に、メールボックスの${Math.round(threshold * 100)}%を超える大量削除が含まれています。実行には管理者の承認が必要ですが、リクエストを送信しますか？`
         });
       }
 
-      // Create pending request
       const approvalId = randomUUID();
-      console.log(`[bulk-delete-check] Exceeded threshold. Creating approvalId=${approvalId}`);
       await (prisma as any).pending_bulk_actions.create({
         data: {
           id: approvalId,
@@ -115,7 +114,6 @@ export async function POST(req: NextRequest) {
         }
       });
 
-      // Notify admins
       const admins = await prisma.users.findMany({
         where: { role: 'admin' },
         select: { id: true, email: true }
@@ -188,7 +186,6 @@ export async function POST(req: NextRequest) {
         data: { status: newStatus }
       });
     } else if (action === 'delete') {
-      // Permanent delete
       const threadsToDelete = await prisma.threads.findMany({
         where: { id: { in: chunk } },
         include: {

@@ -491,6 +491,11 @@ function AdminSettingsContent() {
                 <label className="label">CRON_SECRET</label>
                 <input type="password" className="input font-mono text-xs" value={getVal('CRON_SECRET')} onChange={e => setVal('CRON_SECRET', e.target.value, true)} placeholder="API認証用トークン" />
               </div>
+              <div>
+                <label className="label">大量削除の承認閾値 (0.0〜1.0)</label>
+                <input type="number" step="0.1" min="0" max="1" className="input font-mono text-xs" value={getVal('BULK_DELETE_THRESHOLD')} onChange={e => setVal('BULK_DELETE_THRESHOLD', e.target.value)} placeholder="0.3 (30%)" />
+                <p className="text-[10px] text-gray-400 mt-1">共有メールにおいて、メールボックスの何割以上を一度に削除する場合に管理者の承認を必要とするかを指定します。デフォルトは 0.3 (30%) です。</p>
+              </div>
             </div>
           </div>
 

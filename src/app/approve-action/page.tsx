@@ -150,7 +150,7 @@ function ApproveActionForm() {
 
       <div className="text-center px-2">
         <p className="text-xs text-gray-500 leading-relaxed">
-          この操作を承認すると、上記アカウント内の対象メールは<span className="text-rose-600 font-bold">永久に削除</span>されます。<br>復元することはできません。
+          この操作を承認すると、上記アカウント内の対象メールは<span className="text-rose-600 font-bold">永久に削除</span>されます。<br />復元することはできません。
         </p>
       </div>
 
