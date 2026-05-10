@@ -70,6 +70,9 @@ export async function POST(req: NextRequest) {
   // Success: clear per-email counter so legitimate users aren't locked out
   resetRateLimit(emailKey);
 
+  // Record login timestamp (fire-and-forget — don't block the response)
+  prisma.users.update({ where: { id: user.id }, data: { last_login_at: new Date() } }).catch(() => {});
+
   await logAudit({
     actorUserId: user.id,
     actionType: 'login_success',

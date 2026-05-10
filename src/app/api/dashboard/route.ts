@@ -40,7 +40,7 @@ export async function GET() {
     }),
     prisma.users.findUnique({
       where: { id: userId },
-      select: { name: true, email: true, role: true }
+      select: { name: true, email: true, role: true, last_login_at: true }
     }),
     // Fetch personal mailboxes with cached size data
     prisma.mailboxes.findMany({

@@ -78,6 +78,9 @@ model users {
   google_oauth_token         google_oauth_tokens?
   contacts_created           contacts[]
   password_reset_tokens      password_reset_tokens[]
+  mfi_snapshots              mfi_snapshots[]
+
+  last_login_at              DateTime?
 }
 
 model mailboxes {
@@ -472,6 +475,22 @@ model password_reset_tokens {
   created_at  DateTime @default(now())
 
   user users @relation(fields: [user_id], references: [id], onDelete: Cascade)
+}
+
+// MFI (Mail Freshness Index) snapshots — one per user per 5-minute bucket
+model mfi_snapshots {
+  id           String   @id @default(cuid())
+  user_id      String
+  recorded_at  DateTime @default(now())
+  mfi          Float
+  price        Float
+  debt         Float
+  volume       Float    @default(0)
+  streak_hours Float    @default(0)
+
+  user users @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@index([user_id, recorded_at])
 }
 
 // Email drafts
