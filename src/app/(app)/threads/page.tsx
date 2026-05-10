@@ -1252,7 +1252,7 @@ function ThreadList() {
                           </span>
                         </div>
                         {t.readers.length > 0 && (
-                          <div className="flex-shrink-0 hidden lg:flex items-center -space-x-1.5">
+                          <div className="flex-shrink-0 hidden sm:flex items-center -space-x-1.5">
                             {t.readers.slice(0, 5).map(r => (
                               <div key={r.id} title={r.name} className="w-5 h-5 rounded-full border border-white overflow-hidden bg-gray-200 flex items-center justify-center text-[9px] font-bold text-gray-500">
                                 {r.mattermost_user_id ? (
