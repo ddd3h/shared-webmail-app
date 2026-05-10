@@ -270,7 +270,8 @@ function buildThreadsKey(view: string, tab: string, q: string, cursor?: { last: 
   if (tab === 'unread') params.set('unread', '1');
   else if (tab === 'mine') params.set('mine', '1');
   else if (tab === 'sent') params.set('sent', '1');
-  else if (tab) params.set('status', tab);
+  else if (tab === 'assigned') params.set('assigned', '1');
+  else if (tab && tab !== 'all') params.set('status', tab);
   if (q) params.set('q', q);
   if (cursor) { params.set('cursor', cursor.last); params.set('cursor_id', cursor.id); }
   return `/api/threads?${params}`;
@@ -304,8 +305,11 @@ function ThreadList() {
   const [initialTo, setInitialTo] = useState<string[] | undefined>(undefined);
   const [initialSubject, setInitialSubject] = useState<string | undefined>(undefined);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [isAllSelected, setIsAllSelected] = useState(false);
   const [bulkLoading, setBulkLoading] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [modernConfirm, setModernConfirm] = useState<{ title: string, message: string, onConfirm: () => void } | null>(null);
+  const [modernAlert, setModernAlert] = useState<{ title: string, message: string } | null>(null);
   const [cursorStack, setCursorStack] = useState<Array<{ last: string; id: string }>>([]);
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -373,6 +377,7 @@ function ThreadList() {
 
   function toggleSelect(id: string, index: number) {
     lastSelectedIndexRef.current = index;
+    setIsAllSelected(false);
     setSelected(prev => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
@@ -387,6 +392,7 @@ function ThreadList() {
     const start = Math.min(from, toIndex);
     const end = Math.max(from, toIndex);
     const rangeIds = threads.slice(start, end + 1).map(t => t.id);
+    setIsAllSelected(false);
     setSelected(prev => {
       const next = new Set(prev);
       rangeIds.forEach(id => next.add(id));
@@ -399,56 +405,89 @@ function ThreadList() {
   function selectAll() {
     if (selected.size === threads.length && threads.length > 0) {
       setSelected(new Set());
+      setIsAllSelected(false);
       lastSelectedIndexRef.current = null;
     } else {
       setSelected(new Set(threads.map(t => t.id)));
+      setIsAllSelected(false);
     }
   }
 
-  async function bulkMarkRead() {
-    setBulkLoading(true);
-    await Promise.all([...selected].map(id =>
-      fetch(`/api/threads/${id}/read`, { method: 'POST' })
-    ));
-    setSelected(new Set());
-    setBulkLoading(false);
-    mutateThreads();
-  }
+  const totalCount = isSearching
+    ? (searchPersonalResult?.totalCount || 0) + (searchTeamResult?.totalCount || 0)
+    : threadResult?.totalCount || 0;
 
-  async function bulkMarkUnread() {
-    setBulkLoading(true);
-    await Promise.all([...selected].map(id =>
-      fetch(`/api/threads/${id}/unread`, { method: 'POST' })
-    ));
-    setSelected(new Set());
-    setBulkLoading(false);
-    mutateThreads();
-  }
+  async function performBulkAction(action: string, extra: any = {}) {
+    const filters = {
+      status: (!isSearching && (tab === 'all' || tab === 'unread' || tab === 'sent' || tab === 'mine' || tab === 'assigned')) ? undefined : tab,
+      type: mailboxView,
+      q: search || undefined,
+      mine: tab === 'mine' ? '1' : '0',
+      unread: tab === 'unread' ? '1' : '0',
+      sent: tab === 'sent' ? '1' : '0',
+      assigned: tab === 'assigned' ? '1' : '0'
+    };
 
-  async function bulkSetStatus(status: string) {
-    setBulkLoading(true);
-    await Promise.all([...selected].map(id =>
-      fetch(`/api/threads/${id}/status`, {
+    // Pre-validation for delete
+    if (action === 'delete') {
+      const vres = await fetch('/api/threads/bulk', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status })
-      })
-    ));
-    setSelected(new Set());
-    setBulkLoading(false);
-    mutateThreads();
+        body: JSON.stringify({
+          action,
+          ids: isAllSelected ? undefined : [...selected],
+          all: isAllSelected,
+          filters,
+          validate_only: true
+        })
+      });
+      const vdata = await vres.json();
+      if (vdata.error === 'approval_required_warning') {
+        setModernConfirm({
+          title: '大量削除の承認リクエスト',
+          message: vdata.message,
+          onConfirm: () => executeBulkAction(action, filters, extra)
+        });
+        return;
+      }
+    }
+
+    await executeBulkAction(action, filters, extra);
   }
 
-  async function bulkDelete() {
+  async function executeBulkAction(action: string, filters: any, extra: any = {}) {
     setBulkLoading(true);
-    await Promise.all([...selected].map(id =>
-      fetch(`/api/threads/${id}/delete`, { method: 'POST' })
-    ));
+    const res = await fetch('/api/threads/bulk', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action,
+        status: extra.status,
+        ids: isAllSelected ? undefined : [...selected],
+        all: isAllSelected,
+        filters
+      })
+    });
+
+    const data = await res.json();
+    if (data.message) {
+      setModernAlert({
+        title: data.ok ? '完了' : 'リクエスト完了',
+        message: data.message
+      });
+    }
+
     setSelected(new Set());
+    setIsAllSelected(false);
     setConfirmDelete(false);
     setBulkLoading(false);
     mutateThreads();
   }
+
+  async function bulkMarkRead() { await performBulkAction('read'); }
+  async function bulkMarkUnread() { await performBulkAction('unread'); }
+  async function bulkSetStatus(status: string) { await performBulkAction('status', { status }); }
+  async function bulkDelete() { await performBulkAction('delete'); }
 
   async function bulkDeleteDrafts() {
     if (!confirm(`${selected.size} 件の下書きを削除しますか？`)) return;
@@ -588,6 +627,68 @@ function ThreadList() {
           initialTo={initialTo}
           initialSubject={initialSubject}
         />
+      )}
+
+      {modernConfirm && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/40 backdrop-blur-[2px]">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full overflow-hidden animate-in fade-in zoom-in duration-200">
+            <div className="p-6">
+              <div className="w-12 h-12 rounded-full bg-amber-100 flex items-center justify-center text-amber-600 mb-4">
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                </svg>
+              </div>
+              <h3 className="text-lg font-bold text-gray-900 mb-2">{modernConfirm.title}</h3>
+              <p className="text-sm text-gray-500 leading-relaxed">{modernConfirm.message}</p>
+            </div>
+            <div className="bg-gray-50 px-6 py-4 flex gap-3">
+              <button
+                onClick={() => setModernConfirm(null)}
+                className="flex-1 px-4 py-2 text-sm font-semibold text-gray-700 bg-white border border-gray-300 rounded-xl hover:bg-gray-50 transition-colors"
+              >
+                キャンセル
+              </button>
+              <button
+                onClick={() => { modernConfirm.onConfirm(); setModernConfirm(null); }}
+                className="flex-1 px-4 py-2 text-sm font-semibold text-white bg-blue-600 rounded-xl hover:bg-blue-700 transition-colors shadow-sm shadow-blue-200"
+              >
+                リクエスト
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {modernAlert && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/40 backdrop-blur-[2px]">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full overflow-hidden animate-in fade-in zoom-in duration-200">
+            <div className="p-6 text-center">
+              <div className={`w-12 h-12 rounded-full mx-auto flex items-center justify-center mb-4 ${
+                modernAlert.title === '完了' ? 'bg-green-100 text-green-600' : 'bg-blue-100 text-blue-600'
+              }`}>
+                {modernAlert.title === '完了' ? (
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                ) : (
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                )}
+              </div>
+              <h3 className="text-lg font-bold text-gray-900 mb-2">{modernAlert.title}</h3>
+              <p className="text-sm text-gray-500 leading-relaxed">{modernAlert.message}</p>
+            </div>
+            <div className="bg-gray-50 px-6 py-4">
+              <button
+                onClick={() => setModernAlert(null)}
+                className="w-full px-4 py-2.5 text-sm font-semibold text-white bg-gray-900 rounded-xl hover:bg-gray-800 transition-colors"
+              >
+                閉じる
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Header */}
@@ -880,12 +981,13 @@ function ThreadList() {
             <input
               type="checkbox"
               checked={selected.size === threads.length && threads.length > 0}
-              ref={el => { if (el) el.indeterminate = selected.size > 0 && selected.size < threads.length; }}
+              ref={el => { if (el) el.indeterminate = !isAllSelected && selected.size > 0 && selected.size < threads.length; }}
               onChange={selectAll}
               className="w-4 h-4 rounded border-white/50 cursor-pointer accent-white flex-shrink-0"
             />
-            <span className="text-sm font-semibold text-white whitespace-nowrap">{selected.size} 件選択</span>
-            <div className="flex-1" />
+            <span className="text-sm font-semibold text-white whitespace-nowrap">
+              {isAllSelected ? `全 ${totalCount} 件を選択中` : `${selected.size} 件選択`}
+            </span>            <div className="flex-1" />
 
             {/* PC のみ表示するアクション群 */}
             {confirmDelete ? (
@@ -1106,6 +1208,25 @@ function ThreadList() {
           </div>
         ) : (
           <div className="divide-y divide-gray-100">
+            {selected.size === threads.length && totalCount > threads.length && (
+              <div className="bg-blue-50/80 px-4 py-2 text-center text-sm border-b border-blue-100">
+                {isAllSelected ? (
+                  <p className="text-gray-700">
+                    このビューの全 {totalCount} 件のスレッドが選択されています。
+                    <button onClick={() => { setIsAllSelected(false); setSelected(new Set()); }} className="ml-2 text-blue-600 font-medium hover:underline">
+                      選択を解除
+                    </button>
+                  </p>
+                ) : (
+                  <p className="text-gray-700">
+                    このページの {threads.length} 件のスレッドが選択されています。
+                    <button onClick={() => setIsAllSelected(true)} className="ml-2 text-blue-600 font-medium hover:underline">
+                      このビューの全 {totalCount} 件のスレッドを選択
+                    </button>
+                  </p>
+                )}
+              </div>
+            )}
             {threads.map((t, index) => {
               const isUnread = t.unread_count > 0;
               const isSelected = selected.has(t.id);

@@ -118,3 +118,43 @@ export async function sendMfiBelowThresholdDm(
 
   return true;
 }
+
+export async function sendBulkDeleteApprovalDm(
+  adminUserId: string,
+  adminEmail: string,
+  requesterName: string,
+  count: number,
+  approvalId: string
+): Promise<boolean> {
+  const { baseUrl, token } = await getConfig();
+  if (!baseUrl || !token) return false;
+
+  const mmUserId = await resolveMmUserId(adminUserId, adminEmail, baseUrl, token);
+  if (!mmUserId) return false;
+
+  const botId = await getBotUserId(baseUrl, token);
+  const channel = await mmFetch(baseUrl, token, '/channels/direct', {
+    method: 'POST',
+    body: JSON.stringify([botId, mmUserId]),
+  });
+
+  const appUrl = (process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000').replace(/\/$/, '');
+  const approvalUrl = `${appUrl}/approve-action?id=${approvalId}`;
+  
+  const message = 
+    `⚠️ **共有メールの大量削除リクエスト**\n\n` +
+    `**${requesterName}** さんが共有メール **${count}件** の削除をリクエストしました。\n` +
+    `この操作には管理者の承認が必要です（有効期限: 5分）。\n\n` +
+    `内容を確認して承認する場合は、以下のURLから操作を行ってください：\n` +
+    `${approvalUrl}`;
+
+  await mmFetch(baseUrl, token, '/posts', {
+    method: 'POST',
+    body: JSON.stringify({
+      channel_id: channel.id,
+      message,
+    }),
+  });
+
+  return true;
+}

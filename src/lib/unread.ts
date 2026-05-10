@@ -1,42 +1,28 @@
 import { prisma } from '@/lib/db';
 
-export async function getUserUnreadCounts(userId: string): Promise<{ personal: number; team: number }> {
-  const personal = await prisma.threads.count({
-    where: {
-      is_archived: false,
-      status: { notIn: ['archived'] as any[] },
-      unread_count: { gt: 0 },
-      mailbox: {
-        type: 'personal',
-        OR: [
-          { owner_user_id: userId },
-          { permissions: { some: { user_id: userId, can_view: true } } },
-        ],
-      },
-      visibility: { none: { user_id: userId, is_hidden: true } },
-    },
-  });
+export async function getUnreadCount(userId: string) {
+  const [personal, team] = await Promise.all([
+    prisma.threads.count({
+      where: {
+        mailbox: { type: 'personal', owner_user_id: userId },
+        unread_count: { gt: 0 }
+      }
+    }),
+    prisma.$queryRaw<Array<{ count: bigint }>>`
+      SELECT COUNT(DISTINCT t.id)::bigint as count
+      FROM threads t
+      JOIN mailboxes m ON t.mailbox_id = m.id
+      JOIN mailbox_permissions p ON m.id = p.mailbox_id
+      LEFT JOIN thread_reads r ON t.id = r.thread_id AND r.user_id = ${userId}
+      WHERE m.type = 'team'
+        AND p.user_id = ${userId}
+        AND p.can_view = true
+        AND (r.id IS NULL OR t.last_message_at > r.last_read_at)
+    `
+  ]);
 
-  const rows = await prisma.$queryRaw<[{ count: bigint }]>`
-    SELECT COUNT(DISTINCT t.id)::bigint AS count
-    FROM threads t
-    JOIN mailboxes mb ON t.mailbox_id = mb.id
-    WHERE t.is_archived = false
-      AND t.status != 'archived'
-      AND mb.type = 'team'
-      AND EXISTS (
-        SELECT 1 FROM mailbox_permissions mp
-        WHERE mp.mailbox_id = mb.id AND mp.user_id = ${userId} AND mp.can_view = true
-      )
-      AND NOT EXISTS (
-        SELECT 1 FROM thread_visibility tv
-        WHERE tv.thread_id = t.id AND tv.user_id = ${userId} AND tv.is_hidden = true
-      )
-      AND NOT EXISTS (
-        SELECT 1 FROM thread_reads tr
-        WHERE tr.thread_id = t.id AND tr.user_id = ${userId} AND tr.last_read_at >= t.last_message_at
-      )
-  `;
-
-  return { personal, team: Number(rows[0]?.count ?? 0) };
+  return {
+    personal,
+    team: Number(team[0]?.count || 0)
+  };
 }

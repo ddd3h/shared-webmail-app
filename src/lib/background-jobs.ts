@@ -1,54 +1,40 @@
-import { prisma } from '@/lib/db';
+import { syncMailbox } from './mail/sync';
+import { prisma } from './db';
+import { computeAndStoreMfi } from '@/app/api/mfi/compute';
 
-const INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
-
-// Query all users who have access to at least one active mailbox
-async function getActiveUsers() {
-  return prisma.users.findMany({
-    where: {
-      OR: [
-        { owned_mailboxes: { some: { is_active: true } } },
-        { mailbox_permissions: { some: { can_view: true, mailbox: { is_active: true } } } },
-      ],
-    },
-    select: { id: true, email: true },
+export async function getActiveUsers() {
+  const users = await prisma.users.findMany({
+    select: { id: true, email: true }
   });
+  return users;
 }
 
-async function runOnce() {
-  const { syncMailbox } = await import('@/lib/mail/sync');
-  const { computeAndStoreMfi } = await import('@/app/api/mfi/compute');
-
-  // 1. Sync all active mailboxes
+export async function runBackgroundSync() {
+  console.log('[bg] Running global sync...');
   const mailboxes = await prisma.mailboxes.findMany({
     where: { is_active: true },
-    select: { id: true },
+    select: { id: true, email_address: true }
   });
-  await Promise.allSettled(mailboxes.map(mb => syncMailbox(mb.id)));
+
+  for (const mb of mailboxes) {
+    try {
+      await syncMailbox(mb.id);
+    } catch (e: any) {
+      console.error(`[bg] Sync failed for ${mb.email_address}:`, e?.message || e);
+    }
+  }
 
   // 2. Compute MFI for all users with mailbox access (personal + team)
   const users = await getActiveUsers();
-  await Promise.allSettled(users.map(u => computeAndStoreMfi(u.id, u.email)));
+  await Promise.allSettled(users.map(u => computeAndStoreMfi(u.id)));
 }
 
 // Use a global flag so Next.js HMR in dev doesn't spawn duplicate intervals
-const STARTED_KEY = Symbol.for('__bg_jobs_started__');
+let bgInterval: NodeJS.Timeout | null = null;
 
 export function startBackgroundJobs() {
-  if (process.env.NODE_ENV === 'test') return;
-  if ((global as any)[STARTED_KEY]) return;
-  (global as any)[STARTED_KEY] = true;
-
-  console.log('[background] jobs started (interval: 5 min)');
-
-  // Run immediately after a short delay to let DB connections settle
-  setTimeout(() => {
-    runOnce().catch(e => console.error('[background] initial run error:', e));
-    setInterval(() => {
-      runOnce().catch(e => console.error('[background] interval run error:', e));
-    }, INTERVAL_MS);
-  }, 10_000);
+  if (bgInterval) return;
+  // Run every 3 minutes
+  bgInterval = setInterval(runBackgroundSync, 180 * 1000);
+  console.log('[bg] Background jobs started (3m interval)');
 }
-
-// Exported for use by the cron endpoint — same logic, no rate limiting
-export { getActiveUsers };

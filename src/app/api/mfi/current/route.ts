@@ -6,6 +6,6 @@ export async function GET() {
   const session = await getSession();
   requireAuth(session);
 
-  const data = await computeAndStoreMfi(session!.userId, session!.email);
+  const data = await computeAndStoreMfi(session!.userId);
   return NextResponse.json(data);
 }

@@ -1,7 +1,7 @@
 import webpush from 'web-push';
 import { getSetting } from '@/lib/settings';
 import { prisma } from '@/lib/db';
-import { getUserUnreadCounts } from '@/lib/unread';
+import { getUnreadCount } from '@/lib/unread';
 
 export async function ensureWebPushConfigured() {
   const publicKey = await getSetting('VAPID_PUBLIC_KEY');
@@ -21,7 +21,7 @@ export async function sendWebPushToUser(userId: string, payload: any) {
   await ensureWebPushConfigured();
 
   // Attach current total unread count so the SW can update the app badge
-  const counts = await getUserUnreadCounts(userId).catch(() => null);
+  const counts = await getUnreadCount(userId).catch(() => null);
   const badge = counts ? counts.personal + counts.team : undefined;
   const fullPayload = badge != null ? { ...payload, badge } : payload;
 
@@ -38,4 +38,3 @@ export async function sendWebPushToUser(userId: string, payload: any) {
     }
   }
 }
-

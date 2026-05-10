@@ -6,52 +6,47 @@ import { sendDosAlert } from '@/lib/dos-alert';
 import { computeAndStoreMfi } from '@/app/api/mfi/compute';
 import { getActiveUsers } from '@/lib/background-jobs';
 
-// 5 calls per minute per IP — prevents sync DoS even when CRON_SECRET is set
-const WINDOW_MS = 60 * 1000;
-const IP_LIMIT = 5;
+// 60 calls per minute per IP — prevents sync DoS essentially
+const LIMIT = 60;
+const WINDOW = 60 * 1000; // 1 minute in MS
 
-// GET /api/cron/sync - sync all active mailboxes
-// Protected by CRON_SECRET env variable for security
+// GET /api/cron/sync
 export async function GET(req: NextRequest) {
-  const secret = process.env.CRON_SECRET;
-  if (secret) {
-    const auth = req.headers.get('authorization');
-    if (auth !== `Bearer ${secret}`) {
-      return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
-    }
+  const ip = getClientIp(req);
+  const rl = checkRateLimit(`sync:${ip}`, LIMIT, WINDOW);
+  if (!rl.allowed) {
+    await sendDosAlert(ip, 'cron-sync', Math.ceil(rl.retryAfterSec || 0));
+    return NextResponse.json({ error: 'too_many_requests' }, { status: 429 });
   }
 
-  const ip = getClientIp(req);
-  const result = checkRateLimit(`cron-sync:ip:${ip}`, IP_LIMIT, WINDOW_MS);
-  if (!result.allowed) {
-    if (result.isFirstBlock) sendDosAlert(ip, 'cron-sync', result.retryAfterSec);
-    return NextResponse.json(
-      { error: 'too_many_requests' },
-      { status: 429, headers: { 'Retry-After': String(result.retryAfterSec) } }
-    );
+  const authHeader = req.headers.get('authorization');
+  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+    return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   }
 
   const mailboxes = await prisma.mailboxes.findMany({
     where: { is_active: true },
-    select: { id: true, email_address: true }
+    include: { credentials: true }
   });
 
-  const results: { mailboxId: string; email: string; synced: number; errors: string[] }[] = [];
+  const results = [];
+  let totalSyncedCount = 0;
 
   for (const mb of mailboxes) {
+    if (!mb.credentials) continue;
     try {
-      const r = await syncMailbox(mb.id);
-      results.push({ mailboxId: mb.id, email: mb.email_address, ...r });
+      const syncResult = await syncMailbox(mb.id);
+      results.push({ id: mb.id, email: mb.email_address, status: 'ok', synced: syncResult.synced });
+      totalSyncedCount += syncResult.synced;
     } catch (e: any) {
-      results.push({ mailboxId: mb.id, email: mb.email_address, synced: 0, errors: [String(e?.message || e)] });
+      console.error(`[cron] failed sync ${mb.email_address}:`, e?.message || e);
+      results.push({ id: mb.id, email: mb.email_address, status: 'error', error: e?.message || String(e) });
     }
   }
 
-  const totalSynced = results.reduce((sum, r) => sum + r.synced, 0);
-
   // Compute MFI for all users with mailbox access — personal + team (fire-and-forget)
   const users = await getActiveUsers();
-  Promise.allSettled(users.map(u => computeAndStoreMfi(u.id, u.email))).catch(() => {});
+  Promise.allSettled(users.map(u => computeAndStoreMfi(u.id))).catch(() => {});
 
-  return NextResponse.json({ ok: true, mailboxes: results.length, totalSynced, results });
+  return NextResponse.json({ ok: true, mailboxes: results.length, totalSynced: totalSyncedCount, results });
 }

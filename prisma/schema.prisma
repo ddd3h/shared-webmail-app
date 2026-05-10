@@ -24,7 +24,6 @@ enum ThreadStatus {
   in_progress
   waiting
   done
-  archived
 }
 
 enum JobStatus {
@@ -79,6 +78,7 @@ model users {
   contacts_created           contacts[]
   password_reset_tokens      password_reset_tokens[]
   mfi_snapshots              mfi_snapshots[]
+  bulk_actions_requested     pending_bulk_actions[]
 
   last_login_at              DateTime?
 }
@@ -158,7 +158,6 @@ model threads {
   last_sent_at            DateTime?
   last_replied_by_user_id String?
   unread_count            Int          @default(0)
-  is_archived             Boolean      @default(false)
   created_at              DateTime     @default(now())
   updated_at              DateTime     @updatedAt
 
@@ -513,4 +512,16 @@ model drafts {
   user    users      @relation(fields: [user_id], references: [id])
   mailbox mailboxes? @relation(fields: [mailbox_id], references: [id])
   thread  threads?   @relation(fields: [thread_id], references: [id])
+}
+
+model pending_bulk_actions {
+  id           String   @id @default(cuid())
+  user_id      String
+  action       String
+  filters_json String
+  count        Int
+  expires_at   DateTime
+  created_at   DateTime @default(now())
+
+  user users @relation(fields: [user_id], references: [id], onDelete: Cascade)
 }
