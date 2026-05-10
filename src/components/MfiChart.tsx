@@ -32,7 +32,7 @@ export default function MfiChart({ candles }: { candles: Candle[] }) {
         },
         crosshair: { mode: CrosshairMode.Normal },
         rightPriceScale: { borderColor: '#e5e7eb' },
-        timeScale: { borderColor: '#e5e7eb', timeVisible: true },
+        timeScale: { borderColor: '#e5e7eb', timeVisible: false },
       });
 
       const candleSeries = chart.addSeries(CandlestickSeries, {

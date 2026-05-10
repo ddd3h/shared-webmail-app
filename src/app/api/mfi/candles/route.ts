@@ -25,7 +25,7 @@ export async function GET(req: NextRequest) {
   const buckets = new Map<number, { open: number; high: number; low: number; close: number; volume: number }>();
 
   for (const s of snapshots) {
-    const hourTs = Math.floor((s.recorded_at.getTime() + JST_OFFSET_MS) / 3600000) * 3600; // JST hour-aligned Unix seconds
+    const hourTs = Math.floor((s.recorded_at.getTime() + JST_OFFSET_MS) / 86400000) * 86400; // JST day-aligned Unix seconds
     if (!buckets.has(hourTs)) {
       buckets.set(hourTs, { open: s.price, high: s.price, low: s.price, close: s.price, volume: s.volume });
     } else {
