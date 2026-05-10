@@ -67,6 +67,7 @@ export default function ComposeForm({
   const [showBcc, setShowBcc] = useState(initialBcc.length > 0);
   const [subject, setSubject] = useState(initialSubject);
   const [files, setFiles] = useState<File[]>([]);
+  const [attachError, setAttachError] = useState('');
   const [sigVisible, setSigVisible] = useState(true);
   const [signature, setSignature] = useState('');
   const [showQuote, setShowQuote] = useState(false);
@@ -156,10 +157,15 @@ export default function ComposeForm({
     });
   }
 
+  const MAX_FILE_BYTES = 10 * 1024 * 1024; // 10 MB per file
+  const MAX_FILES = 10;
+
   function validate() {
     if (!toChips.length) return '宛先を入力してください';
     if (mode !== 'reply' && !subject.trim()) return '件名を入力してください';
     if (!selectedMailbox) return '送信元メールアカウントを選択してください';
+    if (files.length > MAX_FILES) return `添付ファイルは${MAX_FILES}件までです`;
+    if (files.some(f => f.size > MAX_FILE_BYTES)) return '1ファイルあたり10MB以内にしてください';
     return null;
   }
 
@@ -416,17 +422,22 @@ export default function ComposeForm({
     </div>
   ) : null;
 
-  const attachmentsSection = files.length > 0 ? (
-    <div className={`pb-2 flex flex-wrap gap-2 ${px}`}>
-      {files.map((f, i) => (
-        <span key={i} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-gray-100 border border-gray-200 text-xs text-gray-700">
-          <svg className="w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
-          </svg>
-          {f.name}
-          <button type="button" onClick={() => setFiles(prev => prev.filter((_, j) => j !== i))} className="text-gray-400 hover:text-red-500 ml-0.5">×</button>
-        </span>
-      ))}
+  const attachmentsSection = (files.length > 0 || attachError) ? (
+    <div className={`pb-2 ${px}`}>
+      {files.length > 0 && (
+        <div className="flex flex-wrap gap-2 mb-1">
+          {files.map((f, i) => (
+            <span key={i} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-gray-100 border border-gray-200 text-xs text-gray-700">
+              <svg className="w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
+              </svg>
+              {f.name}
+              <button type="button" onClick={() => { setFiles(prev => prev.filter((_, j) => j !== i)); setAttachError(''); }} className="text-gray-400 hover:text-red-500 ml-0.5">×</button>
+            </span>
+          ))}
+        </div>
+      )}
+      {attachError && <p className="text-xs text-red-600">{attachError}</p>}
     </div>
   ) : null;
 
@@ -480,7 +491,24 @@ export default function ComposeForm({
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
       </svg>
       <span className={isInline ? 'hidden md:inline' : 'hidden sm:inline'}>ファイル添付</span>
-      <input type="file" multiple className="sr-only" onChange={e => { if (e.target.files) setFiles(prev => [...prev, ...Array.from(e.target.files!)]); e.target.value = ''; }} />
+      <input type="file" multiple className="sr-only" onChange={e => {
+        if (!e.target.files) return;
+        const added = Array.from(e.target.files);
+        const oversized = added.filter(f => f.size > MAX_FILE_BYTES);
+        if (oversized.length > 0) {
+          setAttachError(`「${oversized[0].name}」は10MBを超えています`);
+          e.target.value = '';
+          return;
+        }
+        if (files.length + added.length > MAX_FILES) {
+          setAttachError(`添付ファイルは${MAX_FILES}件までです`);
+          e.target.value = '';
+          return;
+        }
+        setAttachError('');
+        setFiles(prev => [...prev, ...added]);
+        e.target.value = '';
+      }} />
     </label>
   );
 
