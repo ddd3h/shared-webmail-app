@@ -20,7 +20,6 @@
 
 <br />
 
-***
 
 ## 概要
 
@@ -46,7 +45,6 @@
   />
 </p>
 
-***
 
 ## 機能
 
@@ -60,7 +58,6 @@
 | **AI**  | OpenRouter経由でのAI返信文生成・校正                      |
 | **その他** | 下書き自動保存 / Google連絡帳同期 / 監査ログ                  |
 
-***
 
 ## デザイン
 
@@ -88,7 +85,6 @@
   </tr>
 </table>
 
-***
 
 ## 技術スタック
 
@@ -120,7 +116,6 @@
 | バリデーション  | zod                                    |
 | テスト      | Vitest                                 |
 
-***
 
 ## クイックスタート
 
@@ -174,7 +169,6 @@ Email:    admin@example.com
 Password: admin1234
 ```
 
-***
 
 ## 本番デプロイ
 
@@ -193,7 +187,6 @@ bash scripts/deploy.sh
 # git pull → npm ci → prisma migrate deploy → npm run build → pm2 reload
 ```
 
-***
 
 ## 環境変数
 
@@ -210,7 +203,6 @@ bash scripts/deploy.sh
 
 全変数の一覧は [`.env.example`](./.env.example) を参照してください。
 
-***
 
 ## DBスキーマ変更
 
@@ -224,7 +216,6 @@ npx prisma generate
 
 > **本番環境では必ず** **`migrate deploy`** **を使用してください。`migrate dev`** **はDBをリセットする場合があります。**
 
-***
 
 ## npm スクリプト
 
@@ -236,7 +227,6 @@ npm run test         # Vitestでテスト実行
 npm run typecheck    # TypeScript型チェック
 ```
 
-***
 
 ## ディレクトリ構成
 
@@ -259,7 +249,6 @@ webmail-app/
 └── docs/                # 設計ドキュメント
 ```
 
-***
 
 ## トラブルシューティング
 
