@@ -371,6 +371,7 @@ export default function ComposeForm({
           activeUsers={collab.activeUsers}
           placeholder={mode === 'reply' ? '返信内容を入力してください…' : '本文を入力してください…'}
           minHeight={bodyHeight}
+          onLocalUpdate={() => saveDraft()}
           {...(richContentRef.current ? { initialHTML: richContentRef.current } : {})}
         />
       ) : (
@@ -446,13 +447,16 @@ export default function ComposeForm({
     </div>
   ) : null;
 
-  const syncStatus = inCollab ? (
-    <span className={`text-xs flex items-center gap-1 ${collab.connected ? 'text-emerald-600' : 'text-gray-400'}`}>
-      <span className={`w-1.5 h-1.5 rounded-full ${collab.connected ? 'bg-emerald-500 animate-pulse' : 'bg-gray-300'}`} />
-      {collab.connected ? '同期中' : '接続中…'}
-    </span>
-  ) : (
-    <DraftStatusBar status={draft.status} savedAt={draft.savedAt} />
+  const syncStatus = (
+    <>
+      {inCollab && (
+        <span className={`text-xs flex items-center gap-1 ${collab.connected ? 'text-emerald-600' : 'text-gray-400'}`}>
+          <span className={`w-1.5 h-1.5 rounded-full ${collab.connected ? 'bg-emerald-500 animate-pulse' : 'bg-gray-300'}`} />
+          {collab.connected ? '同期中' : '接続中…'}
+        </span>
+      )}
+      <DraftStatusBar status={draft.status} savedAt={draft.savedAt} />
+    </>
   );
 
   const aiBtn = (

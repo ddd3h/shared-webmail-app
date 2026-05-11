@@ -15,7 +15,7 @@ export type DraftData = {
 
 export type DraftStatus = 'idle' | 'saving' | 'saved' | 'error';
 
-const DEBOUNCE_MS = 1500;
+const DEBOUNCE_MS = 1000;
 
 export function useDraft(initialDraftId?: string) {
   const [draftId, setDraftId] = useState<string | null>(initialDraftId || null);

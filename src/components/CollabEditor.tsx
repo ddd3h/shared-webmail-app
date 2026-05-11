@@ -7,6 +7,7 @@ import { yCursorPlugin } from '@tiptap/y-tiptap';
 import { TextStyle } from '@tiptap/extension-text-style';
 import Color from '@tiptap/extension-color';
 import { forwardRef, useImperativeHandle, useEffect, useMemo } from 'react';
+import { ySyncPluginKey } from 'y-prosemirror';
 import type * as Y from 'yjs';
 import type { Awareness } from 'y-protocols/awareness';
 import type { CollabUser } from '@/hooks/useCollab';
@@ -27,6 +28,7 @@ type Props = {
   placeholder?: string;
   minHeight?: number;
   onUpdate?: () => void;
+  onLocalUpdate?: () => void;
   initialHTML?: string;
 };
 
@@ -75,7 +77,7 @@ function makeCollabCursorExtension(awareness: Awareness) {
 }
 
 const CollabEditor = forwardRef<CollabEditorHandle, Props>(
-  ({ doc, awareness, me, activeUsers, placeholder, minHeight = 160, onUpdate, initialHTML }, ref) => {
+  ({ doc, awareness, me, activeUsers, placeholder, minHeight = 160, onUpdate, onLocalUpdate, initialHTML }, ref) => {
     const collabCursorExtension = useMemo(
       () => makeCollabCursorExtension(awareness),
       // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -105,7 +107,11 @@ const CollabEditor = forwardRef<CollabEditorHandle, Props>(
           'data-placeholder': placeholder ?? '',
         },
       },
-      onUpdate: () => onUpdate?.(),
+      onUpdate: ({ transaction }) => {
+        onUpdate?.();
+        // isChangeOrigin: true means this update came from a remote Yjs peer — skip draft save
+        if (!transaction.getMeta(ySyncPluginKey)?.isChangeOrigin) onLocalUpdate?.();
+      },
     });
 
     useImperativeHandle(ref, () => ({

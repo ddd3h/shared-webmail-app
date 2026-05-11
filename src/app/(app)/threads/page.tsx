@@ -1136,7 +1136,7 @@ function ThreadList() {
                       </div>
                       <div className="flex items-center gap-1.5 mt-0.5">
                         <span className="flex-1 min-w-0 truncate text-sm text-amber-700 font-medium">
-                          {d.thread?.subject || d.subject || '(件名なし)'}
+                          {d.thread?.subject ? `Re: ${d.thread.subject}` : d.subject || '(件名なし)'}
                         </span>
                         {d.is_shared && (
                           <span className="flex-shrink-0 text-xs px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-600 font-medium">共有</span>
@@ -1165,7 +1165,7 @@ function ThreadList() {
                       {d.to_raw ? `To: ${d.to_raw.split(/[,;\s]+/)[0]}` : '(宛先なし)'}
                     </div>
                     <div className="flex-1 min-w-0 flex items-center gap-2">
-                      <span className="truncate text-sm text-amber-700 font-medium">{d.thread?.subject || d.subject || '(件名なし)'}</span>
+                      <span className="truncate text-sm text-amber-700 font-medium">{d.thread?.subject ? `Re: ${d.thread.subject}` : d.subject || '(件名なし)'}</span>
                       {d.is_shared && (
                         <span className="flex-shrink-0 text-xs px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-600 font-medium">共有下書き</span>
                       )}
