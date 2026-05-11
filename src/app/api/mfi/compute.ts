@@ -1,5 +1,14 @@
 import { prisma } from '@/lib/db';
-import { MFI_ALERT_THRESHOLD } from '@/lib/mfi';
+import {
+  MFI_ALERT_THRESHOLD,
+  computeDebt,
+  computeBaseline,
+  computeMFI,
+  computeStreakHours,
+  computeStreakBonus,
+  buildActionHint,
+  shouldCreateSnapshot,
+} from '@/lib/mfi';
 import { sendMfiBelowThresholdDm } from '@/lib/mattermost-dm';
 
 export type MfiResult = {
@@ -24,7 +33,7 @@ export async function computeMfi(userId: string): Promise<MfiResult> {
   const now = new Date();
   const nowMs = now.getTime();
 
-  // 1. Get all unread messages (Personal + Team with permission)
+  // 1. Get all unread threads
   const personalUnread = await prisma.threads.findMany({
     where: {
       unread_count: { gt: 0 },
@@ -38,67 +47,42 @@ export async function computeMfi(userId: string): Promise<MfiResult> {
       mailbox: { type: 'team', permissions: { some: { user_id: userId, can_view: true } } },
       reads: { none: { user_id: userId } }
     },
-    select: { last_message_at: true }
+    select: { last_message_at: true, unread_count: true }
   });
 
-  // Calculate debt breakdown
-  let debt = 0;
-  let oldestUnreadMs = 0;
-  const breakdown = { count_under1h: 0, count_h1_24h: 0, count_d1_3d: 0, count_over3d: 0 };
+  // 2. Debt breakdown via library (weight × unread_count per thread)
+  const breakdown = computeDebt([...personalUnread, ...teamUnread]);
+  const debt = breakdown.total;
 
-  const allUnread = [
-    ...personalUnread.map(t => ({ last: t.last_message_at })),
-    ...teamUnread.map(t => ({ last: t.last_message_at }))
-  ];
-
-  for (const t of allUnread) {
-    const ageMs = nowMs - t.last.getTime();
-    if (ageMs > oldestUnreadMs) oldestUnreadMs = ageMs;
-
-    const ageHours = ageMs / (1000 * 3600);
-    if (ageHours <= 1) {
-      debt += 0.2;
-      breakdown.count_under1h++;
-    } else if (ageHours <= 24) {
-      debt += 1.0;
-      breakdown.count_h1_24h++;
-    } else if (ageHours <= 72) {
-      debt += 3.0;
-      breakdown.count_d1_3d++;
-    } else {
-      debt += 8.0;
-      breakdown.count_over3d++;
-    }
-  }
-
-  // 2. Personal Baseline (Median of last 30 days)
+  // 3. Personal Baseline — median of last 30 days, bootstrap when < 3 snapshots
   const thirtyDaysAgo = new Date(nowMs - 30 * 24 * 3600 * 1000);
   const snapshots = await prisma.mfi_snapshots.findMany({
     where: { user_id: userId, recorded_at: { gte: thirtyDaysAgo } },
-    select: { debt: true },
+    select: { debt: true, recorded_at: true },
     orderBy: { recorded_at: 'desc' }
   });
 
-  let baseline = 1.0;
-  if (snapshots.length >= 3) {
-    const sortedDebts = snapshots.map(s => s.debt).sort((a, b) => a - b);
-    baseline = sortedDebts[Math.floor(sortedDebts.length / 2)] || 1.0;
-  } else {
-    baseline = Math.max(1.0, debt * 2);
-  }
+  const baseline = snapshots.length >= 3
+    ? Math.max(1, computeBaseline(snapshots.map(s => s.debt)))
+    : Math.max(1, debt * 2);
 
-  // 3. MFI Score
-  const mfi = 100 * Math.exp(-debt / baseline);
+  // 4. MFI = 100 × exp(−debt / (baseline × 3.5))
+  const mfi = computeMFI(debt, baseline);
 
-  // 4. Streak & Stats
-  const lastSnapshot = snapshots[0];
+  // 5. Streak & Price
+  const streakHours = computeStreakHours(snapshots, baseline);
+  const streakBonus = computeStreakBonus(streakHours);
+  const price = mfi * 10 * streakBonus;
+
+  // 6. ATH
   const athRow = await prisma.mfi_snapshots.findFirst({
     where: { user_id: userId },
     orderBy: { price: 'desc' },
     select: { price: true }
   });
-  const ath = athRow?.price || 0;
+  const ath = athRow?.price ?? 0;
 
+  // 7. 24h change
   const yesterday = new Date(nowMs - 24 * 3600 * 1000);
   const snapshot24h = await prisma.mfi_snapshots.findFirst({
     where: { user_id: userId, recorded_at: { lte: yesterday } },
@@ -107,30 +91,7 @@ export async function computeMfi(userId: string): Promise<MfiResult> {
   });
   const change24h = snapshot24h ? mfi - snapshot24h.mfi : 0;
 
-  // Streak hours (approximate from snapshots)
-  let streakHours = 0;
-  if (lastSnapshot) {
-    const latestHealthy = await prisma.mfi_snapshots.findFirst({
-      where: { user_id: userId, mfi: { lt: 70 } },
-      orderBy: { recorded_at: 'desc' },
-      select: { recorded_at: true }
-    });
-    if (latestHealthy) {
-      streakHours = (nowMs - latestHealthy.recorded_at.getTime()) / (1000 * 3600);
-    } else {
-      const firstSnapshot = await prisma.mfi_snapshots.findFirst({
-        where: { user_id: userId },
-        orderBy: { recorded_at: 'asc' },
-        select: { recorded_at: true }
-      });
-      if (firstSnapshot) streakHours = (nowMs - firstSnapshot.recorded_at.getTime()) / (1000 * 3600);
-    }
-  }
-
-  const streakBonus = 1 + Math.min(0.2, streakHours * 0.005);
-  const price = mfi * 10 * streakBonus;
-
-  // Repaid today (debt reduction since midnight)
+  // 8. Repaid today (debt reduction since midnight)
   const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const firstToday = await prisma.mfi_snapshots.findFirst({
     where: { user_id: userId, recorded_at: { gte: todayStart } },
@@ -139,26 +100,38 @@ export async function computeMfi(userId: string): Promise<MfiResult> {
   });
   const repaidToday = firstToday ? Math.max(0, firstToday.debt - debt) : 0;
 
-  // Action hint
-  let actionHint = null;
-  if (breakdown.count_over3d > 0) actionHint = `${breakdown.count_over3d}件の古い未読（3日超）を処理するとMFIが大幅に回復します。`;
-  else if (breakdown.count_d1_3d > 0) actionHint = `1〜3日前の未読が${breakdown.count_d1_3d}件あります。早めにチェックしましょう。`;
-  else if (debt > 0) actionHint = '順調です。残りの未読も片付けてストリークを伸ばしましょう。';
-
   return {
-    mfi, price, change24h, ath, debt, streak_hours: streakHours,
-    oldest_unread_ms: oldestUnreadMs, repaid_today: repaidToday,
-    action_hint: actionHint, breakdown
+    mfi,
+    price,
+    change24h,
+    ath,
+    debt,
+    streak_hours: streakHours,
+    oldest_unread_ms: breakdown.oldest_ms,
+    repaid_today: repaidToday,
+    action_hint: buildActionHint(breakdown, baseline),
+    breakdown: {
+      count_under1h: breakdown.count_under1h,
+      count_h1_24h: breakdown.count_h1_24h,
+      count_d1_3d: breakdown.count_d1_3d,
+      count_over3d: breakdown.count_over3d,
+    },
   };
 }
 
 export async function computeAndStoreMfi(userId: string): Promise<MfiResult> {
   const data = await computeMfi(userId);
+
   const lastSnapshot = await prisma.mfi_snapshots.findFirst({
     where: { user_id: userId },
     orderBy: { recorded_at: 'desc' },
-    select: { debt: true }
+    select: { debt: true, recorded_at: true }
   });
+
+  // Rate-limit snapshot writes to once per 4 hours
+  if (!shouldCreateSnapshot(lastSnapshot?.recorded_at ?? null)) {
+    return data;
+  }
 
   const volume = lastSnapshot ? Math.max(0, lastSnapshot.debt - data.debt) : 0;
 
@@ -168,13 +141,12 @@ export async function computeAndStoreMfi(userId: string): Promise<MfiResult> {
       mfi: data.mfi,
       price: data.price,
       debt: data.debt,
-      volume: volume,
+      volume,
       streak_hours: data.streak_hours,
       recorded_at: new Date()
     }
   });
 
-  // Send Mattermost DM when MFI drops below threshold (throttled to once per 12h in sendMfiBelowThresholdDm)
   if (data.mfi < MFI_ALERT_THRESHOLD) {
     const user = await prisma.users.findUnique({ where: { id: userId }, select: { email: true } });
     if (user?.email) {

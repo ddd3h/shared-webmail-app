@@ -1,7 +1,9 @@
 /**
- * Recalculate historical MFI snapshots using the updated formula:
+ * Recalculate historical MFI snapshots using the correct formula:
  *   MFI = 100 * exp(-debt / (baseline * 3.5))
+ *   streak_hours = contiguous time where debt < baseline * 0.5
  *
+ * Idempotent: debt/recorded_at unchanged → same result on every run.
  * Run: node prisma/recalculate-mfi.mjs
  */
 
@@ -10,6 +12,8 @@ import { PrismaClient } from '@prisma/client';
 const prisma = new PrismaClient();
 
 const MFI_SCALE = 3.5;
+const HEALTHY_RATIO = 0.5;
+const SNAPSHOT_INTERVAL_MS = 4 * 3600 * 1000; // 4 hours
 const THIRTY_DAYS_MS = 30 * 24 * 3600 * 1000;
 
 function median(values) {
@@ -22,6 +26,28 @@ function median(values) {
 
 function computeMFI(debt, baseline) {
   return 100 * Math.exp(-debt / Math.max(1, baseline * MFI_SCALE));
+}
+
+/**
+ * Mirrors mfi.ts computeStreakHours exactly.
+ * snapshots = all snapshots in the 30-day window up to (and including) current.
+ * baseline  = baseline computed at the time of the current snapshot.
+ */
+function computeStreakHours(snapshots, baseline) {
+  const threshold = baseline * HEALTHY_RATIO;
+  const sorted = [...snapshots].sort(
+    (a, b) => b.recorded_at.getTime() - a.recorded_at.getTime()
+  );
+  let totalMs = 0;
+  for (let i = 0; i < sorted.length; i++) {
+    if (sorted[i].debt >= threshold) break;
+    const gapMs =
+      i === 0
+        ? SNAPSHOT_INTERVAL_MS
+        : sorted[i - 1].recorded_at.getTime() - sorted[i].recorded_at.getTime();
+    totalMs += Math.min(gapMs, SNAPSHOT_INTERVAL_MS * 2);
+  }
+  return Math.round((totalMs / 3600000) * 10) / 10;
 }
 
 function computeStreakBonus(streakHours) {
@@ -50,29 +76,36 @@ async function main() {
 
     for (let i = 0; i < snapshots.length; i++) {
       const snap = snapshots[i];
-      const cutoff = new Date(snap.recorded_at.getTime() - THIRTY_DAYS_MS);
+      const snapTime = snap.recorded_at.getTime();
+      const cutoff = new Date(snapTime - THIRTY_DAYS_MS);
 
-      // Baseline = median of debts in the 30 days BEFORE this snapshot
+      // Baseline = median of debts in the 30 days strictly before this snapshot
       const historicalDebts = snapshots
         .filter(s => s.recorded_at >= cutoff && s.recorded_at < snap.recorded_at)
         .map(s => s.debt);
 
-      const baseline = historicalDebts.length >= 3
-        ? Math.max(1, median(historicalDebts))
-        : Math.max(1, snap.debt * 2); // bootstrap: same as computeMfi() logic
+      const baseline =
+        historicalDebts.length >= 3
+          ? Math.max(1, median(historicalDebts))
+          : Math.max(1, snap.debt * 2); // bootstrap
 
       const newMfi = computeMFI(snap.debt, baseline);
-      const newPrice = newMfi * 10 * computeStreakBonus(snap.streak_hours);
+
+      // Streak: snapshots in 30-day window up to and including this snapshot
+      const windowSnaps = snapshots.filter(
+        s => s.recorded_at >= cutoff && s.recorded_at <= snap.recorded_at
+      );
+      const newStreakHours = computeStreakHours(windowSnaps, baseline);
+      const newPrice = newMfi * 10 * computeStreakBonus(newStreakHours);
 
       updates.push(
         prisma.mfi_snapshots.update({
           where: { id: snap.id },
-          data: { mfi: newMfi, price: newPrice },
+          data: { mfi: newMfi, streak_hours: newStreakHours, price: newPrice },
         })
       );
     }
 
-    // Batch per user
     await Promise.all(updates);
     totalUpdated += snapshots.length;
     console.log(`  ユーザー ${user_id}: 完了`);
