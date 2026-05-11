@@ -249,6 +249,10 @@ webmail-app/
 └── docs/                # 設計ドキュメント
 ```
 
+## データベースER図
+
+![ER図](./docs/img/prisma-erd.svg)
+
 
 ## トラブルシューティング
 
