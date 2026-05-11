@@ -256,7 +256,7 @@ export default function DashboardPage() {
               <span className="text-sm text-gray-400 font-normal">/ 100</span>
               {mfiData && (
                 <span className={`text-sm font-semibold ${mfiData.change24h >= 0 ? 'text-green-600' : 'text-red-500'}`}>
-                  {mfiData.change24h >= 0 ? '▲' : '▼'} {Math.abs(mfiData.change24h).toFixed(1)}%
+                  {mfiData.change24h >= 0 ? '▲' : '▼'} {Math.abs(mfiData.change24h).toFixed(1)}pt
                   <span className="text-gray-400 font-normal ml-1">24h</span>
                 </span>
               )}
