@@ -311,6 +311,7 @@ function ThreadList() {
   const [isAllSelected, setIsAllSelected] = useState(false);
   const [bulkLoading, setBulkLoading] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [confirmDeleteDrafts, setConfirmDeleteDrafts] = useState(false);
   const [modernConfirm, setModernConfirm] = useState<{ title: string, message: string, onConfirm: () => void } | null>(null);
   const [modernAlert, setModernAlert] = useState<{ title: string, message: string } | null>(null);
   const [cursorStack, setCursorStack] = useState<Array<{ last: string; id: string }>>([]);
@@ -493,12 +494,12 @@ function ThreadList() {
   async function bulkDelete() { await performBulkAction('delete'); }
 
   async function bulkDeleteDrafts() {
-    if (!confirm(`${selected.size} 件の下書きを削除しますか？`)) return;
     setBulkLoading(true);
     await Promise.all([...selected].map(id =>
       fetch(`/api/drafts/${id}`, { method: 'DELETE' })
     ));
     setSelected(new Set());
+    setConfirmDeleteDrafts(false);
     setBulkLoading(false);
     mutateDrafts();
   }
@@ -955,26 +956,43 @@ function ThreadList() {
 
       {/* Bulk action bar */}
       {selectionMode && tab === 'drafts' && (
-        <div className="flex items-center gap-2 px-4 py-2 bg-amber-50 border-x border-gray-200">
-          <input
-            type="checkbox"
-            checked={selected.size === drafts.length && drafts.length > 0}
-            ref={el => { if (el) el.indeterminate = selected.size > 0 && selected.size < drafts.length; }}
-            onChange={() => {
-              if (selected.size === drafts.length && drafts.length > 0) {
-                setSelected(new Set());
-              } else {
-                setSelected(new Set(drafts.map(d => d.id)));
-              }
-            }}
-            className="w-4 h-4 rounded text-amber-600 border-gray-300 cursor-pointer"
-          />
-          <span className="text-sm font-medium text-amber-700">{selected.size} 件選択中</span>
-          <div className="flex-1" />
-          <button onClick={bulkDeleteDrafts} disabled={bulkLoading} className="btn btn-sm px-3 py-1.5 rounded-lg text-sm font-medium bg-red-50 text-red-700 hover:bg-red-100 ring-1 ring-inset ring-red-200">
-            {bulkLoading ? '削除中…' : '削除'}
-          </button>
-          <button onClick={() => { setSelected(new Set()); }} className="text-sm text-gray-500 hover:text-gray-700 px-2 py-1 rounded hover:bg-gray-100">解除</button>
+        <div className="bg-amber-600 border-x border-amber-600">
+          <div className="flex items-center gap-2 px-4 py-2.5">
+            <input
+              type="checkbox"
+              checked={selected.size === drafts.length && drafts.length > 0}
+              ref={el => { if (el) el.indeterminate = selected.size > 0 && selected.size < drafts.length; }}
+              onChange={() => {
+                if (selected.size === drafts.length && drafts.length > 0) {
+                  setSelected(new Set());
+                } else {
+                  setSelected(new Set(drafts.map(d => d.id)));
+                }
+              }}
+              className="w-4 h-4 rounded text-amber-600 border-gray-300 cursor-pointer flex-shrink-0"
+            />
+            <span className="text-sm font-medium text-white">{selected.size} 件選択中</span>
+            <div className="flex-1" />
+            {confirmDeleteDrafts ? (
+              <>
+                <span className="hidden sm:inline text-sm text-white">{selected.size} 件を削除します。元に戻せません。</span>
+                <button onClick={bulkDeleteDrafts} disabled={bulkLoading} className="px-3 py-1.5 rounded-lg text-sm font-semibold bg-white text-red-600 hover:bg-red-50 disabled:opacity-50 transition-colors">
+                  {bulkLoading ? '削除中…' : '削除する'}
+                </button>
+                <button onClick={() => setConfirmDeleteDrafts(false)} disabled={bulkLoading} className="px-3 py-1.5 rounded-lg text-sm font-medium bg-amber-500 text-white hover:bg-amber-400 border border-white/30 transition-colors">
+                  キャンセル
+                </button>
+              </>
+            ) : (
+              <>
+                <button onClick={() => setConfirmDeleteDrafts(true)} disabled={bulkLoading} className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-red-500/80 text-white hover:bg-red-500 border border-red-400/50 transition-colors disabled:opacity-50">
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                  削除
+                </button>
+                <button onClick={() => { setSelected(new Set()); setConfirmDeleteDrafts(false); }} className="px-2.5 py-1.5 rounded-lg text-xs font-medium text-white/80 hover:text-white hover:bg-white/10 transition-colors">解除</button>
+              </>
+            )}
+          </div>
         </div>
       )}
       {selectionMode && tab !== 'drafts' && (
