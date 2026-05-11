@@ -75,6 +75,15 @@ export function useDraft(initialDraftId?: string) {
     }, DEBOUNCE_MS);
   }, [saveNow]);
 
+  // Remove body fields from any pending (not-yet-fired) debounce save.
+  // Call when collab becomes active so body is not overwritten by a stale save.
+  const stripBodyFromPending = useCallback(() => {
+    if (pendingRef.current) {
+      delete pendingRef.current.html_body;
+      delete pendingRef.current.text_body;
+    }
+  }, []);
+
   // Delete the draft (e.g., after successful send)
   const deleteDraft = useCallback(async () => {
     if (!draftId) return;
@@ -83,5 +92,5 @@ export function useDraft(initialDraftId?: string) {
     setStatus('idle');
   }, [draftId]);
 
-  return { draftId, status, savedAt, scheduleSave, saveNow, deleteDraft };
+  return { draftId, status, savedAt, scheduleSave, saveNow, deleteDraft, stripBodyFromPending };
 }

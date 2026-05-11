@@ -34,7 +34,8 @@ export async function GET(req: NextRequest) {
     orderBy: { updated_at: 'desc' },
     include: {
       user: { select: { name: true, email: true } },
-      mailbox: { select: { display_name: true, type: true } }
+      mailbox: { select: { display_name: true, type: true } },
+      thread: { select: { subject: true } }
     }
   });
 

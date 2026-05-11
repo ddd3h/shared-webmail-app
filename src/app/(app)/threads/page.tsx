@@ -97,6 +97,7 @@ type Thread = {
   from_email: string | null;
   from_name: string | null;
   has_mattermost: boolean;
+  has_draft: boolean;
   readers: ThreadReader[];
 };
 
@@ -254,12 +255,14 @@ function ContactSuggestInput({ value, onChange, placeholder }: { value: string; 
 
 type DraftItem = {
   id: string;
+  thread_id: string | null;
   to_raw: string | null;
   subject: string | null;
   is_shared: boolean;
   updated_at: string;
   mailbox: { display_name: string; type: string } | null;
   user: { name: string };
+  thread: { subject: string } | null;
 };
 
 const fetcher = (url: string) => fetch(url).then(r => r.json());
@@ -1098,7 +1101,11 @@ function ThreadList() {
                   key={d.id}
                   onClick={() => {
                     if (selectionMode) { toggleSelect(d.id, drafts.indexOf(d)); return; }
-                    setOpenDraftId(d.id); setShowCompose(true);
+                    if (d.thread_id) {
+                      router.push(`/threads/${d.thread_id}?draft=${d.id}`);
+                    } else {
+                      setOpenDraftId(d.id); setShowCompose(true);
+                    }
                   }}
                   className={`group cursor-pointer transition-colors select-none ${isDraftSelected ? 'bg-amber-50' : 'hover:bg-amber-50/40'}`}
                 >
@@ -1129,7 +1136,7 @@ function ThreadList() {
                       </div>
                       <div className="flex items-center gap-1.5 mt-0.5">
                         <span className="flex-1 min-w-0 truncate text-sm text-amber-700 font-medium">
-                          {d.subject || '(件名なし)'}
+                          {d.thread?.subject || d.subject || '(件名なし)'}
                         </span>
                         {d.is_shared && (
                           <span className="flex-shrink-0 text-xs px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-600 font-medium">共有</span>
@@ -1158,7 +1165,7 @@ function ThreadList() {
                       {d.to_raw ? `To: ${d.to_raw.split(/[,;\s]+/)[0]}` : '(宛先なし)'}
                     </div>
                     <div className="flex-1 min-w-0 flex items-center gap-2">
-                      <span className="truncate text-sm text-amber-700 font-medium">{d.subject || '(件名なし)'}</span>
+                      <span className="truncate text-sm text-amber-700 font-medium">{d.thread?.subject || d.subject || '(件名なし)'}</span>
                       {d.is_shared && (
                         <span className="flex-shrink-0 text-xs px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-600 font-medium">共有下書き</span>
                       )}
@@ -1291,6 +1298,11 @@ function ThreadList() {
                         {t.has_mattermost && (
                           <span className="flex-shrink-0 text-xs px-1.5 py-0.5 rounded bg-purple-50 text-purple-600 font-medium">M</span>
                         )}
+                        {t.has_draft && (
+                          <svg className="flex-shrink-0 w-3 h-3 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><title>下書きあり</title>
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                          </svg>
+                        )}
                       </div>
                       {t.mailbox_type === 'team' && t.readers.length > 0 && (
                         <div className="flex items-center gap-1.5 mt-1.5">
@@ -1353,6 +1365,11 @@ function ThreadList() {
                       </span>
                       {t.has_mattermost && (
                         <span className="flex-shrink-0 text-xs px-1.5 py-0.5 rounded bg-purple-50 text-purple-600 font-medium">M</span>
+                      )}
+                      {t.has_draft && (
+                        <svg className="flex-shrink-0 w-3.5 h-3.5 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><title>下書きあり</title>
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                        </svg>
                       )}
                     </div>
                     {/* チームメール: 担当 + ステータス + 既読 */}

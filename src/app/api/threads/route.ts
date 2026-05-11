@@ -102,8 +102,18 @@ export async function GET(req: NextRequest) {
     nextCursor = { last: (lastItem.last as unknown as Date).toISOString(), id: lastItem.id };
   }
 
+  // Check which threads have a saved draft by the current user
+  const draftedThreadIds = new Set(
+    (await prisma.drafts.findMany({
+      where: { user_id: session!.userId, thread_id: { in: finalItems.map(i => i.id) } },
+      select: { thread_id: true }
+    })).map(d => d.thread_id).filter((tid): tid is string => tid !== null)
+  );
+
+  const itemsWithDraft = finalItems.map(i => ({ ...i, has_draft: draftedThreadIds.has(i.id) }));
+
   // Also return total count for 'Select all' UI
   const totalCount = await prisma.threads.count({ where: threadsWhere });
 
-  return NextResponse.json({ items: finalItems, nextCursor, totalCount });
+  return NextResponse.json({ items: itemsWithDraft, nextCursor, totalCount });
 }

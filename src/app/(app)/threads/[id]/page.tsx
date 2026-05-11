@@ -1,6 +1,6 @@
 'use client';
-import { use, useEffect, useState, useRef, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
+import { use, useEffect, useState, useRef, useCallback, Suspense } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import ComposeForm, { type SendPayload } from '@/components/ComposeForm';
 
@@ -207,7 +207,7 @@ function InlineDropdown({ trigger, children, align = 'left' }: { trigger: React.
   );
 }
 
-export default function ThreadDetailPage({ params }: Props) {
+function ThreadDetailPageInner({ params }: Props) {
   const { id } = use(params);
   const [data, setData] = useState<ThreadData | null>(null);
   const [users, setUsers] = useState<User[]>([]);
@@ -218,6 +218,7 @@ export default function ThreadDetailPage({ params }: Props) {
   const [replyInitialCc, setReplyInitialCc] = useState<string[]>([]);
   const [replyQuote, setReplyQuote] = useState<{ header: string; html: string } | null>(null);
   const lastIncomingIdRef = useRef('');
+  const [replyDraftId, setReplyDraftId] = useState<string | undefined>(undefined);
   const [showForward, setShowForward] = useState(false);
   const [forwardInitialBody, setForwardInitialBody] = useState('');
   const [forwardInitialSubject, setForwardInitialSubject] = useState('');
@@ -232,6 +233,7 @@ export default function ThreadDetailPage({ params }: Props) {
   const [moveStep, setMoveStep] = useState<'idle' | 'transferring' | 'done'>('idle');
   const [discussPosting, setDiscussPosting] = useState(false);
   const router = useRouter();
+  const searchParams = useSearchParams();
   const replyBoxRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const [showScrollTop, setShowScrollTop] = useState(false);
@@ -261,6 +263,20 @@ export default function ThreadDetailPage({ params }: Props) {
   }, [id, router]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Auto-open reply form when ?draft=ID is in URL (coming from drafts list)
+  const urlDraftId = searchParams.get('draft');
+  const autoOpenedDraftRef = useRef(false);
+  useEffect(() => {
+    if (!data || !urlDraftId || autoOpenedDraftRef.current) return;
+    autoOpenedDraftRef.current = true;
+    setReplyDraftId(urlDraftId);
+    openReply();
+    // Clean up URL so refresh doesn't re-open
+    const url = new URL(window.location.href);
+    url.searchParams.delete('draft');
+    window.history.replaceState({}, '', url.toString());
+  }, [data, urlDraftId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     function onScroll() {
@@ -938,8 +954,9 @@ export default function ThreadDetailPage({ params }: Props) {
             initialCc={replyInitialCc}
             quote={replyQuote}
             threadId={id}
+            draftId={replyDraftId}
             onSend={handleReplySend}
-            onCancel={() => setShowReply(false)}
+            onCancel={() => { setShowReply(false); setReplyDraftId(undefined); }}
           />
         ) : canReply ? (
           <div
@@ -1123,5 +1140,17 @@ export default function ThreadDetailPage({ params }: Props) {
         </div>
       )}
     </div>
+  );
+}
+
+export default function ThreadDetailPage({ params }: Props) {
+  return (
+    <Suspense fallback={
+      <div className="max-w-full py-16 text-center">
+        <div className="inline-block w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+      </div>
+    }>
+      <ThreadDetailPageInner params={params} />
+    </Suspense>
   );
 }

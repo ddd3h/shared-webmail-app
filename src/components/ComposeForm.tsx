@@ -93,6 +93,11 @@ export default function ComposeForm({
   const collab = useCollab(collabSessionId);
   const inCollab = !!(collab.doc && collab.awareness && collab.me);
 
+  // When collab activates mid-debounce, strip body from pending save to avoid overwriting collab state
+  useEffect(() => {
+    if (inCollab) draft.stripBodyFromPending();
+  }, [inCollab]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Fetch mailboxes and signature on mount
   useEffect(() => {
     fetch('/api/mailboxes?mine=1')

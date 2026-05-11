@@ -2,7 +2,7 @@
 import type { DraftStatus } from '@/hooks/useDraft';
 
 export default function DraftStatusBar({ status, savedAt }: { status: DraftStatus; savedAt: Date | null }) {
-  if (status === 'idle' && !savedAt) return null;
+  if (status === 'idle') return null;
 
   const time = savedAt ? savedAt.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }) : '';
 
