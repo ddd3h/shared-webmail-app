@@ -11,7 +11,7 @@ export const DEBT_WEIGHTS = {
 
 export const MFI_ALERT_THRESHOLD = 50; // Send DM when MFI drops below this
 const HEALTHY_RATIO = 0.5; // "healthy" = debt < 50% of baseline
-const SNAPSHOT_INTERVAL_MS = 5 * 60 * 1000; // Max one snapshot per 5 min
+const SNAPSHOT_INTERVAL_MS = 4 * 3600 * 1000; // Max one snapshot per 4 hours
 
 export type DebtBreakdown = {
   total: number;
@@ -76,8 +76,12 @@ export function computeBaseline(debts: number[]): number {
     : sorted[mid];
 }
 
+// Scale factor: softens the curve so that debt ≈ baseline gives MFI ≈ 75 (良好)
+// rather than 36.8. MFI 60 corresponds to ~1.7× baseline (slightly worse than normal).
+const MFI_SCALE = 3.5;
+
 export function computeMFI(debt: number, baseline: number): number {
-  return 100 * Math.exp(-debt / Math.max(1, baseline));
+  return 100 * Math.exp(-debt / Math.max(1, baseline * MFI_SCALE));
 }
 
 export function computeStreakHours(
@@ -88,13 +92,17 @@ export function computeStreakHours(
   const sorted = [...snapshots].sort(
     (a, b) => b.recorded_at.getTime() - a.recorded_at.getTime()
   );
-  // Each snapshot ≈ 5 min interval
-  let hours = 0;
-  for (const s of sorted) {
-    if (s.debt < threshold) hours += SNAPSHOT_INTERVAL_MS / 3600000;
-    else break;
+  // Use actual time gaps between snapshots (handles both old 5-min and new 4-hour data).
+  // Cap each gap at 2× the current interval to avoid counting server-downtime as streak.
+  let totalMs = 0;
+  for (let i = 0; i < sorted.length; i++) {
+    if (sorted[i].debt >= threshold) break;
+    const gapMs = i === 0
+      ? SNAPSHOT_INTERVAL_MS
+      : sorted[i - 1].recorded_at.getTime() - sorted[i].recorded_at.getTime();
+    totalMs += Math.min(gapMs, SNAPSHOT_INTERVAL_MS * 2);
   }
-  return Math.round(hours * 10) / 10;
+  return Math.round(totalMs / 3600000 * 10) / 10;
 }
 
 export function computeStreakBonus(streakHours: number): number {

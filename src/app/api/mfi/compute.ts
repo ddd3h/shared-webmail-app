@@ -1,4 +1,6 @@
 import { prisma } from '@/lib/db';
+import { MFI_ALERT_THRESHOLD } from '@/lib/mfi';
+import { sendMfiBelowThresholdDm } from '@/lib/mattermost-dm';
 
 export type MfiResult = {
   mfi: number;
@@ -157,7 +159,7 @@ export async function computeAndStoreMfi(userId: string): Promise<MfiResult> {
     orderBy: { recorded_at: 'desc' },
     select: { debt: true }
   });
-  
+
   const volume = lastSnapshot ? Math.max(0, lastSnapshot.debt - data.debt) : 0;
 
   await prisma.mfi_snapshots.create({
@@ -171,5 +173,14 @@ export async function computeAndStoreMfi(userId: string): Promise<MfiResult> {
       recorded_at: new Date()
     }
   });
+
+  // Send Mattermost DM when MFI drops below threshold (throttled to once per 12h in sendMfiBelowThresholdDm)
+  if (data.mfi < MFI_ALERT_THRESHOLD) {
+    const user = await prisma.users.findUnique({ where: { id: userId }, select: { email: true } });
+    if (user?.email) {
+      sendMfiBelowThresholdDm(userId, user.email, data.mfi).catch(() => {});
+    }
+  }
+
   return data;
 }

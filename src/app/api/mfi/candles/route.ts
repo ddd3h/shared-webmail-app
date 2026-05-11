@@ -2,14 +2,14 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getSession, requireAuth } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 
-// GET /api/mfi/candles?hours=48
-// Returns OHLC candles (1-hour buckets) for the lightweight-charts candlestick
+// GET /api/mfi/candles?days=30
+// Returns daily OHLC candles for the lightweight-charts candlestick
 export async function GET(req: NextRequest) {
   const session = await getSession();
   requireAuth(session);
 
-  const hours = Math.min(168, parseInt(new URL(req.url).searchParams.get('hours') ?? '48', 10));
-  const since = new Date(Date.now() - hours * 3600 * 1000);
+  const days = Math.min(90, parseInt(new URL(req.url).searchParams.get('days') ?? '30', 10));
+  const since = new Date(Date.now() - days * 86400 * 1000);
 
   const snapshots = await prisma.mfi_snapshots.findMany({
     where: { user_id: session!.userId, recorded_at: { gte: since } },

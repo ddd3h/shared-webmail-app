@@ -106,7 +106,7 @@ export default function DashboardPage() {
     mailboxStorage: MailboxStorage[];
   }>('/api/dashboard', fetcher);
   const { data: mfiData } = useSWR<MfiData>('/api/mfi/current', fetcher, { refreshInterval: 5 * 60 * 1000 });
-  const { data: candleData } = useSWR<CandleData>('/api/mfi/candles?hours=720', fetcher, { refreshInterval: 5 * 60 * 1000 });
+  const { data: candleData } = useSWR<CandleData>('/api/mfi/candles?days=30', fetcher, { refreshInterval: 4 * 60 * 60 * 1000 });
   const { data: alertsData } = useSWR<AlertsData>('/api/mfi/alerts', fetcher, { refreshInterval: 5 * 60 * 1000 });
   const [recalculating, setRecalculating] = useState(false);
 

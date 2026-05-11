@@ -30,10 +30,30 @@ export default function MfiChart({ candles }: { candles: Candle[] }) {
           vertLines: { color: '#f3f4f6' },
           horzLines: { color: '#f3f4f6' },
         },
+        localization: {
+          timeFormatter: (time: number) => {
+            const d = new Date(time * 1000);
+            return `${d.getUTCFullYear()}年${d.getUTCMonth() + 1}月${d.getUTCDate()}日`;
+          },
+        },
         crosshair: { mode: CrosshairMode.Normal },
-        rightPriceScale: { borderColor: '#e5e7eb' },
-        timeScale: { borderColor: '#e5e7eb', timeVisible: false },
+        rightPriceScale: { borderColor: '#e5e7eb', autoScale: false },
+        timeScale: {
+          borderColor: '#e5e7eb',
+          timeVisible: false,
+          tickMarkFormatter: (time: number, tickMarkType: number) => {
+            const d = new Date(time * 1000);
+            const y = d.getUTCFullYear();
+            const m = d.getUTCMonth() + 1;
+            const day = d.getUTCDate();
+            if (tickMarkType === 0) return `${y}年`;
+            if (tickMarkType === 1) return `${m}月`;
+            return `${day}日`;
+          },
+        },
       });
+
+      const JST_OFFSET_MS = 9 * 3600 * 1000;
 
       const candleSeries = chart.addSeries(CandlestickSeries, {
         upColor: '#22c55e',
@@ -41,6 +61,9 @@ export default function MfiChart({ candles }: { candles: Candle[] }) {
         borderVisible: false,
         wickUpColor: '#22c55e',
         wickDownColor: '#ef4444',
+        autoscaleInfoProvider: () => ({
+          priceRange: { minValue: 0, maxValue: 1200 },
+        }),
       });
 
       const volumeSeries = chart.addSeries(HistogramSeries, {
@@ -53,7 +76,11 @@ export default function MfiChart({ candles }: { candles: Candle[] }) {
       candleSeries.setData(candles);
       volumeSeries.setData(candles.map(c => ({ time: c.time, value: c.volume, color: c.close >= c.open ? '#22c55e55' : '#ef444455' })));
 
-      chart.timeScale().fitContent();
+      // Show 30 bars wide regardless of data count; pad left with empty space if needed
+      requestAnimationFrame(() => {
+        const lastIndex = candles.length - 1;
+        chart?.timeScale().setVisibleLogicalRange({ from: lastIndex - 29, to: lastIndex + 0.5 });
+      });
 
       const ro = new ResizeObserver(() => {
         if (containerRef.current) chart.applyOptions({ width: containerRef.current.clientWidth });
