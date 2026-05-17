@@ -507,10 +507,12 @@ model drafts {
   subject     String?
   html_body   String?
   text_body   String?
-  is_shared   Boolean   @default(false)
-  yjs_state   Bytes?
-  created_at  DateTime  @default(now())
-  updated_at  DateTime  @updatedAt
+  is_shared    Boolean   @default(false)
+  yjs_state    Bytes?
+  quote_header String?
+  quote_html   String?
+  created_at   DateTime  @default(now())
+  updated_at   DateTime  @updatedAt
 
   user    users      @relation(fields: [user_id], references: [id])
   mailbox mailboxes? @relation(fields: [mailbox_id], references: [id])
