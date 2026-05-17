@@ -182,14 +182,6 @@ export default function ChatPage() {
   const selected = data?.find(t => t.threadId === selectedId);
 
   return (
-    /*
-     * h-[100dvh] covers the full viewport.
-     * On desktop: md:top-14 offsets below the sticky top nav.
-     * On mobile: bottom-[4rem] stays above the fixed bottom tab bar (nav has pb ~64px).
-     * The negative-margin layout wrapper cancels the parent <main>'s padding,
-     * so this div starts right at the edge of the viewport.
-     */
-    {/* mobile: minus bottom nav ~4rem  |  desktop: minus top nav 3.5rem */}
     <div className="flex overflow-hidden bg-white h-[calc(100dvh-4rem)] md:h-[calc(100dvh-3.5rem)]">
       {/* ── Left: thread list ── */}
       <div className={`flex flex-col border-r border-gray-200 bg-white w-full md:w-80 lg:w-96 shrink-0 ${mobileShowDetail ? 'hidden md:flex' : 'flex'}`}>
