@@ -30,7 +30,6 @@ export async function POST(
   const readAt = new Date();
   await prisma.chat_message_reads.createMany({
     data: validIds.map(id => ({ message_id: id, user_id: session!.userId, read_at: readAt })),
-    data: validIds.map(id => ({ message_id: id, user_id: session!.userId, read_at: readAt })),
     skipDuplicates: true,
   });
 
