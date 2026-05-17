@@ -184,7 +184,7 @@ export default function ChatPage() {
   return (
     <div className="flex overflow-hidden bg-white h-[calc(100dvh-7.5rem)] md:h-[calc(100dvh-3.5rem)]">
       {/* ── Left: thread list ── */}
-      <div className={`flex flex-col border-r border-gray-200 bg-white w-full md:w-80 lg:w-96 shrink-0 ${mobileShowDetail ? 'hidden md:flex' : 'flex'}`}>
+      <div className={`flex flex-col overflow-hidden border-r border-gray-200 bg-white w-full md:w-80 lg:w-96 shrink-0 ${mobileShowDetail ? 'hidden md:flex' : 'flex'}`}>
         {/* fixed header */}
         <div className="shrink-0 px-4 py-3 border-b border-gray-100 bg-white">
           <h1 className="font-bold text-gray-900">チャット</h1>
@@ -214,7 +214,7 @@ export default function ChatPage() {
       </div>
 
       {/* ── Right: detail panel ── */}
-      <div className={`flex-1 flex flex-col min-w-0 ${mobileShowDetail ? 'flex' : 'hidden md:flex'}`}>
+      <div className={`flex-1 flex flex-col overflow-hidden min-w-0 ${mobileShowDetail ? 'flex' : 'hidden md:flex'}`}>
         {!selectedId ? (
           <div className="flex-1 flex flex-col items-center justify-center text-gray-400 gap-2">
             <svg className="w-12 h-12 opacity-30" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
