@@ -30,7 +30,6 @@ interface ThreadDetail {
     from: { name: string | null; email: string };
     sent_at: string;
     text_body: string | null;
-    html_body: string | null;
   }[];
 }
 
@@ -48,8 +47,7 @@ const STATUS_COLOR: Record<string, string> = {
 
 function formatTime(iso: string) {
   const d = new Date(iso);
-  const now = new Date();
-  const diffDays = Math.floor((now.getTime() - d.getTime()) / 86400000);
+  const diffDays = Math.floor((Date.now() - d.getTime()) / 86400000);
   if (diffDays === 0) return d.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
   if (diffDays === 1) return '昨日';
   if (diffDays < 7) return `${diffDays}日前`;
@@ -61,11 +59,7 @@ function previewBody(body: string, kind: string) {
   return body.length > 36 ? body.slice(0, 36) + '…' : body;
 }
 
-function ThreadListItem({
-  thread,
-  selected,
-  onClick,
-}: {
+function ThreadListItem({ thread, selected, onClick }: {
   thread: ChatThread;
   selected: boolean;
   onClick: () => void;
@@ -74,7 +68,9 @@ function ThreadListItem({
     <button
       onClick={onClick}
       className={`w-full flex items-center gap-3 px-4 py-3 text-left transition-colors border-b border-gray-100 ${
-        selected ? 'bg-green-50 border-l-4 border-l-green-500' : 'hover:bg-gray-50'
+        selected
+          ? 'bg-green-50 border-l-4 border-l-green-500'
+          : 'hover:bg-gray-50 border-l-4 border-l-transparent'
       }`}
     >
       <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center shrink-0 text-green-600">
@@ -115,8 +111,8 @@ function EmailPreviewPanel({ threadId }: { threadId: string }) {
 
   if (!data) {
     return (
-      <div className="p-4 border-b border-gray-200 bg-white">
-        <div className="h-4 bg-gray-100 rounded animate-pulse w-3/4 mb-2" />
+      <div className="px-4 py-3 border-b border-gray-200 bg-white">
+        <div className="h-4 bg-gray-100 rounded animate-pulse w-3/4 mb-1" />
         <div className="h-3 bg-gray-100 rounded animate-pulse w-1/2" />
       </div>
     );
@@ -126,12 +122,11 @@ function EmailPreviewPanel({ threadId }: { threadId: string }) {
 
   return (
     <div className="shrink-0 border-b border-gray-200 bg-white">
-      {/* summary row */}
       <div className="flex items-start justify-between gap-2 px-4 py-3">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             <span className="font-semibold text-gray-900 text-sm truncate">{data.subject}</span>
-            <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${STATUS_COLOR[data.status] ?? 'bg-gray-100 text-gray-500'}`}>
+            <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium shrink-0 ${STATUS_COLOR[data.status] ?? 'bg-gray-100 text-gray-500'}`}>
               {STATUS_LABEL[data.status] ?? data.status}
             </span>
           </div>
@@ -142,10 +137,7 @@ function EmailPreviewPanel({ threadId }: { threadId: string }) {
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          <Link
-            href={`/threads/${threadId}`}
-            className="text-xs text-blue-600 hover:underline"
-          >
+          <Link href={`/threads/${threadId}`} className="text-xs text-blue-600 hover:underline">
             メールを開く
           </Link>
           <button
@@ -159,11 +151,9 @@ function EmailPreviewPanel({ threadId }: { threadId: string }) {
           </button>
         </div>
       </div>
-
-      {/* expanded: latest email message */}
       {expanded && lastMsg && (
         <div className="px-4 pb-3 border-t border-gray-100">
-          <div className="mt-2 text-xs text-gray-500 flex items-center gap-2">
+          <div className="mt-2 text-xs text-gray-500 flex items-center gap-2 flex-wrap">
             <span className="font-medium text-gray-700">{lastMsg.from.name ?? lastMsg.from.email}</span>
             <span>{formatTime(lastMsg.sent_at)}</span>
             <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${lastMsg.direction === 'incoming' ? 'bg-blue-50 text-blue-600' : 'bg-gray-100 text-gray-500'}`}>
@@ -192,20 +182,30 @@ export default function ChatPage() {
   const selected = data?.find(t => t.threadId === selectedId);
 
   return (
-    <div className="flex h-[calc(100vh-3.5rem)] md:h-[calc(100vh-3.5rem)] overflow-hidden">
+    /*
+     * h-[100dvh] covers the full viewport.
+     * On desktop: md:top-14 offsets below the sticky top nav.
+     * On mobile: bottom-[4rem] stays above the fixed bottom tab bar (nav has pb ~64px).
+     * The negative-margin layout wrapper cancels the parent <main>'s padding,
+     * so this div starts right at the edge of the viewport.
+     */
+    {/* mobile: minus bottom nav ~4rem  |  desktop: minus top nav 3.5rem */}
+    <div className="flex overflow-hidden bg-white h-[calc(100dvh-4rem)] md:h-[calc(100dvh-3.5rem)]">
       {/* ── Left: thread list ── */}
-      <div className={`flex flex-col w-full md:w-80 lg:w-96 shrink-0 border-r border-gray-200 bg-white ${mobileShowDetail ? 'hidden md:flex' : 'flex'}`}>
-        <div className="px-4 py-3 border-b border-gray-100">
+      <div className={`flex flex-col border-r border-gray-200 bg-white w-full md:w-80 lg:w-96 shrink-0 ${mobileShowDetail ? 'hidden md:flex' : 'flex'}`}>
+        {/* fixed header */}
+        <div className="shrink-0 px-4 py-3 border-b border-gray-100 bg-white">
           <h1 className="font-bold text-gray-900">チャット</h1>
         </div>
 
+        {/* scrollable list */}
         <div className="flex-1 overflow-y-auto">
           {isLoading && (
             <div className="flex justify-center py-12">
               <div className="w-5 h-5 border-2 border-green-500 border-t-transparent rounded-full animate-spin" />
             </div>
           )}
-          {data && data.length === 0 && (
+          {!isLoading && data?.length === 0 && (
             <p className="text-gray-400 text-sm text-center py-12 px-4">
               チャットメッセージがありません
             </p>
@@ -232,8 +232,8 @@ export default function ChatPage() {
           </div>
         ) : (
           <>
-            {/* mobile back button */}
-            <div className="md:hidden flex items-center gap-2 px-4 py-2 border-b border-gray-200 bg-white shrink-0">
+            {/* mobile back bar */}
+            <div className="md:hidden shrink-0 flex items-center gap-2 px-3 py-2 border-b border-gray-200 bg-white">
               <button
                 onClick={() => setMobileShowDetail(false)}
                 className="text-green-600 flex items-center gap-1 text-sm font-medium"
@@ -246,12 +246,12 @@ export default function ChatPage() {
               <span className="text-sm font-medium text-gray-700 truncate">{selected?.threadSubject}</span>
             </div>
 
-            {/* email preview */}
-            <EmailPreviewPanel key={selectedId} threadId={selectedId} />
+            {/* email preview (fixed height, collapsible) */}
+            <EmailPreviewPanel key={`ep-${selectedId}`} threadId={selectedId} />
 
-            {/* inline chat */}
+            {/* inline chat — flex-1 fills remaining, handles own scroll + fixed input */}
             <div className="flex-1 min-h-0">
-              <InlineChatPanel key={selectedId} threadId={selectedId} />
+              <InlineChatPanel key={`chat-${selectedId}`} threadId={selectedId} />
             </div>
           </>
         )}
