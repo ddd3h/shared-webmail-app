@@ -11,9 +11,22 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   const draft = await prisma.drafts.findUnique({ where: { id } });
   if (!draft) return NextResponse.json({ error: 'not_found' }, { status: 404 });
 
-  // must own it, or it's a shared draft from an accessible mailbox
-  if (draft.user_id !== session.userId && !draft.is_shared) {
-    return NextResponse.json({ error: 'forbidden' }, { status: 403 });
+  if (draft.user_id !== session.userId) {
+    // Shared drafts: caller must have access to the mailbox
+    if (!draft.is_shared || !draft.mailbox_id) {
+      return NextResponse.json({ error: 'forbidden' }, { status: 403 });
+    }
+    const accessible = await prisma.mailboxes.findFirst({
+      where: {
+        id: draft.mailbox_id,
+        OR: [
+          { type: 'personal', owner_user_id: session.userId },
+          { permissions: { some: { user_id: session.userId, can_view: true } } },
+        ],
+      },
+      select: { id: true },
+    });
+    if (!accessible) return NextResponse.json({ error: 'forbidden' }, { status: 403 });
   }
 
   return NextResponse.json(draft);
@@ -38,7 +51,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
         id: draft.mailbox_id,
         OR: [
           { type: 'personal', owner_user_id: session.userId },
-          { permissions: { some: { user_id: session.userId, can_view: true } } },
+          { permissions: { some: { user_id: session.userId, can_reply: true } } },
         ],
       },
       select: { id: true },

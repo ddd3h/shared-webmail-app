@@ -24,59 +24,66 @@ export function useDraft(initialDraftId?: string) {
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingRef = useRef<DraftData | null>(null);
   const savingRef = useRef(false);
+  // Ref mirrors draftId state so saveNow always reads the latest value
+  // without re-creating the callback (eliminates stale-closure duplicate-POST bug).
+  const draftIdRef = useRef<string | null>(initialDraftId || null);
+  const mountedRef = useRef(true);
 
-  // Clean up timer on unmount
-  useEffect(() => () => { if (timerRef.current) clearTimeout(timerRef.current); }, []);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
+  }, []);
 
   const saveNow = useCallback(async (data: DraftData): Promise<string | null> => {
-    if (savingRef.current) return draftId;
+    if (savingRef.current) return draftIdRef.current;
     savingRef.current = true;
-    setStatus('saving');
+    if (mountedRef.current) setStatus('saving');
     try {
-      let id = draftId;
+      let id = draftIdRef.current;
       if (id) {
-        // Update existing draft
         const res = await fetch(`/api/drafts/${id}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(data)
         });
-        if (!res.ok) { setStatus('error'); return id; }
+        if (!res.ok) { if (mountedRef.current) setStatus('error'); return id; }
       } else {
-        // Create new draft
         const res = await fetch('/api/drafts', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(data)
         });
-        if (!res.ok) { setStatus('error'); return null; }
+        if (!res.ok) { if (mountedRef.current) setStatus('error'); return null; }
         const json = await res.json();
         id = json.id;
-        setDraftId(id);
+        draftIdRef.current = id ?? null;
+        if (mountedRef.current) setDraftId(id ?? null);
       }
-      setStatus('saved');
-      setSavedAt(new Date());
+      if (mountedRef.current) { setStatus('saved'); setSavedAt(new Date()); }
       return id || null;
     } catch {
-      setStatus('error');
-      return draftId;
+      if (mountedRef.current) setStatus('error');
+      return draftIdRef.current;
     } finally {
       savingRef.current = false;
     }
-  }, [draftId]);
+  }, []); // no deps — reads draftId via draftIdRef, not closure
 
-  // Schedule a debounced save
   const scheduleSave = useCallback((data: DraftData) => {
     pendingRef.current = data;
-    setStatus('idle');
+    if (mountedRef.current) setStatus('idle');
     if (timerRef.current) clearTimeout(timerRef.current);
     timerRef.current = setTimeout(() => {
-      if (pendingRef.current) saveNow(pendingRef.current);
+      if (mountedRef.current && pendingRef.current) {
+        saveNow(pendingRef.current);
+        pendingRef.current = null;
+      }
     }, DEBOUNCE_MS);
   }, [saveNow]);
 
-  // Remove body fields from any pending (not-yet-fired) debounce save.
-  // Call when collab becomes active so body is not overwritten by a stale save.
   const stripBodyFromPending = useCallback(() => {
     if (pendingRef.current) {
       delete pendingRef.current.html_body;
@@ -84,13 +91,13 @@ export function useDraft(initialDraftId?: string) {
     }
   }, []);
 
-  // Delete the draft (e.g., after successful send)
   const deleteDraft = useCallback(async () => {
-    if (!draftId) return;
-    await fetch(`/api/drafts/${draftId}`, { method: 'DELETE' }).catch(() => {});
-    setDraftId(null);
-    setStatus('idle');
-  }, [draftId]);
+    const id = draftIdRef.current;
+    if (!id) return;
+    await fetch(`/api/drafts/${id}`, { method: 'DELETE' }).catch(() => {});
+    draftIdRef.current = null;
+    if (mountedRef.current) { setDraftId(null); setStatus('idle'); }
+  }, []);
 
   return { draftId, status, savedAt, scheduleSave, saveNow, deleteDraft, stripBodyFromPending };
 }
