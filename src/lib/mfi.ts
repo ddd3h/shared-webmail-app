@@ -2,16 +2,24 @@
 // Uses threads.unread_count as a proxy for unread message count,
 // and threads.last_message_at as a proxy for message age.
 
-export const DEBT_WEIGHTS = {
-  under1h: 0.2,
-  h1_24h: 1.0,
-  d1_3d: 3.0,
-  over3d: 8.0,
-} as const;
+// Anchor weights at key age boundaries.
+// Actual weight is linearly interpolated between these points,
+// eliminating cliff-edge debt spikes when email crosses an hour boundary.
+const W_0H  = 0.2;  // fresh  (0h)
+const W_1H  = 1.0;  // 1h old
+const W_24H = 3.0;  // 24h old
+const W_72H = 8.0;  // 72h+  (cap)
 
-export const MFI_ALERT_THRESHOLD = 50; // Send DM when MFI drops below this
-const HEALTHY_RATIO = 0.5; // "healthy" = debt < 50% of baseline
-const SNAPSHOT_INTERVAL_MS = 4 * 3600 * 1000; // Max one snapshot per 4 hours
+function continuousWeight(ageHours: number): number {
+  if (ageHours < 1)  return W_0H  + (ageHours / 1)         * (W_1H  - W_0H);
+  if (ageHours < 24) return W_1H  + ((ageHours - 1)  / 23) * (W_24H - W_1H);
+  if (ageHours < 72) return W_24H + ((ageHours - 24) / 48) * (W_72H - W_24H);
+  return W_72H;
+}
+
+export const MFI_ALERT_THRESHOLD = 50;
+const HEALTHY_RATIO = 0.5;
+const SNAPSHOT_INTERVAL_MS = 4 * 3600 * 1000;
 
 export type DebtBreakdown = {
   total: number;
@@ -23,7 +31,7 @@ export type DebtBreakdown = {
   count_h1_24h: number;
   count_d1_3d: number;
   count_over3d: number;
-  oldest_ms: number; // age of oldest unread in ms, 0 if none
+  oldest_ms: number;
 };
 
 export function computeDebt(
@@ -31,6 +39,7 @@ export function computeDebt(
 ): DebtBreakdown {
   const now = Date.now();
   let total = 0;
+  let debt_under1h = 0, debt_h1_24h = 0, debt_d1_3d = 0, debt_over3d = 0;
   let count_under1h = 0, count_h1_24h = 0, count_d1_3d = 0, count_over3d = 0;
   let oldest_ms = 0;
 
@@ -41,27 +50,31 @@ export function computeDebt(
     if (ageMs > oldest_ms) oldest_ms = ageMs;
 
     const count = t.unread_count;
+    const w = continuousWeight(ageH);
+    total += count * w;
+
+    // Bucket counts kept for display/action hints
     if (ageH < 1) {
       count_under1h += count;
-      total += count * DEBT_WEIGHTS.under1h;
+      debt_under1h += count * w;
     } else if (ageH < 24) {
       count_h1_24h += count;
-      total += count * DEBT_WEIGHTS.h1_24h;
+      debt_h1_24h += count * w;
     } else if (ageH < 72) {
       count_d1_3d += count;
-      total += count * DEBT_WEIGHTS.d1_3d;
+      debt_d1_3d += count * w;
     } else {
       count_over3d += count;
-      total += count * DEBT_WEIGHTS.over3d;
+      debt_over3d += count * w;
     }
   }
 
   return {
     total,
-    under1h: count_under1h * DEBT_WEIGHTS.under1h,
-    h1_24h: count_h1_24h * DEBT_WEIGHTS.h1_24h,
-    d1_3d: count_d1_3d * DEBT_WEIGHTS.d1_3d,
-    over3d: count_over3d * DEBT_WEIGHTS.over3d,
+    under1h: debt_under1h,
+    h1_24h: debt_h1_24h,
+    d1_3d: debt_d1_3d,
+    over3d: debt_over3d,
     count_under1h, count_h1_24h, count_d1_3d, count_over3d,
     oldest_ms,
   };
@@ -92,8 +105,6 @@ export function computeStreakHours(
   const sorted = [...snapshots].sort(
     (a, b) => b.recorded_at.getTime() - a.recorded_at.getTime()
   );
-  // Use actual time gaps between snapshots (handles both old 5-min and new 4-hour data).
-  // Cap each gap at 2× the current interval to avoid counting server-downtime as streak.
   let totalMs = 0;
   for (let i = 0; i < sorted.length; i++) {
     if (sorted[i].debt >= threshold) break;
@@ -116,7 +127,8 @@ export function buildActionHint(
   const { count_over3d, count_d1_3d, count_h1_24h, total } = breakdown;
 
   if (count_over3d > 0) {
-    const hypothetical = total - count_over3d * DEBT_WEIGHTS.over3d;
+    // over3d weight is always W_72H (8.0) — use breakdown.over3d for accuracy
+    const hypothetical = total - breakdown.over3d;
     const gain = computeMFI(hypothetical, baseline) - computeMFI(total, baseline);
     return `${count_over3d}件の3日以上前の未読を処理すると +${(gain * 10).toFixed(1)} 上昇見込み`;
   }

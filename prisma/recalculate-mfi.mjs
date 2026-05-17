@@ -1,7 +1,15 @@
 /**
- * Recalculate historical MFI snapshots using the correct formula:
+ * Recalculate historical MFI snapshots using the updated formula:
  *   MFI = 100 * exp(-debt / (baseline * 3.5))
  *   streak_hours = contiguous time where debt < baseline * 0.5
+ *
+ * Baseline floor (matches compute.ts):
+ *   max(median_of_history, max_recent_debt * 0.20, 10)
+ *   Prevents catastrophic MFI drops when the user maintained near-zero debt
+ *   and baseline collapsed to ~0.
+ *
+ * Note: stored `debt` values are not changed — continuous weighting only
+ * affects new snapshots going forward.
  *
  * Idempotent: debt/recorded_at unchanged → same result on every run.
  * Run: node prisma/recalculate-mfi.mjs
@@ -84,10 +92,12 @@ async function main() {
         .filter(s => s.recorded_at >= cutoff && s.recorded_at < snap.recorded_at)
         .map(s => s.debt);
 
-      const baseline =
+      const rawBaseline =
         historicalDebts.length >= 3
-          ? Math.max(1, median(historicalDebts))
-          : Math.max(1, snap.debt * 2); // bootstrap
+          ? median(historicalDebts)
+          : snap.debt * 2; // bootstrap
+      const maxRecentDebt = historicalDebts.length > 0 ? Math.max(...historicalDebts) : 0;
+      const baseline = Math.max(rawBaseline, maxRecentDebt * 0.20, 10);
 
       const newMfi = computeMFI(snap.debt, baseline);
 

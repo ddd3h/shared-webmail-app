@@ -62,9 +62,15 @@ export async function computeMfi(userId: string): Promise<MfiResult> {
     orderBy: { recorded_at: 'desc' }
   });
 
-  const baseline = snapshots.length >= 3
-    ? Math.max(1, computeBaseline(snapshots.map(s => s.debt)))
-    : Math.max(1, debt * 2);
+  const snapshotDebts = snapshots.map(s => s.debt);
+  const rawBaseline = snapshots.length >= 3
+    ? computeBaseline(snapshotDebts)
+    : debt * 2;
+  // Floor prevents catastrophic MFI drops when the user has maintained near-zero debt
+  // (baseline would collapse to ~0, making any small debt look devastating).
+  // Use at least 20% of worst recent debt, or 10 absolute — whichever is higher.
+  const maxRecentDebt = snapshotDebts.length > 0 ? Math.max(...snapshotDebts) : 0;
+  const baseline = Math.max(rawBaseline, maxRecentDebt * 0.20, 10);
 
   // 4. MFI = 100 × exp(−debt / (baseline × 3.5))
   const mfi = computeMFI(debt, baseline);

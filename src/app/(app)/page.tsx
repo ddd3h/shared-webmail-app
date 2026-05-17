@@ -308,22 +308,22 @@ export default function DashboardPage() {
           <div className="flex gap-2 flex-wrap text-xs">
             {mfiData.breakdown.count_over3d > 0 && (
               <span className="px-2 py-1 bg-red-50 text-red-600 rounded-full border border-red-100">
-                3日超: {mfiData.breakdown.count_over3d}件 (×8)
+                3日超: {mfiData.breakdown.count_over3d}件 (重×8)
               </span>
             )}
             {mfiData.breakdown.count_d1_3d > 0 && (
               <span className="px-2 py-1 bg-orange-50 text-orange-600 rounded-full border border-orange-100">
-                1〜3日: {mfiData.breakdown.count_d1_3d}件 (×3)
+                1〜3日: {mfiData.breakdown.count_d1_3d}件 (重×3〜8)
               </span>
             )}
             {mfiData.breakdown.count_h1_24h > 0 && (
               <span className="px-2 py-1 bg-yellow-50 text-yellow-600 rounded-full border border-yellow-100">
-                1〜24h: {mfiData.breakdown.count_h1_24h}件 (×1)
+                1〜24h: {mfiData.breakdown.count_h1_24h}件 (重×1〜3)
               </span>
             )}
             {mfiData.breakdown.count_under1h > 0 && (
               <span className="px-2 py-1 bg-gray-100 text-gray-500 rounded-full">
-                1時間以内: {mfiData.breakdown.count_under1h}件 (×0.2)
+                1時間以内: {mfiData.breakdown.count_under1h}件 (重×0.2〜1)
               </span>
             )}
           </div>
