@@ -267,6 +267,19 @@ type DraftItem = {
 
 const fetcher = (url: string) => fetch(url, { cache: 'no-store' }).then(r => r.json());
 
+const VIEW_COOKIE = 'mailbox_view';
+const VIEW_COOKIE_MAX_AGE = 365 * 24 * 3600; // 1 year
+
+function getViewCookie(): 'personal' | 'team' {
+  if (typeof document === 'undefined') return 'personal';
+  const m = document.cookie.match(/(?:^|;\s*)mailbox_view=([^;]+)/);
+  return m?.[1] === 'team' ? 'team' : 'personal';
+}
+
+function setViewCookie(view: 'personal' | 'team') {
+  document.cookie = `${VIEW_COOKIE}=${view}; path=/; max-age=${VIEW_COOKIE_MAX_AGE}; SameSite=Lax`;
+}
+
 function buildThreadsKey(view: string, tab: string, q: string, cursor?: { last: string; id: string }) {
   const params = new URLSearchParams();
   params.set('type', view);
@@ -518,9 +531,8 @@ function ThreadList() {
 
   useEffect(() => {
     const urlView = searchParams.get('view') as 'personal' | 'team' | null;
-    const savedView = (sessionStorage.getItem('threads-view') as 'personal' | 'team') || urlView || 'personal';
-    const view = urlView ?? savedView;
-    if (urlView) sessionStorage.setItem('threads-view', urlView);
+    const view = urlView ?? getViewCookie();
+    if (urlView) setViewCookie(urlView);
     const savedTab = sessionStorage.getItem('threads-tab');
     sessionStorage.removeItem('threads-tab');
     const t = savedTab ?? searchParams.get('tab') ?? 'unread';
@@ -541,6 +553,7 @@ function ThreadList() {
   }
 
   function switchView(view: 'personal' | 'team') {
+    setViewCookie(view);
     setMailboxView(view);
     setTab('unread');
     setCursorStack([]);
