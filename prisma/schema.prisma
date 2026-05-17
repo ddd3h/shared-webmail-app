@@ -79,6 +79,8 @@ model users {
   password_reset_tokens      password_reset_tokens[]
   mfi_snapshots              mfi_snapshots[]
   bulk_actions_requested     pending_bulk_actions[]
+  chat_messages_sent         chat_messages[]        @relation("chat_sender")
+  chat_message_reads         chat_message_reads[]   @relation("chat_read_by")
 
   last_login_at              DateTime?
 }
@@ -176,6 +178,7 @@ model threads {
   mm_notifications      mattermost_notifications[]
   notifications         notification_events[]
   drafts                drafts[]
+  chat_messages         chat_messages[]
 }
 
 // Per-user read tracking for shared (team) mail threads
@@ -504,14 +507,45 @@ model drafts {
   subject     String?
   html_body   String?
   text_body   String?
-  is_shared   Boolean   @default(false)
-  yjs_state   Bytes?
-  created_at  DateTime  @default(now())
-  updated_at  DateTime  @updatedAt
+  is_shared    Boolean   @default(false)
+  yjs_state    Bytes?
+  quote_header String?
+  quote_html   String?
+  created_at   DateTime  @default(now())
+  updated_at   DateTime  @updatedAt
 
   user    users      @relation(fields: [user_id], references: [id])
   mailbox mailboxes? @relation(fields: [mailbox_id], references: [id])
   thread  threads?   @relation(fields: [thread_id], references: [id])
+}
+
+model chat_messages {
+  id         String   @id @default(cuid())
+  thread_id  String
+  sender_id  String
+  body       String
+  kind       String   @default("text")
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  thread threads              @relation(fields: [thread_id], references: [id], onDelete: Cascade)
+  sender users                @relation("chat_sender", fields: [sender_id], references: [id])
+  reads  chat_message_reads[]
+
+  @@index([thread_id, created_at])
+}
+
+model chat_message_reads {
+  id         String   @id @default(cuid())
+  message_id String
+  user_id    String
+  read_at    DateTime @default(now())
+
+  message chat_messages @relation(fields: [message_id], references: [id], onDelete: Cascade)
+  user    users         @relation("chat_read_by", fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@unique([message_id, user_id])
+  @@index([user_id])
 }
 
 model pending_bulk_actions {

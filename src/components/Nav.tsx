@@ -7,6 +7,7 @@ import { useAppBadge } from '@/hooks/useAppBadge';
 const desktopBaseItems = [
   { href: '/', label: 'ダッシュボード' },
   { href: '/threads', label: 'メール' },
+  { href: '/chat', label: 'チャット' },
   { href: '/contacts', label: '連絡帳' },
   { href: '/notifications', label: '通知' },
   { href: '/profile', label: 'プロフィール' },
@@ -137,11 +138,11 @@ export default function Nav() {
             </svg>
             メール
           </Link>
-          <Link href="/notifications" className={`flex-1 flex flex-col items-center justify-center py-3 gap-1 text-[10px] font-medium ${isActive('/notifications') ? 'text-blue-600' : 'text-gray-500'}`}>
+          <Link href="/chat" className={`flex-1 flex flex-col items-center justify-center py-3 gap-1 text-[10px] font-medium ${isActive('/chat') ? 'text-blue-600' : 'text-gray-500'}`}>
             <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={isActive('/notifications') ? 2.5 : 1.5} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={isActive('/chat') ? 2.5 : 1.5} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
             </svg>
-            通知
+            チャット
           </Link>
           <button
             onClick={openSheet}
@@ -180,6 +181,15 @@ export default function Nav() {
             <div className="px-4 pb-2">
               <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider px-2 mb-1">メニュー</p>
               <nav className="space-y-0.5">
+                <Link
+                  href="/notifications"
+                  className={`flex items-center gap-3 px-3 py-3 rounded-xl text-sm font-medium transition-colors ${isActive('/notifications') ? 'bg-blue-50 text-blue-700' : 'text-gray-700 hover:bg-gray-100'}`}
+                >
+                  <svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+                  </svg>
+                  通知
+                </Link>
                 <Link
                   href="/contacts"
                   className={`flex items-center gap-3 px-3 py-3 rounded-xl text-sm font-medium transition-colors ${isActive('/contacts') ? 'bg-blue-50 text-blue-700' : 'text-gray-700 hover:bg-gray-100'}`}

@@ -3,6 +3,7 @@ import { use, useEffect, useState, useRef, useCallback, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import ComposeForm, { type SendPayload } from '@/components/ComposeForm';
+import ChatPopup from '@/components/chat/ChatPopup';
 
 type Props = { params: Promise<{ id: string }> };
 
@@ -994,7 +995,7 @@ function ThreadDetailPageInner({ params }: Props) {
       <div ref={bottomRef} />
 
       {/* Floating scroll buttons */}
-      <div className="fixed right-6 bottom-8 flex flex-col gap-2 z-40">
+      <div className={`fixed right-6 flex flex-col gap-2 z-40 ${isTeam ? 'bottom-40' : 'bottom-8'}`}>
         {showScrollTop && (
           <button
             onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
@@ -1018,6 +1019,8 @@ function ThreadDetailPageInner({ params }: Props) {
           </button>
         )}
       </div>
+
+      <ChatPopup threadId={data.id} isTeam={isTeam} />
 
       {/* ── Move Thread Modal ── */}
       {showMoveModal && (
