@@ -55,7 +55,7 @@ export default function InlineChatPanel({ threadId }: Props) {
   };
 
   return (
-    <div className="flex flex-col h-full bg-gray-50">
+    <div className="flex flex-col flex-1 overflow-hidden bg-gray-50">
       {/* header strip */}
       <div className="shrink-0 flex items-center justify-between px-4 py-2 bg-green-500 text-white text-sm">
         <div className="flex items-center gap-2">

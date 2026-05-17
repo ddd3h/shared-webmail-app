@@ -242,7 +242,7 @@ export default function ChatPage() {
             <EmailPreviewPanel key={`ep-${selectedId}`} threadId={selectedId} />
 
             {/* inline chat — flex-1 fills remaining, handles own scroll + fixed input */}
-            <div className="flex-1 min-h-0">
+            <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
               <InlineChatPanel key={`chat-${selectedId}`} threadId={selectedId} />
             </div>
           </>
