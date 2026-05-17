@@ -69,11 +69,11 @@ function ThreadListItem({ thread, selected, onClick }: {
       onClick={onClick}
       className={`w-full flex items-center gap-3 px-4 py-3 text-left transition-colors border-b border-gray-100 ${
         selected
-          ? 'bg-green-50 border-l-4 border-l-green-500'
+          ? 'bg-blue-50 border-l-4 border-l-blue-500'
           : 'hover:bg-gray-50 border-l-4 border-l-transparent'
       }`}
     >
-      <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center shrink-0 text-green-600">
+      <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center shrink-0 text-blue-600">
         <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
           <path strokeLinecap="round" strokeLinejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
         </svg>
@@ -94,7 +94,7 @@ function ThreadListItem({ thread, selected, onClick }: {
               : ''}
           </span>
           {thread.unreadCount > 0 && (
-            <span className="shrink-0 bg-green-500 text-white text-xs font-bold rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1">
+            <span className="shrink-0 bg-blue-500 text-white text-xs font-bold rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1">
               {thread.unreadCount > 99 ? '99+' : thread.unreadCount}
             </span>
           )}
@@ -194,7 +194,7 @@ export default function ChatPage() {
         <div className="flex-1 overflow-y-auto">
           {isLoading && (
             <div className="flex justify-center py-12">
-              <div className="w-5 h-5 border-2 border-green-500 border-t-transparent rounded-full animate-spin" />
+              <div className="w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
             </div>
           )}
           {!isLoading && data?.length === 0 && (
@@ -228,7 +228,7 @@ export default function ChatPage() {
             <div className="md:hidden shrink-0 flex items-center gap-2 px-3 py-2 border-b border-gray-200 bg-white">
               <button
                 onClick={() => setMobileShowDetail(false)}
-                className="text-green-600 flex items-center gap-1 text-sm font-medium shrink-0 whitespace-nowrap"
+                className="text-blue-600 flex items-center gap-1 text-sm font-medium shrink-0 whitespace-nowrap"
               >
                 <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />

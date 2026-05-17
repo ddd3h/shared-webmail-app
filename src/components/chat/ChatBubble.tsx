@@ -64,7 +64,7 @@ export default function ChatBubble({ msg, isMine, participantCount }: Props) {
       <div
         className={`px-3 py-2 rounded-2xl text-sm break-words whitespace-pre-wrap shadow-sm ${
           isMine
-            ? 'bg-green-500 text-white rounded-br-sm'
+            ? 'bg-blue-500 text-white rounded-br-sm'
             : 'bg-white text-gray-900 rounded-bl-sm border border-gray-200'
         } ${msg.optimistic ? 'opacity-60' : ''}`}
       >
