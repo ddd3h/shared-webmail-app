@@ -14,6 +14,7 @@ export default function InlineChatPanel({ threadId }: Props) {
   const [input, setInput] = useState('');
   const [showStickers, setShowStickers] = useState(false);
   const listRef = useRef<HTMLDivElement>(null);
+  const stickerBtnRef = useRef<HTMLButtonElement>(null);
   const atBottomRef = useRef(true);
 
   const { messages, participants, typingUsers, me, connected, hasMore, sendMessage, notifyTyping, loadMore, setOpen } =
@@ -55,7 +56,7 @@ export default function InlineChatPanel({ threadId }: Props) {
   };
 
   return (
-    <div className="flex flex-col flex-1 overflow-hidden bg-gray-50">
+    <div className="flex flex-col flex-1 min-h-0 bg-gray-50">
       {/* header strip */}
       <div className="shrink-0 flex items-center justify-between px-4 py-2 bg-green-500 text-white text-sm">
         <div className="flex items-center gap-2">
@@ -90,13 +91,14 @@ export default function InlineChatPanel({ threadId }: Props) {
       <div className="shrink-0 border-t border-gray-200 bg-white px-2 py-2 flex items-center gap-1">
         <div className="relative">
           <button
+            ref={stickerBtnRef}
             onClick={() => setShowStickers(v => !v)}
             className="w-8 h-8 flex items-center justify-center text-gray-500 hover:text-green-600 rounded-full hover:bg-gray-100"
           >
             😊
           </button>
           {showStickers && (
-            <StickerPicker onSelect={handleSticker} onClose={() => setShowStickers(false)} />
+            <StickerPicker anchorRef={stickerBtnRef} onSelect={handleSticker} onClose={() => setShowStickers(false)} />
           )}
         </div>
         <input

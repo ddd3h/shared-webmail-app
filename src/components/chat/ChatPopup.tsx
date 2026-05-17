@@ -19,6 +19,7 @@ export default function ChatPopup({ threadId, isTeam }: Props) {
 
   const listRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const stickerBtnRef = useRef<HTMLButtonElement>(null);
   const atBottomRef = useRef(true);
 
   const {
@@ -170,6 +171,7 @@ export default function ChatPopup({ threadId, isTeam }: Props) {
           <div className="shrink-0 border-t border-gray-200 bg-white px-2 py-2 flex items-center gap-1">
             <div className="relative">
               <button
+                ref={stickerBtnRef}
                 onClick={() => setShowStickers(v => !v)}
                 className="w-8 h-8 flex items-center justify-center text-gray-500 hover:text-green-600 rounded-full hover:bg-gray-100"
                 aria-label="ステッカー"
@@ -177,7 +179,7 @@ export default function ChatPopup({ threadId, isTeam }: Props) {
                 😊
               </button>
               {showStickers && (
-                <StickerPicker onSelect={handleSticker} onClose={() => setShowStickers(false)} />
+                <StickerPicker anchorRef={stickerBtnRef} onSelect={handleSticker} onClose={() => setShowStickers(false)} />
               )}
             </div>
             <input
