@@ -209,6 +209,14 @@ async function syncFolder(
           }
         });
 
+        // Reset completed thread to open when new incoming message arrives
+        if (direction === 'incoming') {
+          await prisma.threads.updateMany({
+            where: { id: threadId, status: 'done' },
+            data: { status: 'open' }
+          });
+        }
+
         // Notify only for incoming messages
         if (direction === 'incoming') {
           await notifyNewMessage({ mb, threadId, subject, fromEmail, fromName });

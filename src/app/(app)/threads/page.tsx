@@ -265,7 +265,7 @@ type DraftItem = {
   thread: { subject: string } | null;
 };
 
-const fetcher = (url: string) => fetch(url).then(r => r.json());
+const fetcher = (url: string) => fetch(url, { cache: 'no-store' }).then(r => r.json());
 
 function buildThreadsKey(view: string, tab: string, q: string, cursor?: { last: string; id: string }) {
   const params = new URLSearchParams();
@@ -315,6 +315,7 @@ function ThreadList() {
   const [modernConfirm, setModernConfirm] = useState<{ title: string, message: string, onConfirm: () => void } | null>(null);
   const [modernAlert, setModernAlert] = useState<{ title: string, message: string } | null>(null);
   const [cursorStack, setCursorStack] = useState<Array<{ last: string; id: string }>>([]);
+  const [syncing, setSyncing] = useState(false);
   const searchParams = useSearchParams();
   const router = useRouter();
   const listRef = useRef<HTMLDivElement>(null);
@@ -711,11 +712,23 @@ function ThreadList() {
               <span className="hidden sm:inline text-sm">新規メール</span>
             </button>
             <button
-              onClick={() => { if (tab === 'drafts') mutateDrafts(); else mutateThreads(); }}
-              className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
+              onClick={async () => {
+                if (syncing) return;
+                setSyncing(true);
+                try {
+                  const boxes: { id: string }[] = await fetch('/api/mailboxes?mine=1', { cache: 'no-store' }).then(r => r.json()).catch(() => []);
+                  await Promise.allSettled(
+                    boxes.map(mb => fetch(`/api/mailboxes/${mb.id}/resync`, { method: 'POST' }))
+                  );
+                } catch {}
+                if (tab === 'drafts') await mutateDrafts(); else await mutateThreads();
+                setSyncing(false);
+              }}
+              disabled={syncing}
+              className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors disabled:opacity-50"
               title="更新"
             >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className={`w-4 h-4 ${syncing ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
               </svg>
             </button>
