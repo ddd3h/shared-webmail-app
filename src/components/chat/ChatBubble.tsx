@@ -77,7 +77,7 @@ export default function ChatBubble({ msg, isMine, participantCount }: Props) {
   }
 
   return (
-    <div className={`flex mb-2 gap-2 items-end ${isMine ? 'flex-row-reverse' : 'flex-row'}`}>
+    <div className={`flex mb-2 gap-2 items-start ${isMine ? 'flex-row-reverse' : 'flex-row'}`}>
       {!isMine && <Avatar userId={msg.senderId} name={msg.senderName} />}
       <div className={`flex flex-col max-w-[72%] ${isMine ? 'items-end' : 'items-start'}`}>
         {!isMine && <span className="text-xs text-gray-500 mb-1">{msg.senderName}</span>}
