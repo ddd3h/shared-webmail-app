@@ -371,7 +371,7 @@ export default function ComposeForm({
           activeUsers={collab.activeUsers}
           placeholder={mode === 'reply' ? '返信内容を入力してください…' : '本文を入力してください…'}
           minHeight={bodyHeight}
-          onLocalUpdate={() => saveDraft()}
+          onLocalUpdate={() => { if (inCollab) saveDraft(); }}
           {...(richContentRef.current ? { initialHTML: richContentRef.current } : {})}
         />
       ) : (
