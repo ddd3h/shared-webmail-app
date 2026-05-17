@@ -29,5 +29,5 @@ jobs:
 
               cd "${{ secrets.APP_DIR }}"
 
-              bash ./script/deploy.sh
+              bash ./scripts/deploy.sh
           EOF
