@@ -13,6 +13,7 @@ export async function GET(_req: NextRequest) {
         type: 'team',
         permissions: { some: { user_id: session!.userId, can_view: true } },
       },
+      chat_messages: { some: {} },
     },
     select: {
       id: true,
