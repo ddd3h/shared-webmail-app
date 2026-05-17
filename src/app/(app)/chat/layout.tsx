@@ -4,20 +4,20 @@ export default function ChatLayout({ children }: { children: ReactNode }) {
   return (
     <>
       <style>{`
+        /* mobile: top=0, bottom above bottom-nav + safe-area */
         :root {
-          /* mobile: nav bar ~84px + safe-area */
-          --chat-h: calc(100dvh - 5.5rem - env(safe-area-inset-bottom, 0px));
+          --chat-top: 0px;
+          --chat-bottom: calc(env(safe-area-inset-bottom, 0px) + 5.25rem);
         }
+        /* desktop: top below sticky top-nav (h-14=3.5rem), bottom=0 */
         @media (min-width: 768px) {
           :root {
-            /* desktop: just top nav 3.5rem, no bottom nav */
-            --chat-h: calc(100dvh - 3.5rem);
+            --chat-top: 3.5rem;
+            --chat-bottom: 0px;
           }
         }
       `}</style>
-      <div className="-mx-4 sm:-mx-6 lg:-mx-8 -mt-6 -mb-24 md:-mb-6">
-        {children}
-      </div>
+      {children}
     </>
   );
 }
