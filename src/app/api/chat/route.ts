@@ -27,7 +27,7 @@ export async function GET(_req: NextRequest) {
           body: true,
           kind: true,
           created_at: true,
-          sender: { select: { name: true } },
+          sender: { select: { id: true, name: true } },
           reads: { where: { user_id: session!.userId }, select: { id: true } },
         },
       },
@@ -56,6 +56,7 @@ export async function GET(_req: NextRequest) {
         ? {
             body: last.body,
             kind: last.kind,
+            senderId: last.sender.id,
             senderName: last.sender.name,
             createdAt: last.created_at.toISOString(),
           }

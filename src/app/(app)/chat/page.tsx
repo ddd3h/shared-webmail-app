@@ -12,6 +12,7 @@ interface ChatThread {
   lastMessage: {
     body: string;
     kind: string;
+    senderId: string;
     senderName: string;
     createdAt: string;
   } | null;
@@ -73,10 +74,23 @@ function ThreadListItem({ thread, selected, onClick }: {
           : 'hover:bg-gray-50 border-l-4 border-l-transparent'
       }`}
     >
-      <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center shrink-0 text-blue-600">
-        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-          <path strokeLinecap="round" strokeLinejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-        </svg>
+      <div className="w-10 h-10 rounded-full overflow-hidden bg-blue-100 flex items-center justify-center shrink-0 text-sm font-bold text-blue-600">
+        {thread.lastMessage ? (
+          <img
+            src={`/api/users/${thread.lastMessage.senderId}/avatar`}
+            alt={thread.lastMessage.senderName}
+            className="w-full h-full object-cover"
+            onError={e => {
+              e.currentTarget.style.display = 'none';
+              (e.currentTarget.parentElement as HTMLElement).textContent =
+                thread.lastMessage!.senderName[0]?.toUpperCase() ?? '?';
+            }}
+          />
+        ) : (
+          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+          </svg>
+        )}
       </div>
       <div className="flex-1 min-w-0">
         <div className="flex items-baseline justify-between gap-1">
