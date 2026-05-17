@@ -182,7 +182,7 @@ export default function ChatPage() {
   const selected = data?.find(t => t.threadId === selectedId);
 
   return (
-    <div className="flex overflow-hidden bg-white h-[calc(100dvh-7.5rem)] md:h-[calc(100dvh-3.5rem)]">
+    <div className="flex overflow-hidden bg-white" style={{ height: 'var(--chat-h)' }}>
       {/* ── Left: thread list ── */}
       <div className={`flex flex-col overflow-hidden border-r border-gray-200 bg-white w-full md:w-80 lg:w-96 shrink-0 ${mobileShowDetail ? 'hidden md:flex' : 'flex'}`}>
         {/* fixed header */}
