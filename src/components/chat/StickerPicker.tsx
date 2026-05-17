@@ -64,6 +64,7 @@ export default function StickerPicker({ anchorRef, onSelect, onClose }: Props) {
     return () => document.removeEventListener('mousedown', handler);
   }, [anchorRef, onClose]);
 
+  if (typeof document === 'undefined') return null;
   return createPortal(
     <div ref={pickerRef} style={style} className="bg-white border border-gray-200 rounded-xl shadow-xl p-2">
       <div className="grid grid-cols-4 gap-1">

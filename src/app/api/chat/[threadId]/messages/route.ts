@@ -48,9 +48,16 @@ export async function GET(
   const messages = await prisma.chat_messages.findMany({
     where: {
       thread_id: threadId,
-      ...(cursorMsg ? { created_at: { lt: cursorMsg.created_at } } : {}),
+      ...(cursorMsg
+        ? {
+            OR: [
+              { created_at: { lt: cursorMsg.created_at } },
+              { created_at: { equals: cursorMsg.created_at }, id: { lt: before! } },
+            ],
+          }
+        : {}),
     },
-    orderBy: { created_at: 'desc' },
+    orderBy: [{ created_at: 'desc' }, { id: 'desc' }],
     take: limit,
     include: {
       sender: { select: { id: true, name: true } },

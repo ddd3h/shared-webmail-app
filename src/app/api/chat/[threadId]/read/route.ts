@@ -19,9 +19,18 @@ export async function POST(
   const messageIds: string[] = Array.isArray(body.message_ids) ? body.message_ids : [];
   if (messageIds.length === 0) return NextResponse.json({ ok: true });
 
+  // Validate all IDs belong to this thread
+  const valid = await prisma.chat_messages.findMany({
+    where: { id: { in: messageIds }, thread_id: threadId },
+    select: { id: true },
+  });
+  const validIds = valid.map(m => m.id);
+  if (validIds.length === 0) return NextResponse.json({ ok: true });
+
   const readAt = new Date();
   await prisma.chat_message_reads.createMany({
-    data: messageIds.map(id => ({ message_id: id, user_id: session!.userId, read_at: readAt })),
+    data: validIds.map(id => ({ message_id: id, user_id: session!.userId, read_at: readAt })),
+    data: validIds.map(id => ({ message_id: id, user_id: session!.userId, read_at: readAt })),
     skipDuplicates: true,
   });
 
@@ -29,7 +38,7 @@ export async function POST(
     event: 'chat_read',
     data: {
       userId: session!.userId,
-      messageIds,
+      messageIds: validIds,
       readAt: readAt.toISOString(),
     },
   });

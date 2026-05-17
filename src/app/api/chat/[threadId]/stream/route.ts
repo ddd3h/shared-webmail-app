@@ -73,7 +73,7 @@ export async function GET(
       // Cleanup on close
       _req.signal.addEventListener('abort', () => {
         clearInterval(heartbeatInterval);
-        leaveChat(threadId, user.id);
+        try { leaveChat(threadId, user.id); } catch { /* ignore */ }
       });
     },
   });

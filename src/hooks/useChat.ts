@@ -78,6 +78,7 @@ export function useChat(threadId: string | null) {
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
+      if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
     };
   }, []);
 
@@ -112,9 +113,14 @@ export function useChat(threadId: string | null) {
       if (!mountedRef.current) return;
       const msg: ChatMessage = JSON.parse(e.data);
       setMessages(prev => {
-        // Replace optimistic if same sender+body within 5s, else append
+        // Replace optimistic: same sender+body sent within last 10s
+        const now = Date.now();
         const idx = prev.findIndex(
-          m => m.optimistic && m.senderId === msg.senderId && m.body === msg.body,
+          m =>
+            m.optimistic &&
+            m.senderId === msg.senderId &&
+            m.body === msg.body &&
+            now - new Date(m.createdAt).getTime() < 10_000,
         );
         if (idx !== -1) {
           const next = [...prev];
@@ -202,11 +208,17 @@ export function useChat(threadId: string | null) {
       };
       setMessages(prev => [...prev, optimistic]);
 
-      await fetch(`/api/chat/${threadId}/messages`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ body, kind }),
-      });
+      try {
+        const res = await fetch(`/api/chat/${threadId}/messages`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ body, kind }),
+        });
+        if (!res.ok) throw new Error('send failed');
+      } catch {
+        // Remove failed optimistic message
+        setMessages(prev => prev.filter(m => m.id !== optimistic.id));
+      }
     },
     [threadId, me],
   );
