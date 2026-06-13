@@ -185,6 +185,16 @@ export async function POST(req: NextRequest) {
         where: { id: { in: chunk } },
         data: { status: newStatus }
       });
+    } else if (action === 'spam') {
+      await prisma.threads.updateMany({
+        where: { id: { in: chunk } },
+        data: { is_spam: true, spam_reason: 'manual', spam_flagged_at: new Date() }
+      });
+    } else if (action === 'unspam') {
+      await prisma.threads.updateMany({
+        where: { id: { in: chunk } },
+        data: { is_spam: false, spam_reason: null, spam_flagged_at: null }
+      });
     } else if (action === 'delete') {
       const threadsToDelete = await prisma.threads.findMany({
         where: { id: { in: chunk } },

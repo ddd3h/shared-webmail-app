@@ -58,9 +58,11 @@ export function buildThreadsWhere(params: {
   mine?: boolean,
   unread?: boolean,
   sent?: boolean,
-  assigned?: boolean
+  assigned?: boolean,
+  teamUnreadIds?: string[],
+  spam?: boolean
 }): Prisma.threadsWhereInput {
-  const { session, status, type, q, mine, unread, sent, assigned } = params;
+  const { session, status, type, q, mine, unread, sent, assigned, teamUnreadIds, spam } = params;
 
   let messageWhere: Prisma.messagesWhereInput | undefined;
   const threadSearchClauses: Prisma.threadsWhereInput[] = [];
@@ -126,11 +128,17 @@ export function buildThreadsWhere(params: {
   }
 
   return {
+    // spam filter: show only spam tab OR exclude spam from all other tabs
+    is_spam: spam ? true : false,
     ...(status ? { status: status as any } : {}),
     ...(mine ? { assigned_user_id: session.userId, status: { in: ['open', 'in_progress', 'waiting'] } } : {}),
     ...(assigned ? { assigned_user_id: { not: null } } : {}),
     ...(unread && type === 'personal' ? { unread_count: { gt: 0 } } : {}),
-    ...(unread && type === 'team' ? { reads: { none: { user_id: session.userId } } } : {}),
+    ...(unread && type === 'team'
+      ? teamUnreadIds
+        ? { id: { in: teamUnreadIds } }
+        : { reads: { none: { user_id: session.userId } } }
+      : {}),
     ...(sent
       ? { messages: { some: { direction: 'outgoing' } } }
       : messageWhere

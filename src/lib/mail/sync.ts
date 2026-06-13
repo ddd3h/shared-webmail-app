@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db';
 import { decrypt } from '@/lib/crypto';
 import { findOrCreateThread } from '@/lib/threading';
 import { sendWebPushToUser } from '@/lib/push';
+import { detectSpam } from '@/lib/spam';
 import { mkdir, writeFile } from 'fs/promises';
 import path from 'path';
 
@@ -125,12 +126,16 @@ async function syncFolder(
         let text: string | null = null;
         let html: string | null = null;
         let parsedAttachments: any[] = [];
+        let receivedHeaders: string[] = [];
         try {
           const { simpleParser } = (await import('mailparser')) as MailparserMod;
           const parsed = await simpleParser((msg as any).source as Buffer);
           text = parsed.text || null;
           html = parsed.html ? (typeof parsed.html === 'string' ? parsed.html : null) : null;
           parsedAttachments = parsed.attachments || [];
+          const rcvd = parsed.headers.get('received');
+          if (Array.isArray(rcvd)) receivedHeaders = rcvd as string[];
+          else if (typeof rcvd === 'string') receivedHeaders = [rcvd];
         } catch (parseErr) {
           errors.push(`Parse error for uid ${uid} in ${folderName}: ${parseErr}`);
         }
@@ -198,6 +203,23 @@ async function syncFolder(
           }
         }
 
+        // Spam detection for incoming messages
+        let isSpam = false;
+        if (direction === 'incoming' && fromEmail) {
+          try {
+            const spamResult = await detectSpam({ fromEmail, receivedHeaders, subject, textBody: text || '' });
+            if (spamResult?.isSpam) {
+              isSpam = true;
+              await prisma.threads.update({
+                where: { id: threadId },
+                data: { is_spam: true, spam_reason: spamResult.reason, spam_flagged_at: new Date() }
+              });
+            }
+          } catch {
+            // Do not block sync on spam detection failure
+          }
+        }
+
         // Update thread timestamps
         await prisma.threads.update({
           where: { id: threadId },
@@ -209,16 +231,16 @@ async function syncFolder(
           }
         });
 
-        // Reset completed thread to open when new incoming message arrives
-        if (direction === 'incoming') {
+        // Reset completed thread to open when new incoming message arrives (only non-spam)
+        if (direction === 'incoming' && !isSpam) {
           await prisma.threads.updateMany({
             where: { id: threadId, status: 'done' },
             data: { status: 'open' }
           });
         }
 
-        // Notify only for incoming messages
-        if (direction === 'incoming') {
+        // Notify only for incoming non-spam messages
+        if (direction === 'incoming' && !isSpam) {
           await notifyNewMessage({ mb, threadId, subject, fromEmail, fromName });
         }
 

@@ -57,6 +57,7 @@ tsconfig.tsbuildinfo
 
 # AI
 CLAUDE.md
+.serena/
 
 # notes
 security.md

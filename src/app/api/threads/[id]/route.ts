@@ -49,6 +49,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     id: t.id,
     subject: t.subject,
     status: t.status,
+    is_spam: t.is_spam,
     permissions,
     mailbox: { id: t.mailbox_id, name: t.mailbox.display_name, type: t.mailbox.type, email_address: t.mailbox.email_address, mattermost_channel_id: t.mailbox.mattermost_channel_id },
     assigned_user: t.assigned_user ? { id: t.assigned_user.id, name: t.assigned_user.name } : null,

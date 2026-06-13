@@ -18,11 +18,22 @@ export async function GET(req: NextRequest) {
   const unread = url.searchParams.get('unread') === '1';
   const sent = url.searchParams.get('sent') === '1';
   const assigned = url.searchParams.get('assigned') === '1';
+  const spam = url.searchParams.get('spam') === '1';
   const cursorLast = url.searchParams.get('cursor') || undefined;
   const cursorId = url.searchParams.get('cursor_id') || undefined;
 
+  let teamUnreadIds: string[] | undefined;
+  if (unread && type === 'team') {
+    const rows = await prisma.$queryRaw<{ id: string }[]>`
+      SELECT DISTINCT t.id FROM threads t
+      LEFT JOIN thread_reads r ON t.id = r.thread_id AND r.user_id = ${session!.userId}
+      WHERE (r.id IS NULL OR t.last_message_at > r.last_read_at)
+    `;
+    teamUnreadIds = rows.map(r => r.id);
+  }
+
   const threadsWhere = buildThreadsWhere({
-    session, status, type, q, mine, unread, sent, assigned
+    session, status, type, q, mine, unread, sent, assigned, teamUnreadIds, spam
   });
 
   const threads = await prisma.threads.findMany({

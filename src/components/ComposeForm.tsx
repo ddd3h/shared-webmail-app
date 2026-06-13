@@ -1,16 +1,13 @@
 'use client';
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import dynamic from 'next/dynamic';
 import type { RichEditorHandle } from './RichEditor';
-import type { CollabEditorHandle } from './CollabEditor';
 import { useDraft } from '@/hooks/useDraft';
-import { useCollab } from '@/hooks/useCollab';
 import DraftStatusBar from './DraftStatus';
 import EmailChipInput from './EmailChipInput';
 import SendingOverlay from './SendingOverlay';
 
 const RichEditor = dynamic(() => import('./RichEditor'), { ssr: false });
-const CollabEditor = dynamic(() => import('./CollabEditor'), { ssr: false });
 
 export type ComposeMode = 'compose' | 'reply' | 'forward';
 
@@ -42,6 +39,7 @@ export interface ComposeFormProps {
 }
 
 type Mailbox = { id: string; display_name: string; email_address: string; type: string };
+type ReplyUser = { id: string; name: string; signature: string };
 
 export default function ComposeForm({
   mode,
@@ -77,26 +75,20 @@ export default function ComposeForm({
   const [aiLoading, setAiLoading] = useState(false);
   const [editorBody, setEditorBody] = useState(initialBody);
   const [newContactEmails, setNewContactEmails] = useState<string[]>([]);
+  const [replyUsers, setReplyUsers] = useState<ReplyUser[]>([]);
 
-  const editorRef = useRef<RichEditorHandle | CollabEditorHandle>(null);
+  const editorRef = useRef<RichEditorHandle>(null);
   const richContentRef = useRef(initialBody);
 
   const draft = useDraft(draftId);
 
+  const selectedSigUser = useMemo(
+    () => replyUsers.find(u => u.signature === signature) ?? null,
+    [replyUsers, signature],
+  );
+
   const selectedMb = mailboxes.find(m => m.id === selectedMailbox);
   const isTeam = selectedMb?.type === 'team';
-
-  const collabSessionId =
-    mode === 'reply' ? (isTeam ? threadId : undefined) :
-    mode === 'compose' && isTeam && draft.draftId ? `draft-${draft.draftId}` :
-    undefined;
-  const collab = useCollab(collabSessionId);
-  const inCollab = !!(collab.doc && collab.awareness && collab.me);
-
-  // When collab activates mid-debounce, strip body from pending save to avoid overwriting collab state
-  useEffect(() => {
-    if (inCollab) draft.stripBodyFromPending();
-  }, [inCollab]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Fetch mailboxes and signature on mount
   useEffect(() => {
@@ -116,6 +108,15 @@ export default function ComposeForm({
       })
       .catch(() => {});
   }, []);
+
+  // Fetch reply-capable users and their signatures for team mailboxes
+  useEffect(() => {
+    if (!selectedMailbox || !isTeam) { setReplyUsers([]); return; }
+    fetch(`/api/mailboxes/${selectedMailbox}/reply-users`)
+      .then(r => r.json())
+      .then((users: ReplyUser[]) => { if (Array.isArray(users)) setReplyUsers(users); })
+      .catch(() => {});
+  }, [selectedMailbox, isTeam]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Load draft data when draftId provided
   useEffect(() => {
@@ -154,10 +155,8 @@ export default function ComposeForm({
       cc_raw: resolvedCc.join(', ') || undefined,
       bcc_raw: resolvedBcc.join(', ') || undefined,
       subject: resolvedSubject,
-      ...(!inCollab && {
-        html_body: editorRef.current?.getHTML(),
-        text_body: editorRef.current?.getText(),
-      }),
+      html_body: editorRef.current?.getHTML(),
+      text_body: editorRef.current?.getText(),
       is_shared: isTeam,
     });
   }
@@ -362,35 +361,40 @@ export default function ComposeForm({
 
   const editorSection = (
     <div className={mode === 'compose' ? 'pt-3 pb-2 px-5' : 'p-3'}>
-      {inCollab ? (
-        <CollabEditor
-          ref={editorRef as React.Ref<CollabEditorHandle>}
-          doc={collab.doc!}
-          awareness={collab.awareness!}
-          me={collab.me!}
-          activeUsers={collab.activeUsers}
-          placeholder={mode === 'reply' ? '返信内容を入力してください…' : '本文を入力してください…'}
-          minHeight={bodyHeight}
-          onLocalUpdate={() => { if (inCollab) saveDraft(); }}
-          {...(richContentRef.current ? { initialHTML: richContentRef.current } : {})}
-        />
-      ) : (
-        <RichEditor
-          ref={editorRef as React.Ref<RichEditorHandle>}
-          placeholder={mode === 'reply' ? '返信内容を入力してください…' : '本文を入力してください…'}
-          minHeight={bodyHeight}
-          initialHTML={editorBody}
-          onInput={() => {
-            richContentRef.current = editorRef.current?.getHTML() || richContentRef.current;
-            saveDraft();
-          }}
-        />
-      )}
+      <RichEditor
+        ref={editorRef}
+        placeholder={mode === 'reply' ? '返信内容を入力してください…' : '本文を入力してください…'}
+        minHeight={bodyHeight}
+        initialHTML={editorBody}
+        onInput={() => {
+          richContentRef.current = editorRef.current?.getHTML() || richContentRef.current;
+          saveDraft();
+        }}
+      />
     </div>
   );
 
-  const signatureSection = signature ? (
+  const signatureSection = (signature || (isTeam && replyUsers.length > 1)) ? (
     <div className={`border-t border-dashed border-gray-200 pt-2 pb-2 ${px} mx-0`}>
+      {isTeam && replyUsers.length > 1 && (
+        <div className="flex items-center gap-1 flex-wrap mb-1">
+          <span className="text-xs text-gray-400 flex-shrink-0">署名:</span>
+          {replyUsers.map(u => (
+            <button
+              key={u.id}
+              type="button"
+              onClick={() => setSignature(u.signature)}
+              className={`px-2 py-0.5 rounded-full text-xs transition-colors ${
+                selectedSigUser?.id === u.id
+                  ? 'bg-blue-100 text-blue-700 font-medium'
+                  : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'
+              }`}
+            >
+              {u.name}
+            </button>
+          ))}
+        </div>
+      )}
       <div className="flex items-start justify-between gap-2">
         {sigVisible
           ? <p className="text-sm text-gray-900 whitespace-pre-wrap flex-1">{'\n'}{signature}</p>
@@ -448,15 +452,7 @@ export default function ComposeForm({
   ) : null;
 
   const syncStatus = (
-    <>
-      {inCollab && (
-        <span className={`text-xs flex items-center gap-1 ${collab.connected ? 'text-emerald-600' : 'text-gray-400'}`}>
-          <span className={`w-1.5 h-1.5 rounded-full ${collab.connected ? 'bg-emerald-500 animate-pulse' : 'bg-gray-300'}`} />
-          {collab.connected ? '同期中' : '接続中…'}
-        </span>
-      )}
-      <DraftStatusBar status={draft.status} savedAt={draft.savedAt} />
-    </>
+    <DraftStatusBar status={draft.status} savedAt={draft.savedAt} />
   );
 
   const aiBtn = (

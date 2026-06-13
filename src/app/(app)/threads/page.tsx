@@ -154,6 +154,7 @@ const PERSONAL_TABS = [
   { id: 'unread', label: '未読' },
   { id: 'sent', label: '送信済み' },
   { id: 'drafts', label: '下書き' },
+  { id: 'spam', label: '迷惑メール' },
 ] as const;
 
 const TEAM_TABS = [
@@ -164,6 +165,7 @@ const TEAM_TABS = [
   { id: 'in_progress', label: '対応中' },
   { id: 'sent', label: '送信済み' },
   { id: 'drafts', label: '下書き' },
+  { id: 'spam', label: '迷惑メール' },
 ] as const;
 
 // ── Search helpers ──────────────────────────────────────────────────────────
@@ -287,6 +289,7 @@ function buildThreadsKey(view: string, tab: string, q: string, cursor?: { last: 
   else if (tab === 'mine') params.set('mine', '1');
   else if (tab === 'sent') params.set('sent', '1');
   else if (tab === 'assigned') params.set('assigned', '1');
+  else if (tab === 'spam') params.set('spam', '1');
   else if (tab && tab !== 'all') params.set('status', tab);
   if (q) params.set('q', q);
   if (cursor) { params.set('cursor', cursor.last); params.set('cursor_id', cursor.id); }
@@ -437,13 +440,14 @@ function ThreadList() {
 
   async function performBulkAction(action: string, extra: any = {}) {
     const filters = {
-      status: (!isSearching && (tab === 'all' || tab === 'unread' || tab === 'sent' || tab === 'mine' || tab === 'assigned')) ? undefined : tab,
+      status: (!isSearching && (tab === 'all' || tab === 'unread' || tab === 'sent' || tab === 'mine' || tab === 'assigned' || tab === 'spam')) ? undefined : tab,
       type: mailboxView,
       q: search || undefined,
       mine: tab === 'mine' ? '1' : '0',
       unread: tab === 'unread' ? '1' : '0',
       sent: tab === 'sent' ? '1' : '0',
-      assigned: tab === 'assigned' ? '1' : '0'
+      assigned: tab === 'assigned' ? '1' : '0',
+      spam: tab === 'spam' ? '1' : '0'
     };
 
     // Pre-validation for delete
@@ -506,6 +510,8 @@ function ThreadList() {
   async function bulkMarkUnread() { await performBulkAction('unread'); }
   async function bulkSetStatus(status: string) { await performBulkAction('status', { status }); }
   async function bulkDelete() { await performBulkAction('delete'); }
+  async function bulkMarkSpam() { await performBulkAction('spam'); }
+  async function bulkUnspam() { await performBulkAction('unspam'); }
 
   async function bulkDeleteDrafts() {
     setBulkLoading(true);
@@ -1066,6 +1072,18 @@ function ThreadList() {
                     <option value="in_progress" className="text-gray-900 bg-white">対応中</option>
                     <option value="done" className="text-gray-900 bg-white">完了</option>
                   </select>
+                )}
+                {tab !== 'spam' && (
+                  <button onClick={bulkMarkSpam} disabled={bulkLoading} className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-orange-500/80 text-white hover:bg-orange-500 border border-orange-400/50 transition-colors disabled:opacity-50">
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" /></svg>
+                    迷惑メール
+                  </button>
+                )}
+                {tab === 'spam' && (
+                  <button onClick={bulkUnspam} disabled={bulkLoading} className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-green-500/80 text-white hover:bg-green-500 border border-green-400/50 transition-colors disabled:opacity-50">
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                    迷惑でない
+                  </button>
                 )}
                 <button onClick={() => setConfirmDelete(true)} disabled={bulkLoading} className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-red-500/80 text-white hover:bg-red-500 border border-red-400/50 transition-colors disabled:opacity-50">
                   <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>

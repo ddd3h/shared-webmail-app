@@ -3,7 +3,6 @@ import { use, useEffect, useState, useRef, useCallback, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import ComposeForm, { type SendPayload } from '@/components/ComposeForm';
-import ChatPopup from '@/components/chat/ChatPopup';
 
 type Props = { params: Promise<{ id: string }> };
 
@@ -25,6 +24,7 @@ type ThreadData = {
   id: string;
   subject: string;
   status: string;
+  is_spam: boolean;
   permissions: { can_view: boolean; can_reply: boolean; can_assign: boolean };
   mailbox: { id: string; name: string; type: string; email_address?: string; mattermost_channel_id?: string | null };
   assigned_user: { id: string; name: string } | null;
@@ -389,6 +389,18 @@ function ThreadDetailPageInner({ params }: Props) {
     else flashMsg('error', '未読にするのに失敗しました');
   }
 
+  async function markSpam() {
+    const res = await fetch(`/api/threads/${id}/spam`, { method: 'POST' });
+    if (res.ok) { router.push('/threads'); }
+    else flashMsg('error', '迷惑メールとしてマークできませんでした');
+  }
+
+  async function markUnspam() {
+    const res = await fetch(`/api/threads/${id}/unspam`, { method: 'POST' });
+    if (res.ok) { setData(prev => prev ? { ...prev, is_spam: false } : prev); flashMsg('success', '迷惑メールの設定を解除しました'); }
+    else flashMsg('error', '解除できませんでした');
+  }
+
   async function deleteThread() {
     const confirmMsg = isTeam
       ? '全ユーザーからこのメールは削除されますが、本当に削除してもいいですか？\nこの操作は元に戻せません。'
@@ -695,6 +707,19 @@ function ThreadDetailPageInner({ params }: Props) {
                 </svg>
                 転送
               </button>
+              {data.is_spam ? (
+                <button onClick={markUnspam} title="迷惑メールではない"
+                  className="inline-flex items-center gap-1 px-2 py-1 text-xs text-green-600 hover:text-green-800 hover:bg-green-50 border border-green-300 hover:border-green-400 rounded-lg transition-colors">
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                  迷惑でない
+                </button>
+              ) : (
+                <button onClick={markSpam} title="迷惑メール"
+                  className="inline-flex items-center gap-1 px-2 py-1 text-xs text-orange-500 hover:text-orange-700 hover:bg-orange-50 border border-orange-200 hover:border-orange-300 rounded-lg transition-colors">
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" /></svg>
+                  迷惑
+                </button>
+              )}
               <button onClick={deleteThread} title="削除"
                 className="inline-flex items-center gap-1 px-2 py-1 text-xs text-red-500 hover:text-red-700 hover:bg-red-50 border border-red-200 hover:border-red-300 rounded-lg transition-colors">
                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -746,6 +771,19 @@ function ThreadDetailPageInner({ params }: Props) {
                     </svg>
                     転送
                   </button>
+                  {data.is_spam ? (
+                    <button onClick={markUnspam}
+                      className="w-full text-left px-3 py-2.5 text-sm text-green-600 hover:bg-green-50 transition-colors flex items-center gap-2.5">
+                      <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                      迷惑メールではない
+                    </button>
+                  ) : (
+                    <button onClick={markSpam}
+                      className="w-full text-left px-3 py-2.5 text-sm text-orange-600 hover:bg-orange-50 transition-colors flex items-center gap-2.5">
+                      <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" /></svg>
+                      迷惑メール
+                    </button>
+                  )}
                   <div className="border-t border-gray-100 my-1" />
                   <button onClick={deleteThread}
                     className="w-full text-left px-3 py-2.5 text-sm text-red-600 hover:bg-red-50 transition-colors flex items-center gap-2.5">
@@ -1019,8 +1057,6 @@ function ThreadDetailPageInner({ params }: Props) {
           </button>
         )}
       </div>
-
-      <ChatPopup threadId={data.id} isTeam={isTeam} />
 
       {/* ── Move Thread Modal ── */}
       {showMoveModal && (
