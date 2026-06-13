@@ -79,7 +79,7 @@ export default function Nav() {
     href === '/' ? pathname === '/' : pathname.startsWith(href);
 
   const desktopItems = isAdmin
-    ? [...desktopBaseItems, { href: '/admin/settings', label: '管理' }, { href: '/admin/spam', label: '迷惑メール管理' }]
+    ? [...desktopBaseItems, { href: '/admin/settings', label: '管理' }]
     : desktopBaseItems;
 
   return (
@@ -212,15 +212,6 @@ export default function Nav() {
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                       </svg>
                       管理
-                    </Link>
-                    <Link
-                      href="/admin/spam"
-                      className={`flex items-center gap-3 px-3 py-3 rounded-xl text-sm font-medium transition-colors ${isActive('/admin/spam') ? 'bg-blue-50 text-blue-700' : 'text-gray-700 hover:bg-gray-100'}`}
-                    >
-                      <svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
-                      </svg>
-                      迷惑メール管理
                     </Link>
                   </>
                 )}

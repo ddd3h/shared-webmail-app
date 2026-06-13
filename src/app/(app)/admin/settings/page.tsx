@@ -51,7 +51,41 @@ function AdminSettingsContent() {
   const [mbLoading, setMbLoading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [msg, setMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
-  const [tab, setTab] = useState<'system' | 'mailboxes' | 'users'>('system');
+  const [tab, setTab] = useState<'system' | 'mailboxes' | 'users' | 'spam'>('system');
+
+  // Spam senders state
+  const [spamSenders, setSpamSenders] = useState<{ id: string; type: string; address: string; note: string | null; created_at: string; creator: { name: string } }[]>([]);
+  const [spamTab, setSpamTab] = useState<'blocklist' | 'whitelist'>('blocklist');
+  const [spamNewAddress, setSpamNewAddress] = useState('');
+  const [spamNewNote, setSpamNewNote] = useState('');
+  const [spamAdding, setSpamAdding] = useState(false);
+  const [spamError, setSpamError] = useState('');
+
+  async function loadSpamSenders() {
+    const res = await fetch('/api/admin/spam-senders');
+    if (res.ok) { const d = await res.json(); setSpamSenders(d.items || []); }
+  }
+
+  async function handleSpamAdd(e: React.FormEvent) {
+    e.preventDefault();
+    const address = spamNewAddress.trim().toLowerCase();
+    if (!address) return;
+    setSpamAdding(true); setSpamError('');
+    const res = await fetch('/api/admin/spam-senders', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: spamTab, address, note: spamNewNote.trim() || null })
+    });
+    setSpamAdding(false);
+    if (res.ok) { setSpamNewAddress(''); setSpamNewNote(''); loadSpamSenders(); showMsg('success', '追加しました'); }
+    else { const d = await res.json().catch(() => ({})); setSpamError(d.error || '追加に失敗しました'); }
+  }
+
+  async function handleSpamDelete(id: string) {
+    if (!confirm('削除しますか？')) return;
+    const res = await fetch(`/api/admin/spam-senders/${id}`, { method: 'DELETE' });
+    if (res.ok) { loadSpamSenders(); showMsg('success', '削除しました'); }
+  }
   const [googleLinked, setGoogleLinked] = useState(false);
   const [googleSyncing, setGoogleSyncing] = useState(false);
   const searchParams = useSearchParams();
@@ -406,7 +440,8 @@ function AdminSettingsContent() {
   const tabs = [
     { id: 'system', label: 'システム設定' },
     { id: 'mailboxes', label: 'メールアカウント' },
-    { id: 'users', label: 'ユーザー管理' }
+    { id: 'users', label: 'ユーザー管理' },
+    { id: 'spam', label: '迷惑メール管理' }
   ] as const;
 
   return (
@@ -428,7 +463,7 @@ function AdminSettingsContent() {
           {tabs.map(t => (
             <button
               key={t.id}
-              onClick={() => { setTab(t.id); if (t.id === 'mailboxes') loadMailboxes(); }}
+              onClick={() => { setTab(t.id); if (t.id === 'mailboxes') loadMailboxes(); if (t.id === 'spam') loadSpamSenders(); }}
               className={`pb-3 text-sm font-medium border-b-2 transition-colors ${
                 tab === t.id ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'
               }`}
@@ -1097,6 +1132,101 @@ function AdminSettingsContent() {
               </table>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Spam Management */}
+      {tab === 'spam' && (
+        <div className="space-y-6 max-w-3xl">
+          {/* Sub-tabs */}
+          <div className="flex gap-1 bg-gray-100 rounded-lg p-1 w-fit">
+            {(['blocklist', 'whitelist'] as const).map(t => (
+              <button
+                key={t}
+                onClick={() => setSpamTab(t)}
+                className={`px-4 py-1.5 text-sm font-medium rounded-md transition-colors ${spamTab === t ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+              >
+                {t === 'blocklist' ? 'ブロックリスト' : 'ホワイトリスト'}
+              </button>
+            ))}
+          </div>
+
+          <p className="text-sm text-gray-500 -mt-2">
+            {spamTab === 'blocklist'
+              ? 'このリストのアドレス・ドメインからのメールは自動で迷惑メール扱いになります。'
+              : 'このリストのアドレス・ドメインは迷惑メール判定をスキップします。Spamhausに登録されていても無視されます。'}
+          </p>
+
+          {/* Add form */}
+          <form onSubmit={handleSpamAdd} className="card p-4">
+            <h3 className="text-sm font-semibold text-gray-700 mb-3">追加</h3>
+            <div className="flex gap-2 flex-wrap">
+              <input
+                type="text"
+                value={spamNewAddress}
+                onChange={e => setSpamNewAddress(e.target.value)}
+                placeholder="メールアドレス or ドメイン（例: spam.com）"
+                className="input text-sm flex-1 min-w-[200px]"
+              />
+              <input
+                type="text"
+                value={spamNewNote}
+                onChange={e => setSpamNewNote(e.target.value)}
+                placeholder="メモ（任意）"
+                className="input text-sm w-40"
+              />
+              <button
+                type="submit"
+                disabled={spamAdding || !spamNewAddress.trim()}
+                className="btn btn-primary btn-sm whitespace-nowrap"
+              >
+                {spamAdding ? '追加中…' : '追加'}
+              </button>
+            </div>
+            {spamError && <p className="text-sm text-red-600 mt-2">{spamError}</p>}
+          </form>
+
+          {/* List */}
+          {(() => {
+            const filtered = spamSenders.filter(s => s.type === spamTab);
+            return filtered.length === 0 ? (
+              <p className="text-sm text-gray-400 text-center py-8">登録なし</p>
+            ) : (
+              <div className="card overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm min-w-[400px]">
+                    <thead className="bg-gray-50 border-b border-gray-200">
+                      <tr>
+                        <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500">アドレス / ドメイン</th>
+                        <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500">メモ</th>
+                        <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500">登録者</th>
+                        <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500">日時</th>
+                        <th />
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {filtered.map(item => (
+                        <tr key={item.id} className="hover:bg-gray-50 transition-colors">
+                          <td className="px-4 py-3 font-mono text-gray-900 text-xs">{item.address}</td>
+                          <td className="px-4 py-3 text-gray-500 text-xs">{item.note || '—'}</td>
+                          <td className="px-4 py-3 text-gray-500 text-xs">{item.creator.name}</td>
+                          <td className="px-4 py-3 text-gray-400 text-xs">{new Date(item.created_at).toLocaleDateString('ja-JP')}</td>
+                          <td className="px-4 py-3 text-right">
+                            <button
+                              onClick={() => handleSpamDelete(item.id)}
+                              className="text-xs text-red-500 hover:text-red-700 hover:bg-red-50 px-2 py-1 rounded transition-colors"
+                            >
+                              削除
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            );
+          })()}
         </div>
       )}
 
