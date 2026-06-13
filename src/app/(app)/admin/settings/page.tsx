@@ -595,6 +595,11 @@ function AdminSettingsContent() {
                   <label className="label">通知先管理者アドレス</label>
                   <input className="input" value={getVal('NOTIFY_ADMIN_EMAIL')} onChange={e => setVal('NOTIFY_ADMIN_EMAIL', e.target.value)} placeholder="admin@example.com" />
                 </div>
+                <div>
+                  <label className="label">X-Mailer 組織名 (MAILER_ORG_NAME)</label>
+                  <input className="input" value={getVal('MAILER_ORG_NAME')} onChange={e => setVal('MAILER_ORG_NAME', e.target.value)} placeholder="Chart Inc." />
+                  <p className="text-xs text-gray-400 mt-1">送信メールの X-Mailer ヘッダーに付加されます（例: shared-webmail-app for Chart Inc.）</p>
+                </div>
               </div>
             </div>
           </div>
