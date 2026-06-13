@@ -31,7 +31,8 @@ export async function sendMailForMessage(messageId: string): Promise<void> {
     host: cred.smtp_host,
     port: cred.smtp_port,
     secure: cred.smtp_secure,
-    auth: { user: cred.username, pass: await decrypt(cred.encrypted_password) }
+    auth: { user: cred.username, pass: await decrypt(cred.encrypted_password) },
+    name: 'mail.chart-inc.com'
   } as any);
 
   const mailOptions: any = {
@@ -42,7 +43,7 @@ export async function sendMailForMessage(messageId: string): Promise<void> {
     subject: msg.subject,
     text: msg.text_body || undefined,
     html: msg.html_body || undefined,
-    headers: {} as Record<string, string>
+    headers: { 'X-Mailer': `shared-webmail-app${process.env.MAILER_ORG_NAME ? ` for ${process.env.MAILER_ORG_NAME}` : ''}` } as Record<string, string>
   };
   if (msg.in_reply_to) mailOptions.headers['In-Reply-To'] = msg.in_reply_to;
   if (msg.references_raw) mailOptions.headers['References'] = msg.references_raw;

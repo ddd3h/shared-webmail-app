@@ -13,7 +13,8 @@ export async function testSmtpConnection(cfg: SmtpConfig) {
     host: cfg.host,
     port: cfg.port,
     secure: cfg.secure,
-    auth: { user: cfg.auth.user, pass: await decrypt(cfg.auth.passEnc) }
+    auth: { user: cfg.auth.user, pass: await decrypt(cfg.auth.passEnc) },
+    name: 'mail.chart-inc.com'
   } as any);
   try {
     await transporter.verify();

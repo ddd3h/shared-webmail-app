@@ -15,6 +15,7 @@ function getTransport() {
     port: parseInt(process.env.NOTIFY_SMTP_PORT || '587', 10),
     secure: process.env.NOTIFY_SMTP_SECURE === 'true',
     auth: { user, pass },
+    name: 'mail.chart-inc.com'
   });
 }
 
