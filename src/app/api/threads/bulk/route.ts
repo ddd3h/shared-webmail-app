@@ -190,6 +190,21 @@ export async function POST(req: NextRequest) {
         where: { id: { in: chunk } },
         data: { is_spam: true, spam_reason: 'manual', spam_flagged_at: new Date() }
       });
+      // Blocklist sender of first incoming message for each thread
+      const senderRows = await prisma.messages.findMany({
+        where: { thread_id: { in: chunk }, direction: 'incoming' },
+        orderBy: { created_at: 'asc' },
+        distinct: ['thread_id'],
+        select: { from_email: true }
+      });
+      const uniqueAddresses = [...new Set(senderRows.map(r => r.from_email.toLowerCase()).filter(Boolean))];
+      await Promise.all(uniqueAddresses.map(address =>
+        prisma.spam_senders.upsert({
+          where: { type_address: { type: 'blocklist', address } },
+          create: { type: 'blocklist', address, note: '手動マーク', created_by_id: session!.userId },
+          update: {}
+        })
+      ));
     } else if (action === 'unspam') {
       await prisma.threads.updateMany({
         where: { id: { in: chunk } },

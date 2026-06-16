@@ -544,3 +544,12 @@ model spam_senders {
   @@unique([type, address])
   @@index([type, address])
 }
+
+model ml_spam_model {
+  id          String   @id @default(cuid())
+  model_data  String   @db.Text
+  trained_at  DateTime
+  spam_count  Int
+  ham_count   Int
+  version     Int      @default(1)
+}

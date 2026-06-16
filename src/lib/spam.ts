@@ -1,5 +1,6 @@
 import dns from 'dns/promises';
 import { prisma } from '@/lib/db';
+import { predictSpam } from '@/lib/spam-classifier';
 
 // --- IP helpers ---
 
@@ -111,8 +112,10 @@ export async function detectSpam(params: {
   receivedHeaders: string[];
   subject?: string;
   textBody?: string;
+  fromName?: string | null;
+  hasAttachments?: boolean;
 }): Promise<SpamResult> {
-  const { fromEmail, receivedHeaders, subject = '', textBody = '' } = params;
+  const { fromEmail, receivedHeaders, subject = '', textBody = '', fromName, hasAttachments } = params;
   const domain = fromEmail.split('@')[1]?.toLowerCase() || '';
 
   // 1. Whitelist check — overrides everything
@@ -139,7 +142,17 @@ export async function detectSpam(params: {
     return { isSpam: true, reason: 'heuristic' };
   }
 
-  // 6. Final whitelist re-check (race condition guard)
+  // 6. ML classification — high-confidence only (≥ 0.95)
+  try {
+    const mlResult = await predictSpam({ fromEmail, subject, textBody, fromName, hasAttachments });
+    if (mlResult?.label === 'spam' && mlResult.confidence >= 0.95) {
+      return { isSpam: true, reason: 'ml_model' };
+    }
+  } catch {
+    // ML failure must not block mail sync
+  }
+
+  // 7. Final whitelist re-check (race condition guard)
   if (await isWhitelisted(fromEmail)) return null;
 
   return null;

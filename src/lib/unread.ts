@@ -5,7 +5,8 @@ export async function getUnreadCount(userId: string) {
     prisma.threads.count({
       where: {
         mailbox: { type: 'personal', owner_user_id: userId },
-        unread_count: { gt: 0 }
+        unread_count: { gt: 0 },
+        is_spam: false
       }
     }),
     prisma.$queryRaw<Array<{ count: bigint }>>`
@@ -17,6 +18,7 @@ export async function getUnreadCount(userId: string) {
       WHERE m.type = 'team'
         AND p.user_id = ${userId}
         AND p.can_view = true
+        AND t.is_spam = false
         AND (r.id IS NULL OR t.last_message_at > r.last_read_at)
     `
   ]);

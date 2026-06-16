@@ -37,6 +37,7 @@ export async function computeMfi(userId: string): Promise<MfiResult> {
   const personalUnread = await prisma.threads.findMany({
     where: {
       unread_count: { gt: 0 },
+      is_spam: false,
       mailbox: { type: 'personal', owner_user_id: userId },
     },
     select: { last_message_at: true, unread_count: true }
@@ -44,6 +45,7 @@ export async function computeMfi(userId: string): Promise<MfiResult> {
 
   const teamUnread = await prisma.threads.findMany({
     where: {
+      is_spam: false,
       mailbox: { type: 'team', permissions: { some: { user_id: userId, can_view: true } } },
       reads: { none: { user_id: userId } }
     },

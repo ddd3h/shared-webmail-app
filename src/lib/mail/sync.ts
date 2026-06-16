@@ -207,7 +207,7 @@ async function syncFolder(
         let isSpam = false;
         if (direction === 'incoming' && fromEmail) {
           try {
-            const spamResult = await detectSpam({ fromEmail, receivedHeaders, subject, textBody: text || '' });
+            const spamResult = await detectSpam({ fromEmail, receivedHeaders, subject, textBody: text || '', fromName, hasAttachments: parsedAttachments.length > 0 });
             if (spamResult?.isSpam) {
               isSpam = true;
               await prisma.threads.update({
