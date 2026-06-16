@@ -69,11 +69,11 @@ export async function trainModel(): Promise<{ spamCount: number; hamCount: numbe
   const [spamThreads, hamThreads] = await Promise.all([
     prisma.threads.findMany({
       where: { is_spam: true },
-      include: { messages: { take: 1, orderBy: { sent_at: 'asc' } } },
+      include: { messages: { take: 1, orderBy: { sent_at: 'asc' }, select: { from_email: true, subject: true, text_body: true, from_name: true, has_attachments: true } } },
     }),
     prisma.threads.findMany({
       where: { is_spam: false },
-      include: { messages: { take: 1, orderBy: { sent_at: 'asc' } } },
+      include: { messages: { take: 1, orderBy: { sent_at: 'asc' }, select: { from_email: true, subject: true, text_body: true, from_name: true, has_attachments: true } } },
     }),
   ]);
 
