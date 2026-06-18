@@ -87,14 +87,19 @@ function AdminSettingsContent() {
     setMlUploading(true); setMlMsg(null);
     try {
       const text = await mlFile.text();
-      const parsed = JSON.parse(text);
-      const { modelData, spamCount, hamCount } = parsed;
-      if (!modelData) throw new Error('model.json に modelData フィールドがありません');
+      if (!text.trim()) throw new Error('ファイルが空です');
+      const model = JSON.parse(text);
+      const { spamCount, hamCount } = model;
+      if (!model.classes || !model.featureLogProbs) throw new Error('model.json のフォーマットが不正です。Pythonスクリプトで生成したファイルを使用してください');
       const res = await fetch('/api/admin/spam-classifier/model', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ modelData, spamCount, hamCount }),
+        body: text,  // send raw JSON directly — avoid double-encoding overhead
       });
+      if (!res.ok) {
+        const errText = await res.text().catch(() => '');
+        throw new Error(`サーバーエラー (${res.status})${errText ? ': ' + errText.slice(0, 100) : ''}`);
+      }
       const d = await res.json();
       if (d.ok) {
         setMlMsg({ type: 'success', text: `アップロード完了: spam ${spamCount}件 / ham ${hamCount}件` });

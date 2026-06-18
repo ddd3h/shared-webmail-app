@@ -24,8 +24,9 @@ from multiprocessing import Pool, cpu_count
 try:
     from sklearn.naive_bayes import ComplementNB
     import numpy as np
+    from scipy.sparse import lil_matrix, csr_matrix
 except ImportError:
-    print("pip install scikit-learn numpy")
+    print("pip install scikit-learn numpy scipy")
     sys.exit(1)
 
 INPUT_FILE = sys.argv[1] if len(sys.argv) > 1 else None
@@ -79,18 +80,19 @@ def extract_tokens_parallel(items):
 
 
 def build_vocab_and_matrix(token_lists):
-    """Build vocabulary and document-term count matrix."""
+    """Build vocabulary and sparse document-term count matrix."""
     vocab = {}
     for tl in token_lists:
         for t in tl:
             if t not in vocab:
                 vocab[t] = len(vocab)
 
-    X = np.zeros((len(token_lists), len(vocab)), dtype=np.float32)
+    # Sparse matrix — avoids n_docs × vocab_size dense allocation (would be GBs)
+    X = lil_matrix((len(token_lists), len(vocab)), dtype=np.float32)
     for i, tl in enumerate(token_lists):
         for t in tl:
             X[i, vocab[t]] += 1
-    return X, vocab
+    return csr_matrix(X), vocab
 
 
 def main():
@@ -163,15 +165,8 @@ def main():
         "trainedAt": datetime.now(timezone.utc).isoformat(),
     }
 
-    # modelData is the JSON string (matches server upload format)
-    output = {
-        "modelData": json.dumps(model, ensure_ascii=False, separators=(",", ":")),
-        "spamCount": len(spam_items),
-        "hamCount": len(ham_items),
-    }
-
     with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
-        json.dump(output, f, ensure_ascii=False, indent=2)
+        json.dump(model, f, ensure_ascii=False, separators=(",", ":"))
 
     print(f"モデルを保存: {OUTPUT_FILE}")
     print("次のステップ: 管理画面からこのファイルをアップロードしてください")

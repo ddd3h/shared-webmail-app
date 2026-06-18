@@ -8,20 +8,19 @@ export async function PUT(req: NextRequest) {
   const session = await getSession();
   await checkAdmin(session);
 
-  const body = await req.json();
-  const { modelData, spamCount, hamCount } = body;
+  const modelData = await req.text();
 
-  if (!modelData || typeof modelData !== 'string') {
-    return NextResponse.json({ ok: false, error: 'modelData が必要です' }, { status: 400 });
-  }
-
-  // Validate it's parseable JSON (basic sanity check)
+  let model: { spamCount?: number; hamCount?: number; classes?: unknown };
   try {
-    JSON.parse(modelData);
+    model = JSON.parse(modelData);
   } catch {
-    return NextResponse.json({ ok: false, error: 'modelData が不正なJSONです' }, { status: 400 });
+    return NextResponse.json({ ok: false, error: 'JSONのパースに失敗しました' }, { status: 400 });
   }
 
-  await saveModel(modelData, Number(spamCount) || 0, Number(hamCount) || 0);
+  if (!model.classes) {
+    return NextResponse.json({ ok: false, error: 'model.json のフォーマットが不正です' }, { status: 400 });
+  }
+
+  await saveModel(modelData, Number(model.spamCount) || 0, Number(model.hamCount) || 0);
   return NextResponse.json({ ok: true });
 }
