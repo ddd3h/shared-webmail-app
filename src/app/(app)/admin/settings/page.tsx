@@ -63,24 +63,50 @@ function AdminSettingsContent() {
 
   // ML classifier state
   const [mlStats, setMlStats] = useState<{ trained_at: string; spam_count: number; ham_count: number; version: number } | null>(null);
-  const [mlTraining, setMlTraining] = useState(false);
+  const [mlUploading, setMlUploading] = useState(false);
   const [mlMsg, setMlMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [mlFile, setMlFile] = useState<File | null>(null);
 
   async function loadMlStats() {
     const res = await fetch('/api/admin/spam-classifier');
     if (res.ok) { const d = await res.json(); setMlStats(d.stats || null); }
   }
 
-  async function handleMlTrain() {
-    setMlTraining(true); setMlMsg(null);
-    const res = await fetch('/api/admin/spam-classifier', { method: 'POST' });
-    const d = await res.json();
-    setMlTraining(false);
-    if (d.ok) {
-      setMlMsg({ type: 'success', text: `学習完了: spam ${d.spamCount}件 / ham ${d.hamCount}件` });
-      loadMlStats();
-    } else {
-      setMlMsg({ type: 'error', text: d.error || '学習に失敗しました' });
+  async function handleMlExport() {
+    const res = await fetch('/api/admin/spam-classifier/export');
+    if (!res.ok) { setMlMsg({ type: 'error', text: 'エクスポート失敗' }); return; }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = 'training-data.json'; a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  async function handleMlUpload() {
+    if (!mlFile) return;
+    setMlUploading(true); setMlMsg(null);
+    try {
+      const text = await mlFile.text();
+      const parsed = JSON.parse(text);
+      const { modelData, spamCount, hamCount } = parsed;
+      if (!modelData) throw new Error('model.json に modelData フィールドがありません');
+      const res = await fetch('/api/admin/spam-classifier/model', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ modelData, spamCount, hamCount }),
+      });
+      const d = await res.json();
+      if (d.ok) {
+        setMlMsg({ type: 'success', text: `アップロード完了: spam ${spamCount}件 / ham ${hamCount}件` });
+        setMlFile(null);
+        loadMlStats();
+      } else {
+        setMlMsg({ type: 'error', text: d.error || 'アップロード失敗' });
+      }
+    } catch (e: unknown) {
+      setMlMsg({ type: 'error', text: e instanceof Error ? e.message : 'ファイルの読み込みに失敗しました' });
+    } finally {
+      setMlUploading(false);
     }
   }
 
@@ -1252,27 +1278,58 @@ function AdminSettingsContent() {
           })()}
 
           {/* ML Spam Classifier */}
-          <div className="card p-5 mt-2">
-            <h3 className="text-sm font-semibold text-gray-700 mb-1">MLスパム分類器</h3>
-            <p className="text-xs text-gray-500 mb-4">既存の迷惑メール／正常メールのデータから Naive Bayes モデルを学習します。信頼度 95% 以上のみ自動フラグ。</p>
+          <div className="card p-5 mt-2 space-y-4">
+            <div>
+              <h3 className="text-sm font-semibold text-gray-700 mb-1">MLスパム分類器</h3>
+              <p className="text-xs text-gray-500">信頼度 95% 以上のみ自動フラグ。学習はローカルPCで実施してアップロード。</p>
+            </div>
             {mlStats ? (
-              <div className="text-xs text-gray-500 mb-4 space-y-0.5">
+              <div className="text-xs text-gray-500 space-y-0.5">
                 <p>最終学習: {new Date(mlStats.trained_at).toLocaleString('ja-JP')}</p>
                 <p>学習サンプル: spam {mlStats.spam_count}件 / ham {mlStats.ham_count}件</p>
               </div>
             ) : (
-              <p className="text-xs text-gray-400 mb-4">未学習</p>
+              <p className="text-xs text-gray-400">未学習</p>
             )}
+
+            {/* Step 1: Export */}
+            <div className="border border-gray-100 rounded-lg p-3 space-y-1">
+              <p className="text-xs font-medium text-gray-600">ステップ 1 — 学習データをエクスポート</p>
+              <button onClick={handleMlExport} className="btn btn-sm btn-secondary">
+                training-data.json をダウンロード
+              </button>
+            </div>
+
+            {/* Step 2: Local training instruction */}
+            <div className="border border-gray-100 rounded-lg p-3 space-y-1">
+              <p className="text-xs font-medium text-gray-600">ステップ 2 — ローカルPCで学習</p>
+              <pre className="text-xs bg-gray-50 rounded px-3 py-2 text-gray-700 overflow-x-auto">node scripts/train-spam-model.mjs training-data.json</pre>
+              <p className="text-xs text-gray-400">→ model.json が生成されます</p>
+            </div>
+
+            {/* Step 3: Upload */}
+            <div className="border border-gray-100 rounded-lg p-3 space-y-2">
+              <p className="text-xs font-medium text-gray-600">ステップ 3 — model.json をアップロード</p>
+              <input
+                type="file"
+                accept=".json"
+                onChange={e => setMlFile(e.target.files?.[0] ?? null)}
+                className="text-xs text-gray-600 file:mr-2 file:text-xs file:px-3 file:py-1.5 file:rounded-lg file:border file:border-gray-300 file:bg-white file:text-gray-700 file:cursor-pointer hover:file:bg-gray-50"
+              />
+              <div>
+                <button
+                  onClick={handleMlUpload}
+                  disabled={mlUploading || !mlFile}
+                  className="btn btn-primary btn-sm"
+                >
+                  {mlUploading ? 'アップロード中…' : 'アップロード'}
+                </button>
+              </div>
+            </div>
+
             {mlMsg && (
-              <p className={`text-xs mb-3 ${mlMsg.type === 'success' ? 'text-green-600' : 'text-red-600'}`}>{mlMsg.text}</p>
+              <p className={`text-xs ${mlMsg.type === 'success' ? 'text-green-600' : 'text-red-600'}`}>{mlMsg.text}</p>
             )}
-            <button
-              onClick={handleMlTrain}
-              disabled={mlTraining}
-              className="btn btn-primary btn-sm"
-            >
-              {mlTraining ? '学習中…' : 'MLモデルを再学習する'}
-            </button>
           </div>
         </div>
       )}

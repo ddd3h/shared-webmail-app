@@ -8,7 +8,7 @@ const CACHE_TTL_MS = 5 * 60 * 1000;
 
 // Build pre-tokenized feature array that bypasses natural's English-only Porter stemmer.
 // Uses character trigrams for language-agnostic text coverage (Japanese, ASCII, mixed).
-function buildFeatureTokens(params: {
+export function buildFeatureTokens(params: {
   fromEmail: string;
   subject?: string;
   textBody?: string;
@@ -71,15 +71,13 @@ export async function predictSpam(params: {
   if (!classifier) return null;
 
   const tokens = buildFeatureTokens(params);
-  // getClassifications returns [{label, value}] where value is already a probability (0-1)
   const classifications: { label: string; value: number }[] = classifier.getClassifications(tokens);
   if (classifications.length < 2) return null;
 
   const sorted = [...classifications].sort((a, b) => b.value - a.value);
   const [best, second] = sorted;
 
-  // Softmax over log-probabilities: confidence = exp(best) / (exp(best) + exp(second))
-  // Numerically stable form: 1 / (1 + exp(second - best))
+  // Softmax over log-probabilities: 1 / (1 + exp(second - best))
   const confidence = 1 / (1 + Math.exp(second.value - best.value));
 
   return {
@@ -88,7 +86,14 @@ export async function predictSpam(params: {
   };
 }
 
-export async function trainModel(): Promise<{ spamCount: number; hamCount: number }> {
+export async function saveModel(modelData: string, spamCount: number, hamCount: number) {
+  await prisma.ml_spam_model.create({
+    data: { model_data: modelData, trained_at: new Date(), spam_count: spamCount, ham_count: hamCount },
+  });
+  modelCache = null;
+}
+
+export async function getTrainingData() {
   const [spamThreads, hamThreads] = await Promise.all([
     prisma.threads.findMany({
       where: { is_spam: true },
@@ -100,47 +105,23 @@ export async function trainModel(): Promise<{ spamCount: number; hamCount: numbe
     }),
   ]);
 
-  const MIN_SAMPLES = 5;
-  if (spamThreads.length < MIN_SAMPLES || hamThreads.length < MIN_SAMPLES) {
-    throw new Error(
-      `学習データ不足: spam=${spamThreads.length}件, ham=${hamThreads.length}件（最低${MIN_SAMPLES}件ずつ必要）`
-    );
-  }
-
-  const classifier = new natural.BayesClassifier();
-
-  for (const t of spamThreads) {
+  const toItem = (label: 'spam' | 'ham') => (t: typeof spamThreads[number]) => {
     const msg = t.messages[0];
-    if (!msg) continue;
-    classifier.addDocument(
-      buildFeatureTokens({ fromEmail: msg.from_email, subject: msg.subject, textBody: msg.text_body ?? '', fromName: msg.from_name, hasAttachments: msg.has_attachments }),
-      'spam'
-    );
-  }
+    if (!msg) return null;
+    return {
+      label,
+      fromEmail: msg.from_email,
+      subject: msg.subject,
+      textBody: msg.text_body ?? '',
+      fromName: msg.from_name ?? null,
+      hasAttachments: msg.has_attachments,
+    };
+  };
 
-  for (const t of hamThreads) {
-    const msg = t.messages[0];
-    if (!msg) continue;
-    classifier.addDocument(
-      buildFeatureTokens({ fromEmail: msg.from_email, subject: msg.subject, textBody: msg.text_body ?? '', fromName: msg.from_name, hasAttachments: msg.has_attachments }),
-      'ham'
-    );
-  }
-
-  classifier.train();
-
-  await prisma.ml_spam_model.create({
-    data: {
-      model_data: JSON.stringify(classifier),
-      trained_at: new Date(),
-      spam_count: spamThreads.length,
-      ham_count: hamThreads.length,
-    },
-  });
-
-  modelCache = null;
-
-  return { spamCount: spamThreads.length, hamCount: hamThreads.length };
+  return [
+    ...spamThreads.map(toItem('spam')).filter(Boolean),
+    ...hamThreads.map(toItem('ham')).filter(Boolean),
+  ];
 }
 
 export async function getModelStats() {
