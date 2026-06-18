@@ -75,8 +75,8 @@ async function main() {
 
     const classifications = classifier.getClassifications(tokens);
     const sorted = [...classifications].sort((a, b) => b.value - a.value);
-    const best = sorted[0];
-    const confidence = best.value; // value is already a probability (0-1)
+    const [best, second] = sorted;
+    const confidence = 1 / (1 + Math.exp((second?.value ?? (best.value - 100)) - best.value));
     const predictedLabel = best.label;
 
     const isCorrect = predictedLabel === 'spam';

@@ -76,11 +76,15 @@ export async function predictSpam(params: {
   if (classifications.length < 2) return null;
 
   const sorted = [...classifications].sort((a, b) => b.value - a.value);
-  const best = sorted[0];
+  const [best, second] = sorted;
+
+  // Softmax over log-probabilities: confidence = exp(best) / (exp(best) + exp(second))
+  // Numerically stable form: 1 / (1 + exp(second - best))
+  const confidence = 1 / (1 + Math.exp(second.value - best.value));
 
   return {
     label: best.label as 'spam' | 'ham',
-    confidence: best.value,
+    confidence,
   };
 }
 
