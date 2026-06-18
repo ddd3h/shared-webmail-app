@@ -1,13 +1,22 @@
-import natural from 'natural';
 import { prisma } from '@/lib/db';
 
 type SpamPrediction = { label: 'spam' | 'ham'; confidence: number } | null;
 
-let modelCache: { classifier: ReturnType<typeof natural.BayesClassifier.restore>; loadedAt: number } | null = null;
+type ModelJson = {
+  classes: string[];
+  classLogPriors: number[];
+  featureLogProbs: Record<string, number[]>;
+  unknownLogProbs: number[];
+  spamCount: number;
+  hamCount: number;
+  trainedAt: string;
+};
+
+let modelCache: { model: ModelJson; loadedAt: number } | null = null;
 const CACHE_TTL_MS = 5 * 60 * 1000;
 
-// Build pre-tokenized feature array that bypasses natural's English-only Porter stemmer.
-// Uses character trigrams for language-agnostic text coverage (Japanese, ASCII, mixed).
+// Character-trigram feature extractor — language-agnostic (Japanese/ASCII/mixed).
+// Must stay in sync with scripts/train-spam-model.py build_tokens().
 export function buildFeatureTokens(params: {
   fromEmail: string;
   subject?: string;
@@ -19,45 +28,56 @@ export function buildFeatureTokens(params: {
   const domain = fromEmail.split('@')[1]?.toLowerCase() || '';
   const tokens: string[] = [];
 
-  // Domain — 3x weight (highly distinctive signal)
   tokens.push(`d:${domain}`, `d:${domain}`, `d:${domain}`);
-
-  // Full sender address
   tokens.push(`e:${fromEmail.toLowerCase()}`);
-
-  // From name as single token
   if (fromName) tokens.push(`n:${fromName.toLowerCase().replace(/\s+/g, '_')}`);
 
-  // Subject — character trigrams, 2x weight (language-agnostic)
   const subj = subject.replace(/\s+/g, '');
   for (let i = 0; i <= subj.length - 3; i++) {
     const tri = `s:${subj.slice(i, i + 3)}`;
     tokens.push(tri, tri);
   }
 
-  // Body first 300 chars — character trigrams
   const body = textBody.slice(0, 300).replace(/\s+/g, '');
   for (let i = 0; i <= body.length - 3; i++) {
     tokens.push(`b:${body.slice(i, i + 3)}`);
   }
 
   if (hasAttachments) tokens.push('has_attachment');
-
   return tokens;
 }
 
-async function loadModel() {
+function predict(model: ModelJson, tokens: string[]): SpamPrediction {
+  const { classes, classLogPriors, featureLogProbs, unknownLogProbs } = model;
+
+  const logScores = classLogPriors.map((prior, ci) => {
+    let score = prior;
+    for (const token of tokens) {
+      const probs = featureLogProbs[token];
+      score += probs ? probs[ci] : unknownLogProbs[ci];
+    }
+    return score;
+  });
+
+  const bestIdx = logScores[0] >= logScores[1] ? 0 : 1;
+  const secondIdx = 1 - bestIdx;
+
+  // Softmax: 1 / (1 + exp(second - best))
+  const confidence = 1 / (1 + Math.exp(logScores[secondIdx] - logScores[bestIdx]));
+
+  return { label: classes[bestIdx] as 'spam' | 'ham', confidence };
+}
+
+async function loadModel(): Promise<ModelJson | null> {
   const now = Date.now();
-  if (modelCache && now - modelCache.loadedAt < CACHE_TTL_MS) {
-    return modelCache.classifier;
-  }
+  if (modelCache && now - modelCache.loadedAt < CACHE_TTL_MS) return modelCache.model;
 
   const row = await prisma.ml_spam_model.findFirst({ orderBy: { trained_at: 'desc' } });
   if (!row) return null;
 
-  const classifier = natural.BayesClassifier.restore(JSON.parse(row.model_data));
-  modelCache = { classifier, loadedAt: now };
-  return classifier;
+  const model = JSON.parse(row.model_data) as ModelJson;
+  modelCache = { model, loadedAt: now };
+  return model;
 }
 
 export async function predictSpam(params: {
@@ -67,23 +87,9 @@ export async function predictSpam(params: {
   fromName?: string | null;
   hasAttachments?: boolean;
 }): Promise<SpamPrediction> {
-  const classifier = await loadModel();
-  if (!classifier) return null;
-
-  const tokens = buildFeatureTokens(params);
-  const classifications: { label: string; value: number }[] = classifier.getClassifications(tokens);
-  if (classifications.length < 2) return null;
-
-  const sorted = [...classifications].sort((a, b) => b.value - a.value);
-  const [best, second] = sorted;
-
-  // Softmax over log-probabilities: 1 / (1 + exp(second - best))
-  const confidence = 1 / (1 + Math.exp(second.value - best.value));
-
-  return {
-    label: best.label as 'spam' | 'ham',
-    confidence,
-  };
+  const model = await loadModel();
+  if (!model) return null;
+  return predict(model, buildFeatureTokens(params));
 }
 
 export async function saveModel(modelData: string, spamCount: number, hamCount: number) {
@@ -108,14 +114,7 @@ export async function getTrainingData() {
   const toItem = (label: 'spam' | 'ham') => (t: typeof spamThreads[number]) => {
     const msg = t.messages[0];
     if (!msg) return null;
-    return {
-      label,
-      fromEmail: msg.from_email,
-      subject: msg.subject,
-      textBody: msg.text_body ?? '',
-      fromName: msg.from_name ?? null,
-      hasAttachments: msg.has_attachments,
-    };
+    return { label, fromEmail: msg.from_email, subject: msg.subject, textBody: msg.text_body ?? '', fromName: msg.from_name ?? null, hasAttachments: msg.has_attachments };
   };
 
   return [
