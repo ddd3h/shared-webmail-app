@@ -6,22 +6,44 @@ type SpamPrediction = { label: 'spam' | 'ham'; confidence: number } | null;
 let modelCache: { classifier: ReturnType<typeof natural.BayesClassifier.restore>; loadedAt: number } | null = null;
 const CACHE_TTL_MS = 5 * 60 * 1000;
 
-function buildFeatureText(params: {
+// Build pre-tokenized feature array that bypasses natural's English-only Porter stemmer.
+// Uses character trigrams for language-agnostic text coverage (Japanese, ASCII, mixed).
+function buildFeatureTokens(params: {
   fromEmail: string;
   subject?: string;
   textBody?: string;
   fromName?: string | null;
   hasAttachments?: boolean;
-}): string {
+}): string[] {
   const { fromEmail, subject = '', textBody = '', fromName, hasAttachments } = params;
   const domain = fromEmail.split('@')[1]?.toLowerCase() || '';
-  return [
-    subject, subject,
-    `DOMAIN_${domain} DOMAIN_${domain} DOMAIN_${domain}`,
-    fromName ?? '',
-    textBody.slice(0, 500),
-    hasAttachments ? 'HAS_ATTACHMENT' : '',
-  ].join(' ').trim();
+  const tokens: string[] = [];
+
+  // Domain — 3x weight (highly distinctive signal)
+  tokens.push(`d:${domain}`, `d:${domain}`, `d:${domain}`);
+
+  // Full sender address
+  tokens.push(`e:${fromEmail.toLowerCase()}`);
+
+  // From name as single token
+  if (fromName) tokens.push(`n:${fromName.toLowerCase().replace(/\s+/g, '_')}`);
+
+  // Subject — character trigrams, 2x weight (language-agnostic)
+  const subj = subject.replace(/\s+/g, '');
+  for (let i = 0; i <= subj.length - 3; i++) {
+    const tri = `s:${subj.slice(i, i + 3)}`;
+    tokens.push(tri, tri);
+  }
+
+  // Body first 300 chars — character trigrams
+  const body = textBody.slice(0, 300).replace(/\s+/g, '');
+  for (let i = 0; i <= body.length - 3; i++) {
+    tokens.push(`b:${body.slice(i, i + 3)}`);
+  }
+
+  if (hasAttachments) tokens.push('has_attachment');
+
+  return tokens;
 }
 
 async function loadModel() {
@@ -48,20 +70,17 @@ export async function predictSpam(params: {
   const classifier = await loadModel();
   if (!classifier) return null;
 
-  const text = buildFeatureText(params);
-  const classifications: { label: string; value: number }[] = classifier.getClassifications(text);
+  const tokens = buildFeatureTokens(params);
+  // getClassifications returns [{label, value}] where value is already a probability (0-1)
+  const classifications: { label: string; value: number }[] = classifier.getClassifications(tokens);
   if (classifications.length < 2) return null;
 
   const sorted = [...classifications].sort((a, b) => b.value - a.value);
-  const [best, second] = sorted;
-
-  // Log-sum-exp softmax for numerical stability
-  const expSecond = Math.exp(second.value - best.value);
-  const confidence = 1 / (1 + expSecond);
+  const best = sorted[0];
 
   return {
     label: best.label as 'spam' | 'ham',
-    confidence,
+    confidence: best.value,
   };
 }
 
@@ -90,7 +109,7 @@ export async function trainModel(): Promise<{ spamCount: number; hamCount: numbe
     const msg = t.messages[0];
     if (!msg) continue;
     classifier.addDocument(
-      buildFeatureText({ fromEmail: msg.from_email, subject: msg.subject, textBody: msg.text_body ?? '', fromName: msg.from_name, hasAttachments: msg.has_attachments }),
+      buildFeatureTokens({ fromEmail: msg.from_email, subject: msg.subject, textBody: msg.text_body ?? '', fromName: msg.from_name, hasAttachments: msg.has_attachments }),
       'spam'
     );
   }
@@ -99,7 +118,7 @@ export async function trainModel(): Promise<{ spamCount: number; hamCount: numbe
     const msg = t.messages[0];
     if (!msg) continue;
     classifier.addDocument(
-      buildFeatureText({ fromEmail: msg.from_email, subject: msg.subject, textBody: msg.text_body ?? '', fromName: msg.from_name, hasAttachments: msg.has_attachments }),
+      buildFeatureTokens({ fromEmail: msg.from_email, subject: msg.subject, textBody: msg.text_body ?? '', fromName: msg.from_name, hasAttachments: msg.has_attachments }),
       'ham'
     );
   }

@@ -5,15 +5,27 @@ import natural from 'natural';
 
 const prisma = new PrismaClient();
 
-function buildFeatureText({ fromEmail, subject, textBody, fromName, hasAttachments }) {
+function buildFeatureTokens({ fromEmail, subject = '', textBody = '', fromName, hasAttachments }) {
   const domain = fromEmail.split('@')[1]?.toLowerCase() || '';
-  return [
-    subject ?? '', subject ?? '',
-    `DOMAIN_${domain} DOMAIN_${domain} DOMAIN_${domain}`,
-    fromName ?? '',
-    (textBody ?? '').slice(0, 500),
-    hasAttachments ? 'HAS_ATTACHMENT' : '',
-  ].join(' ').trim();
+  const tokens = [];
+
+  tokens.push(`d:${domain}`, `d:${domain}`, `d:${domain}`);
+  tokens.push(`e:${fromEmail.toLowerCase()}`);
+  if (fromName) tokens.push(`n:${fromName.toLowerCase().replace(/\s+/g, '_')}`);
+
+  const subj = subject.replace(/\s+/g, '');
+  for (let i = 0; i <= subj.length - 3; i++) {
+    const tri = `s:${subj.slice(i, i + 3)}`;
+    tokens.push(tri, tri);
+  }
+
+  const body = textBody.slice(0, 300).replace(/\s+/g, '');
+  for (let i = 0; i <= body.length - 3; i++) {
+    tokens.push(`b:${body.slice(i, i + 3)}`);
+  }
+
+  if (hasAttachments) tokens.push('has_attachment');
+  return tokens;
 }
 
 async function main() {
@@ -53,7 +65,7 @@ async function main() {
     const msg = t.messages[0];
     if (!msg) continue;
 
-    const text = buildFeatureText({
+    const tokens = buildFeatureTokens({
       fromEmail: msg.from_email,
       subject: msg.subject,
       textBody: msg.text_body,
@@ -61,11 +73,10 @@ async function main() {
       hasAttachments: msg.has_attachments,
     });
 
-    const classifications = classifier.getClassifications(text);
+    const classifications = classifier.getClassifications(tokens);
     const sorted = [...classifications].sort((a, b) => b.value - a.value);
-    const [best, second] = sorted;
-    const expSecond = Math.exp((second?.value ?? -Infinity) - best.value);
-    const confidence = 1 / (1 + expSecond);
+    const best = sorted[0];
+    const confidence = best.value; // value is already a probability (0-1)
     const predictedLabel = best.label;
 
     const isCorrect = predictedLabel === 'spam';
