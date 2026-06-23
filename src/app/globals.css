@@ -130,3 +130,30 @@ blockquote {
 .animate-plane-fly {
   animation: planeFly 4s cubic-bezier(0.4, 0, 0.2, 1) forwards;
 }
+
+/* TipTap collaboration cursors (other users' carets + name labels).
+   The caret/label colors are set inline from each user's color; these rules
+   only provide the structure so they are actually visible. */
+.collaboration-carets__caret {
+  border-left: 1px solid #0d0d0d;
+  border-right: 1px solid #0d0d0d;
+  margin-left: -1px;
+  margin-right: -1px;
+  pointer-events: none;
+  position: relative;
+  word-break: normal;
+}
+.collaboration-carets__label {
+  border-radius: 3px 3px 3px 0;
+  color: #fff;
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 600;
+  left: -1px;
+  line-height: normal;
+  padding: 0.1rem 0.3rem;
+  position: absolute;
+  top: -1.4em;
+  user-select: none;
+  white-space: nowrap;
+}

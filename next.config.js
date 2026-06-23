@@ -29,7 +29,11 @@ const SECURITY_HEADERS = [
       // Email HTML bodies may reference external images — keep broad
       "img-src 'self' data: blob: https:",
       "font-src 'self' data:",
-      "connect-src 'self' https://openrouter.ai",
+      // Collaborative editing (y-websocket): allow the collab server origin.
+      // dev → ws://localhost:1234, prod → any wss: (e.g. wss://<domain>/collab)
+      isDev
+        ? "connect-src 'self' https://openrouter.ai ws://localhost:1234 ws://127.0.0.1:1234"
+        : "connect-src 'self' https://openrouter.ai wss:",
       "worker-src 'self' blob:",
       "frame-src 'none'",
       "object-src 'none'",

@@ -2,13 +2,45 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
 import DOMPurify from 'dompurify';
 import dynamic from 'next/dynamic';
-import type { RichEditorHandle } from './RichEditor';
+import type { RichEditorHandle, CollabUser } from './RichEditor';
 import { useDraft } from '@/hooks/useDraft';
 import DraftStatusBar from './DraftStatus';
 import EmailChipInput from './EmailChipInput';
 import SendingOverlay from './SendingOverlay';
 
 const RichEditor = dynamic(() => import('./RichEditor'), { ssr: false });
+
+// Yjs and y-websocket — loaded lazily (client only, shared drafts only)
+let YLib: typeof import('yjs') | null = null;
+let WebsocketProviderClass: (typeof import('y-websocket'))['WebsocketProvider'] | null = null;
+let IndexeddbPersistenceClass: (typeof import('y-indexeddb'))['IndexeddbPersistence'] | null = null;
+
+async function loadYjsLibs() {
+  if (!YLib) {
+    const [yjs, websocket, indexeddb] = await Promise.all([
+      import('yjs'),
+      import('y-websocket'),
+      import('y-indexeddb'),
+    ]);
+    YLib = yjs;
+    WebsocketProviderClass = websocket.WebsocketProvider;
+    IndexeddbPersistenceClass = indexeddb.IndexeddbPersistence;
+  }
+  return { Y: YLib!, WebsocketProvider: WebsocketProviderClass!, IndexeddbPersistence: IndexeddbPersistenceClass! };
+}
+
+// Central collaboration server URL (y-websocket). Defaults to localhost dev server.
+const COLLAB_WS_URL = process.env.NEXT_PUBLIC_COLLAB_WS_URL || 'ws://localhost:1234';
+
+// Module-level room registry — prevents duplicate providers for the same room
+// within the same JS context (StrictMode double-mount, concurrent effects, etc.)
+type YjsRoom = {
+  doc: import('yjs').Doc;
+  provider: import('y-websocket').WebsocketProvider;
+  persistence: import('y-indexeddb').IndexeddbPersistence;
+  refs: number;
+};
+const _yjsRooms = new Map<string, YjsRoom>();
 
 export type ComposeMode = 'compose' | 'reply' | 'forward';
 
@@ -83,15 +115,43 @@ export default function ComposeForm({
   const editorRef = useRef<RichEditorHandle>(null);
   const richContentRef = useRef(initialBody);
 
-  const draft = useDraft(draftId);
+  // Yjs collaborative editing state (shared team drafts only)
+  const [ydoc, setYdoc] = useState<import('yjs').Doc | null>(null);
+  const [yjsProvider, setYjsProvider] = useState<import('y-websocket').WebsocketProvider | null>(null);
+  const [displayName, setDisplayName] = useState('ユーザー');
+  const [userId, setUserId] = useState<string | undefined>(undefined);
+  const colorRef = useRef('#' + Math.floor(Math.random() * 0xffffff).toString(16).padStart(6, '0'));
+  const currentUser = useMemo(() => ({ name: displayName, color: colorRef.current, id: userId }), [displayName, userId]);
+  const [collaborators, setCollaborators] = useState<CollabUser[]>([]);
+
+  const selectedMb = mailboxes.find(m => m.id === selectedMailbox);
+  const isTeam = selectedMb?.type === 'team';
+
+  // For team replies, all participants must share ONE draft (= one Yjs room).
+  // resolvedDraftId starts from the prop and, for team replies without one, is
+  // filled by find-or-create below so everyone converges on the same draft id.
+  const [resolvedDraftId, setResolvedDraftId] = useState<string | undefined>(draftId);
+  const draft = useDraft(resolvedDraftId, isTeam);
+
+  // Ensure a single shared draft exists for this team reply, then adopt its id.
+  useEffect(() => {
+    if (!isTeam || resolvedDraftId || mode !== 'reply' || !threadId || !selectedMailbox) return;
+    let cancelled = false;
+    fetch('/api/drafts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mailbox_id: selectedMailbox, thread_id: threadId, is_shared: true }),
+    })
+      .then(r => r.json())
+      .then(j => { if (!cancelled && j?.id) setResolvedDraftId(j.id); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [isTeam, resolvedDraftId, mode, threadId, selectedMailbox]);
 
   const selectedSigUser = useMemo(
     () => replyUsers.find(u => u.signature === signature) ?? null,
     [replyUsers, signature],
   );
-
-  const selectedMb = mailboxes.find(m => m.id === selectedMailbox);
-  const isTeam = selectedMb?.type === 'team';
 
   // Fetch mailboxes and signature on mount
   useEffect(() => {
@@ -108,7 +168,12 @@ export default function ComposeForm({
       .then(d => {
         const sig = d.signature ?? (d.name ? `${d.name}${d.email ? '\n' + d.email : ''}` : '');
         if (sig) setSignature(sig);
+        if (d.name) setDisplayName(d.name); // collaboration cursor label
       })
+      .catch(() => {});
+    fetch('/api/auth/session')
+      .then(r => r.json())
+      .then(d => { if (d.user?.userId) setUserId(d.user.userId); }) // for presence avatars
       .catch(() => {});
   }, []);
 
@@ -132,12 +197,12 @@ export default function ComposeForm({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [showSigPicker]);
 
-  // Load draft data when draftId provided
+  // Load draft data when a draft id is known (prop or resolved shared draft)
   useEffect(() => {
-    if (!draftId) return;
-    fetch(`/api/drafts/${draftId}`)
+    if (!resolvedDraftId) return;
+    fetch(`/api/drafts/${resolvedDraftId}`)
       .then(r => r.json())
-      .then(d => {
+      .then(async d => {
         if (!d.id) return;
         if (d.to_raw) setToChips(d.to_raw.split(/[,;]\s*/).map((s: string) => s.trim()).filter(Boolean));
         if (d.cc_raw) {
@@ -152,10 +217,124 @@ export default function ComposeForm({
         }
         if (d.subject) setSubject(d.subject);
         if (d.mailbox_id) setSelectedMailbox(d.mailbox_id);
-        if (d.html_body) { setEditorBody(d.html_body); richContentRef.current = d.html_body; }
+        if (d.updated_at) draft.initServerTimestamp(d.updated_at);
+
+        // Yjs state restore from DB
+        if (d.yjs_state_b64 && ydoc) {
+          const { Y } = await loadYjsLibs();
+          const binary = Uint8Array.from(atob(d.yjs_state_b64), c => c.charCodeAt(0));
+          Y.applyUpdate(ydoc, binary);
+        } else if (d.html_body && !ydoc) {
+          setEditorBody(d.html_body);
+          richContentRef.current = d.html_body;
+        }
       })
       .catch(() => {});
-  }, [draftId]);
+  }, [resolvedDraftId, ydoc]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Initialize Yjs for shared team drafts once draftId is known.
+  // Uses module-level _yjsRooms ref-counting to survive StrictMode double-mount
+  // and prevent "A Yjs Doc connected to room X already exists!" errors.
+  useEffect(() => {
+    if (!isTeam || !draft.draftId) return;
+    const roomId = `webmail-draft-${draft.draftId}`;
+    let destroyed = false;
+
+    loadYjsLibs().then(({ Y, WebsocketProvider, IndexeddbPersistence }) => {
+      if (destroyed) return;
+
+      const existing = _yjsRooms.get(roomId);
+      if (existing) {
+        // Another effect run already created this room — reuse and increment refcount
+        existing.refs++;
+        setYdoc(existing.doc);
+        setYjsProvider(existing.provider);
+        return;
+      }
+
+      const doc = new Y.Doc();
+      let provider: import('y-websocket').WebsocketProvider;
+      try {
+        provider = new WebsocketProvider(COLLAB_WS_URL, roomId, doc);
+      } catch {
+        doc.destroy();
+        return;
+      }
+      const persistence = new IndexeddbPersistence(roomId, doc);
+      _yjsRooms.set(roomId, { doc, provider, persistence, refs: 1 });
+      setYdoc(doc);
+      setYjsProvider(provider);
+    }).catch(() => {});
+
+    return () => {
+      destroyed = true;
+      const room = _yjsRooms.get(roomId);
+      if (room) {
+        room.refs--;
+        if (room.refs <= 0) {
+          room.provider.destroy();
+          room.persistence.destroy();
+          room.doc.destroy();
+          _yjsRooms.delete(roomId);
+        }
+      }
+      setYdoc(null);
+      setYjsProvider(null);
+    };
+  }, [isTeam, draft.draftId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Persist Yjs state to DB every 30s and on beforeunload
+  useEffect(() => {
+    if (!ydoc || !draft.draftId) return;
+    const save = async () => {
+      const { Y } = await loadYjsLibs().catch(() => ({ Y: null }));
+      if (!Y || !ydoc) return;
+      const state = Y.encodeStateAsUpdate(ydoc);
+      fetch(`/api/drafts/${draft.draftId}/yjs`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/octet-stream' },
+        body: state.buffer as ArrayBuffer,
+        keepalive: true,
+      }).catch(() => {});
+    };
+    const interval = setInterval(save, 30_000);
+    window.addEventListener('beforeunload', save);
+    return () => { clearInterval(interval); window.removeEventListener('beforeunload', save); };
+  }, [ydoc, draft.draftId]);
+
+  // Sync signature selection + visibility across collaborators via Yjs meta map.
+  useEffect(() => {
+    if (!ydoc) return;
+    const meta = ydoc.getMap('meta');
+    const apply = () => {
+      const s = meta.get('signature');
+      const v = meta.get('sigVisible');
+      if (typeof s === 'string') setSignature(s);
+      if (typeof v === 'boolean') setSigVisible(v);
+    };
+    apply();
+    meta.observe(apply);
+    return () => meta.unobserve(apply);
+  }, [ydoc]);
+
+  // Seed the shared signature once — the first collaborator's signature wins,
+  // so everyone sees the same one instead of their own personal default.
+  useEffect(() => {
+    if (!ydoc || !signature) return;
+    const meta = ydoc.getMap('meta');
+    if (meta.get('signature') === undefined) meta.set('signature', signature);
+  }, [ydoc, signature]);
+
+  // Update signature locally AND broadcast to collaborators (shared drafts).
+  function syncSignature(sig: string | null, visible: boolean) {
+    if (sig !== null) setSignature(sig);
+    setSigVisible(visible);
+    if (ydoc) {
+      const meta = ydoc.getMap('meta');
+      if (sig !== null) meta.set('signature', sig);
+      meta.set('sigVisible', visible);
+    }
+  }
 
   function saveDraft(overrides: { to?: string[]; cc?: string[]; bcc?: string[]; subject?: string } = {}) {
     const resolvedTo = overrides.to ?? toChips;
@@ -169,8 +348,11 @@ export default function ComposeForm({
       cc_raw: resolvedCc.join(', ') || undefined,
       bcc_raw: resolvedBcc.join(', ') || undefined,
       subject: resolvedSubject,
-      html_body: editorRef.current?.getHTML(),
-      text_body: editorRef.current?.getText(),
+      // For Yjs-backed team drafts the body is synced via the collab server and
+      // persisted through /api/drafts/[id]/yjs — sending html_body here too would
+      // race with the optimistic lock and cause 409s. Omit body when ydoc is active.
+      html_body: ydoc ? undefined : editorRef.current?.getHTML(),
+      text_body: ydoc ? undefined : editorRef.current?.getText(),
       is_shared: isTeam,
     });
   }
@@ -252,6 +434,43 @@ export default function ComposeForm({
   const bodyHeight = minBodyHeight ?? (mode === 'compose' ? 360 : mode === 'forward' ? 180 : 200);
   const isInline = mode !== 'compose';
   const px = isInline ? 'px-4' : 'px-5';
+
+  async function handleFieldConflictReload() {
+    if (!draft.draftId) return;
+    try {
+      const res = await fetch(`/api/drafts/${draft.draftId}`);
+      if (!res.ok) return;
+      const d = await res.json();
+      if (d.to_raw) setToChips(d.to_raw.split(/[,;]\s*/).map((s: string) => s.trim()).filter(Boolean));
+      if (d.cc_raw !== undefined) {
+        const cc = d.cc_raw ? d.cc_raw.split(/[,;]\s*/).map((s: string) => s.trim()).filter(Boolean) : [];
+        setCcChips(cc);
+        if (cc.length) setShowCc(true);
+      }
+      if (d.bcc_raw !== undefined) {
+        const bcc = d.bcc_raw ? d.bcc_raw.split(/[,;]\s*/).map((s: string) => s.trim()).filter(Boolean) : [];
+        setBccChips(bcc);
+        if (bcc.length) setShowBcc(true);
+      }
+      if (d.subject !== undefined) setSubject(d.subject || '');
+      if (d.mailbox_id) setSelectedMailbox(d.mailbox_id);
+      if (d.updated_at) draft.initServerTimestamp(d.updated_at);
+      draft.dismissConflict();
+    } catch { /* ignore */ }
+  }
+
+  const conflictBanner = draft.conflict ? (
+    <div className="mx-4 mb-2 flex items-center gap-2 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800">
+      <svg className="w-4 h-4 flex-shrink-0 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+      </svg>
+      <span className="flex-1">
+        {draft.conflict.updatedByName ? `${draft.conflict.updatedByName}がフィールドを編集しました` : '他のユーザーがフィールドを編集しました'}
+      </span>
+      <button type="button" onClick={handleFieldConflictReload} className="font-medium text-amber-700 underline hover:text-amber-900">最新版を読み込む</button>
+      <button type="button" onClick={draft.dismissConflict} className="text-amber-400 hover:text-amber-700">✕</button>
+    </div>
+  ) : null;
 
   // ── Shared sections ────────────────────────────────────────────────
 
@@ -373,6 +592,36 @@ export default function ComposeForm({
     </div>
   );
 
+  const presenceAvatars = (ydoc && collaborators.length > 0) ? (
+    <div className="flex -space-x-2 flex-shrink-0">
+      {collaborators.map(c => (
+        <div
+          key={c.clientId}
+          title={`${c.name} が編集中`}
+          className="relative w-6 h-6 rounded-full border-2 overflow-hidden ring-1 ring-white"
+          style={{ borderColor: c.color }}
+        >
+          {/* initial fallback sits underneath; avatar image overlays it (hides on error) */}
+          <span
+            className="absolute inset-0 flex items-center justify-center text-[10px] font-semibold text-white"
+            style={{ backgroundColor: c.color }}
+          >
+            {c.name.charAt(0)}
+          </span>
+          {c.id && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={`/api/users/${c.id}/avatar`}
+              alt={c.name}
+              className="absolute inset-0 w-full h-full object-cover"
+              onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+            />
+          )}
+        </div>
+      ))}
+    </div>
+  ) : null;
+
   const editorSection = (
     <div className={mode === 'compose' ? 'pt-3 pb-2 px-5' : 'p-3'}>
       <RichEditor
@@ -384,6 +633,10 @@ export default function ComposeForm({
           richContentRef.current = editorRef.current?.getHTML() || richContentRef.current;
           saveDraft();
         }}
+        ydoc={ydoc ?? undefined}
+        provider={yjsProvider ?? undefined}
+        currentUser={currentUser}
+        onCollaboratorsChange={setCollaborators}
       />
     </div>
   );
@@ -402,7 +655,7 @@ export default function ComposeForm({
               if (hasSigOptions) {
                 setShowSigPicker(v => !v);
               } else {
-                setSigVisible(v => !v);
+                syncSignature(null, !sigVisible);
               }
             }}
             title="署名を選択"
@@ -418,7 +671,7 @@ export default function ComposeForm({
                 <button
                   key={u.id}
                   type="button"
-                  onClick={() => { setSignature(u.signature); setSigVisible(true); setShowSigPicker(false); }}
+                  onClick={() => { syncSignature(u.signature, true); setShowSigPicker(false); }}
                   className={`w-full text-left px-3 py-1.5 text-sm hover:bg-gray-50 flex items-center gap-2 ${selectedSigUser?.id === u.id && sigVisible ? 'text-blue-700 font-medium' : 'text-gray-700'}`}
                 >
                   {selectedSigUser?.id === u.id && sigVisible && (
@@ -430,7 +683,7 @@ export default function ComposeForm({
               <div className="border-t border-gray-100 mt-1 pt-1">
                 <button
                   type="button"
-                  onClick={() => { setSigVisible(false); setShowSigPicker(false); }}
+                  onClick={() => { syncSignature(null, false); setShowSigPicker(false); }}
                   className={`w-full text-left px-3 py-1.5 text-sm hover:bg-gray-50 flex items-center gap-2 ${!sigVisible ? 'text-blue-700 font-medium' : 'text-gray-500'}`}
                 >
                   {!sigVisible && (
@@ -569,6 +822,7 @@ export default function ComposeForm({
         {overlay}
         <div className="flex-1 overflow-y-auto">
           <div className="pt-3 pb-2">
+            {conflictBanner}
             {fieldsSection}
             {editorSection}
             {signatureSection}
@@ -617,13 +871,17 @@ export default function ComposeForm({
           <span className="font-medium flex-shrink-0">{headerTitle}</span>
           {headerSub && <span className="text-gray-400 text-xs truncate">→ {headerSub}</span>}
         </div>
-        <button onClick={onCancel} className="text-gray-400 hover:text-gray-600 p-1 rounded hover:bg-gray-200 transition-colors">
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-          </svg>
-        </button>
+        <div className="flex items-center gap-2 flex-shrink-0">
+          {presenceAvatars}
+          <button onClick={onCancel} className="text-gray-400 hover:text-gray-600 p-1 rounded hover:bg-gray-200 transition-colors">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
       </div>
 
+      {conflictBanner}
       {fieldsSection}
       {editorSection}
       {signatureSection}

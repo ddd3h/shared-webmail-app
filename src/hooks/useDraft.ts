@@ -13,21 +13,27 @@ export type DraftData = {
   is_shared?: boolean;
 };
 
-export type DraftStatus = 'idle' | 'saving' | 'saved' | 'error';
+export type DraftStatus = 'idle' | 'saving' | 'saved' | 'error' | 'conflict';
+
+export type DraftConflict = {
+  serverUpdatedAt: string;
+  updatedByName: string | null;
+};
 
 const DEBOUNCE_MS = 1000;
 
-export function useDraft(initialDraftId?: string) {
+export function useDraft(initialDraftId?: string, isShared?: boolean) {
   const [draftId, setDraftId] = useState<string | null>(initialDraftId || null);
   const [status, setStatus] = useState<DraftStatus>('idle');
   const [savedAt, setSavedAt] = useState<Date | null>(null);
+  const [conflict, setConflict] = useState<DraftConflict | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingRef = useRef<DraftData | null>(null);
   const savingRef = useRef(false);
-  // Ref mirrors draftId state so saveNow always reads the latest value
-  // without re-creating the callback (eliminates stale-closure duplicate-POST bug).
   const draftIdRef = useRef<string | null>(initialDraftId || null);
   const mountedRef = useRef(true);
+  const serverUpdatedAtRef = useRef<string | null>(null);
+  const lastTypedAtRef = useRef<number>(0);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -37,6 +43,16 @@ export function useDraft(initialDraftId?: string) {
     };
   }, []);
 
+  // Follow externally-resolved draftId (e.g. ComposeForm resolves the shared
+  // collaborative draft after mount). Without this the hook would keep its
+  // initial null and POST a new (duplicate) draft on first save.
+  useEffect(() => {
+    if (initialDraftId && initialDraftId !== draftIdRef.current) {
+      draftIdRef.current = initialDraftId;
+      setDraftId(initialDraftId);
+    }
+  }, [initialDraftId]);
+
   const saveNow = useCallback(async (data: DraftData): Promise<string | null> => {
     if (savingRef.current) return draftIdRef.current;
     savingRef.current = true;
@@ -44,25 +60,41 @@ export function useDraft(initialDraftId?: string) {
     try {
       let id = draftIdRef.current;
       if (id) {
+        const body: Record<string, unknown> = { ...data };
+        // Shared collaborative drafts skip optimistic locking: the body is merged
+        // by Yjs (CRDT) and the /yjs persist endpoint bumps updated_at constantly,
+        // which would make client_updated_at perpetually stale and 409 forever.
+        if (serverUpdatedAtRef.current && !isShared) body.client_updated_at = serverUpdatedAtRef.current;
         const res = await fetch(`/api/drafts/${id}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(data)
+          body: JSON.stringify(body),
         });
+        if (res.status === 409) {
+          const json = await res.json();
+          if (mountedRef.current) {
+            setStatus('conflict');
+            setConflict({ serverUpdatedAt: json.server_updated_at, updatedByName: json.updated_by_name });
+          }
+          return id;
+        }
         if (!res.ok) { if (mountedRef.current) setStatus('error'); return id; }
+        const json = await res.json();
+        serverUpdatedAtRef.current = json.updated_at;
+        if (mountedRef.current) { setStatus('saved'); setSavedAt(new Date()); setConflict(null); }
       } else {
         const res = await fetch('/api/drafts', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(data)
+          body: JSON.stringify(data),
         });
         if (!res.ok) { if (mountedRef.current) setStatus('error'); return null; }
         const json = await res.json();
         id = json.id;
         draftIdRef.current = id ?? null;
-        if (mountedRef.current) setDraftId(id ?? null);
+        if (json.updated_at) serverUpdatedAtRef.current = json.updated_at;
+        if (mountedRef.current) { setDraftId(id ?? null); setStatus('saved'); setSavedAt(new Date()); }
       }
-      if (mountedRef.current) { setStatus('saved'); setSavedAt(new Date()); }
       return id || null;
     } catch {
       if (mountedRef.current) setStatus('error');
@@ -70,9 +102,10 @@ export function useDraft(initialDraftId?: string) {
     } finally {
       savingRef.current = false;
     }
-  }, []); // no deps — reads draftId via draftIdRef, not closure
+  }, [isShared]);
 
   const scheduleSave = useCallback((data: DraftData) => {
+    lastTypedAtRef.current = Date.now();
     pendingRef.current = data;
     if (mountedRef.current) setStatus('idle');
     if (timerRef.current) clearTimeout(timerRef.current);
@@ -99,5 +132,22 @@ export function useDraft(initialDraftId?: string) {
     if (mountedRef.current) { setDraftId(null); setStatus('idle'); }
   }, []);
 
-  return { draftId, status, savedAt, scheduleSave, saveNow, deleteDraft, stripBodyFromPending };
+  const initServerTimestamp = useCallback((iso: string) => {
+    serverUpdatedAtRef.current = iso;
+  }, []);
+
+  const dismissConflict = useCallback(() => setConflict(null), []);
+
+  return {
+    draftId,
+    status,
+    savedAt,
+    conflict,
+    scheduleSave,
+    saveNow,
+    deleteDraft,
+    stripBodyFromPending,
+    initServerTimestamp,
+    dismissConflict,
+  };
 }
