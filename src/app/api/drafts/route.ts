@@ -50,6 +50,19 @@ export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => ({}));
   const { mailbox_id, thread_id, to_raw, cc_raw, bcc_raw, subject, html_body, text_body, is_shared } = body;
 
+  // Shared team drafts are collaborative: one draft per (thread, mailbox) so all
+  // participants join the same Yjs room (webmail-draft-<id>). Return the existing
+  // one instead of creating a duplicate, otherwise each user edits a separate doc.
+  if (is_shared && thread_id && mailbox_id) {
+    const existing = await prisma.drafts.findFirst({
+      where: { is_shared: true, thread_id, mailbox_id },
+      orderBy: { created_at: 'asc' },
+    });
+    if (existing) {
+      return NextResponse.json({ ok: true, id: existing.id, updated_at: existing.updated_at.toISOString() });
+    }
+  }
+
   const draft = await prisma.drafts.create({
     data: {
       user_id: session.userId,
@@ -65,5 +78,5 @@ export async function POST(req: NextRequest) {
     }
   });
 
-  return NextResponse.json({ ok: true, id: draft.id });
+  return NextResponse.json({ ok: true, id: draft.id, updated_at: draft.created_at.toISOString() });
 }

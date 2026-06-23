@@ -1,0 +1,36 @@
+# systemd unit for the collaborative-editing (y-websocket) server.
+#
+# Install:
+#   sudo cp deploy/collab.service /etc/systemd/system/webmail-collab.service
+#   # edit WorkingDirectory / User / EnvironmentFile paths below to match deploy
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now webmail-collab
+#
+# EnvironmentFile must define SESSION_SECRET (same value as the Next.js app),
+# e.g. /opt/webmail-app/.env.collab containing:  SESSION_SECRET=...
+
+[Unit]
+Description=Webmail collaborative draft editing (y-websocket)
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/webmail-app
+ExecStart=/usr/bin/node scripts/collab-server.mjs
+EnvironmentFile=/opt/webmail-app/.env.collab
+Environment=NODE_ENV=production
+Environment=HOST=0.0.0.0
+Environment=COLLAB_PORT=1234
+Restart=always
+RestartSec=2
+User=webmail
+Group=webmail
+# hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/webmail-app
+
+[Install]
+WantedBy=multi-user.target

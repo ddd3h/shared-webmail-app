@@ -73,6 +73,7 @@ model users {
   notification_events        notification_events[]
   audit_logs                 audit_logs[]             @relation("audit_actor")
   drafts                     drafts[]
+  drafts_last_updated        drafts[]                 @relation("draft_updated_by")
   passkey_credentials        passkey_credentials[]
   google_oauth_token         google_oauth_tokens?
   contacts_created           contacts[]
@@ -512,11 +513,13 @@ model drafts {
   quote_header String?
   quote_html   String?
   created_at   DateTime  @default(now())
-  updated_at   DateTime  @updatedAt
+  updated_at    DateTime  @updatedAt
+  updated_by_id String?
 
-  user    users      @relation(fields: [user_id], references: [id])
-  mailbox mailboxes? @relation(fields: [mailbox_id], references: [id])
-  thread  threads?   @relation(fields: [thread_id], references: [id])
+  user      users      @relation(fields: [user_id], references: [id])
+  mailbox   mailboxes? @relation(fields: [mailbox_id], references: [id])
+  thread    threads?   @relation(fields: [thread_id], references: [id])
+  updatedBy users?     @relation("draft_updated_by", fields: [updated_by_id], references: [id])
 }
 
 model pending_bulk_actions {
