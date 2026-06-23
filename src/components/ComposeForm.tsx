@@ -1,5 +1,6 @@
 'use client';
 import { useState, useRef, useEffect, useMemo } from 'react';
+import DOMPurify from 'dompurify';
 import dynamic from 'next/dynamic';
 import type { RichEditorHandle } from './RichEditor';
 import { useDraft } from '@/hooks/useDraft';
@@ -426,7 +427,7 @@ export default function ComposeForm({
       {showQuote && (
         <div className="mt-2 border-l-2 border-gray-200 pl-3">
           <p className="text-xs text-gray-400 mb-1">{quote.header}</p>
-          <div className="prose prose-sm max-w-none text-gray-500 overflow-x-auto text-xs" dangerouslySetInnerHTML={{ __html: quote.html }} />
+          <div className="prose prose-sm max-w-none text-gray-500 overflow-x-auto text-xs" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(quote.html) }} />
         </div>
       )}
     </div>
