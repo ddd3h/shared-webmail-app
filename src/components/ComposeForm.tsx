@@ -69,6 +69,8 @@ export default function ComposeForm({
   const [attachError, setAttachError] = useState('');
   const [sigVisible, setSigVisible] = useState(true);
   const [signature, setSignature] = useState('');
+  const [showSigPicker, setShowSigPicker] = useState(false);
+  const sigPickerRef = useRef<HTMLDivElement>(null);
   const [showQuote, setShowQuote] = useState(false);
   const [showOverlay, setShowOverlay] = useState(false);
   const [sending, setSending] = useState(false);
@@ -118,6 +120,17 @@ export default function ComposeForm({
       .then((users: ReplyUser[]) => { if (Array.isArray(users)) setReplyUsers(users); })
       .catch(() => {});
   }, [selectedMailbox, isTeam]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!showSigPicker) return;
+    function handleClickOutside(e: MouseEvent) {
+      if (sigPickerRef.current && !sigPickerRef.current.contains(e.target as Node)) {
+        setShowSigPicker(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showSigPicker]);
 
   // Load draft data when draftId provided
   useEffect(() => {
@@ -375,41 +388,60 @@ export default function ComposeForm({
     </div>
   );
 
-  const signatureSection = (signature || (isTeam && replyUsers.length > 1)) ? (
+  const hasSigOptions = isTeam && replyUsers.length > 0;
+  const signatureSection = (signature || hasSigOptions) ? (
     <div className={`border-t border-dashed border-gray-200 pt-2 pb-2 ${px} mx-0`}>
-      {isTeam && replyUsers.length > 1 && (
-        <div className="flex items-center gap-1 flex-wrap mb-1">
-          <span className="text-xs text-gray-400 flex-shrink-0">署名:</span>
-          {replyUsers.map(u => (
-            <button
-              key={u.id}
-              type="button"
-              onClick={() => setSignature(u.signature)}
-              className={`px-2 py-0.5 rounded-full text-xs transition-colors ${
-                selectedSigUser?.id === u.id
-                  ? 'bg-blue-100 text-blue-700 font-medium'
-                  : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'
-              }`}
-            >
-              {u.name}
-            </button>
-          ))}
-        </div>
-      )}
       <div className="flex items-start justify-between gap-2">
-        {sigVisible
+        {sigVisible && signature
           ? <p className="text-sm text-gray-900 whitespace-pre-wrap flex-1">{'\n'}{signature}</p>
-          : <span className="flex-1" />}
-        <button
-          type="button"
-          onClick={() => setSigVisible(v => !v)}
-          title={sigVisible ? '署名を外す' : '署名を追加'}
-          className={`flex-shrink-0 p-1 rounded transition-colors ${sigVisible ? 'text-blue-500 hover:text-blue-700' : 'text-gray-300 hover:text-gray-500'}`}
-        >
-          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-          </svg>
-        </button>
+          : <span className="flex-1 text-xs text-gray-300 self-center">署名なし</span>}
+        <div className="relative flex-shrink-0" ref={sigPickerRef}>
+          <button
+            type="button"
+            onClick={() => {
+              if (hasSigOptions) {
+                setShowSigPicker(v => !v);
+              } else {
+                setSigVisible(v => !v);
+              }
+            }}
+            title="署名を選択"
+            className={`p-1 rounded transition-colors ${(sigVisible && signature) ? 'text-blue-500 hover:text-blue-700' : 'text-gray-300 hover:text-gray-500'}`}
+          >
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+            </svg>
+          </button>
+          {showSigPicker && (
+            <div className="absolute right-0 bottom-full mb-1 z-50 bg-white border border-gray-200 rounded-lg shadow-lg py-1 min-w-[140px]">
+              {replyUsers.map(u => (
+                <button
+                  key={u.id}
+                  type="button"
+                  onClick={() => { setSignature(u.signature); setSigVisible(true); setShowSigPicker(false); }}
+                  className={`w-full text-left px-3 py-1.5 text-sm hover:bg-gray-50 flex items-center gap-2 ${selectedSigUser?.id === u.id && sigVisible ? 'text-blue-700 font-medium' : 'text-gray-700'}`}
+                >
+                  {selectedSigUser?.id === u.id && sigVisible && (
+                    <svg className="w-3 h-3 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" /></svg>
+                  )}
+                  <span className={selectedSigUser?.id === u.id && sigVisible ? '' : 'ml-5'}>{u.name}</span>
+                </button>
+              ))}
+              <div className="border-t border-gray-100 mt-1 pt-1">
+                <button
+                  type="button"
+                  onClick={() => { setSigVisible(false); setShowSigPicker(false); }}
+                  className={`w-full text-left px-3 py-1.5 text-sm hover:bg-gray-50 flex items-center gap-2 ${!sigVisible ? 'text-blue-700 font-medium' : 'text-gray-500'}`}
+                >
+                  {!sigVisible && (
+                    <svg className="w-3 h-3 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" /></svg>
+                  )}
+                  <span className={!sigVisible ? '' : 'ml-5'}>署名なし</span>
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   ) : null;
