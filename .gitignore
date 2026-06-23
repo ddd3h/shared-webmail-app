@@ -61,3 +61,7 @@ CLAUDE.md
 
 # notes
 security.md
+
+# ML training artifacts (local workflow only)
+training-data.json
+model.json
