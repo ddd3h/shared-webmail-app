@@ -79,19 +79,26 @@ def extract_tokens_parallel(items):
         return pool.map(build_tokens, items)
 
 
-def build_vocab_and_matrix(token_lists):
-    """Build vocabulary and sparse document-term count matrix."""
-    vocab = {}
+def build_vocab_and_matrix(token_lists, min_df=2):
+    """Build vocabulary and sparse document-term count matrix.
+
+    min_df: minimum document frequency — prunes rare tokens that add noise.
+    """
+    # Count document frequency for each token
+    doc_freq: dict[str, int] = {}
     for tl in token_lists:
-        for t in tl:
-            if t not in vocab:
-                vocab[t] = len(vocab)
+        for t in set(tl):  # unique per document
+            doc_freq[t] = doc_freq.get(t, 0) + 1
+
+    # Only keep tokens appearing in at least min_df documents
+    vocab = {t: i for i, t in enumerate(t for t, c in doc_freq.items() if c >= min_df)}
 
     # Sparse matrix — avoids n_docs × vocab_size dense allocation (would be GBs)
     X = lil_matrix((len(token_lists), len(vocab)), dtype=np.float32)
     for i, tl in enumerate(token_lists):
         for t in tl:
-            X[i, vocab[t]] += 1
+            if t in vocab:
+                X[i, vocab[t]] += 1
     return csr_matrix(X), vocab
 
 

@@ -10,11 +10,14 @@ export async function PUT(req: NextRequest) {
 
   const modelData = await req.text();
 
+  console.log(`[model-upload] received ${modelData.length} chars, starts: ${modelData.slice(0, 80)}`);
+
   let model: { spamCount?: number; hamCount?: number; classes?: unknown };
   try {
     model = JSON.parse(modelData);
-  } catch {
-    return NextResponse.json({ ok: false, error: 'JSONのパースに失敗しました' }, { status: 400 });
+  } catch (e) {
+    console.error('[model-upload] JSON.parse failed:', e);
+    return NextResponse.json({ ok: false, error: `JSONのパースに失敗しました: ${String(e).slice(0, 100)}` }, { status: 400 });
   }
 
   if (!model.classes) {
