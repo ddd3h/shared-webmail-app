@@ -1286,7 +1286,7 @@ function AdminSettingsContent() {
           <div className="card p-5 mt-2 space-y-4">
             <div>
               <h3 className="text-sm font-semibold text-gray-700 mb-1">MLスパム分類器</h3>
-              <p className="text-xs text-gray-500">信頼度 95% 以上のみ自動フラグ。学習はローカルPCで実施してアップロード。</p>
+              <p className="text-xs text-gray-500">信頼度 84% 以上のみ自動フラグ。学習はローカルPCで実施してアップロード。</p>
             </div>
             {mlStats ? (
               <div className="text-xs text-gray-500 space-y-0.5">
