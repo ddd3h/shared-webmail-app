@@ -145,7 +145,7 @@ export async function detectSpam(params: {
   // 6. ML classification — high-confidence only (≥ 0.95)
   try {
     const mlResult = await predictSpam({ fromEmail, subject, textBody, fromName, hasAttachments });
-    if (mlResult?.label === 'spam' && mlResult.confidence >= 0.95) {
+    if (mlResult?.label === 'spam' && mlResult.confidence >= 0.84) {
       return { isSpam: true, reason: 'ml_model' };
     }
   } catch {
