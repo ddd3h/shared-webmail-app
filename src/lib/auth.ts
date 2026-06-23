@@ -9,7 +9,7 @@ const password = { id: '1', secret: secretRaw };
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const cryptoImpl: any = globalThis.crypto;
 
-const INACTIVITY_MS = 4 * 60 * 60 * 1000; // 4 hours
+const INACTIVITY_MS = 12 * 60 * 60 * 1000; // 12 hours
 
 // In production, always require Secure regardless of APP_URL configuration.
 // Relying on the URL string is fragile — a misconfigured URL would silently
