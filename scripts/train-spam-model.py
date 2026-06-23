@@ -14,6 +14,7 @@ Workflow:
   3. Upload: PUT /api/admin/spam-classifier/model (or admin UI)
 """
 
+import gzip
 import json
 import sys
 import math
@@ -104,8 +105,12 @@ def build_vocab_and_matrix(token_lists, min_df=2):
 
 def main():
     print(f"読み込み: {INPUT_FILE}")
-    with open(INPUT_FILE, "r", encoding="utf-8") as f:
-        data = json.load(f)
+    if INPUT_FILE.endswith(".gz"):
+        with gzip.open(INPUT_FILE, "rb") as f:
+            data = json.loads(f.read())
+    else:
+        with open(INPUT_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
 
     items = data.get("items", [])
     if not items:

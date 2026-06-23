@@ -78,7 +78,7 @@ function AdminSettingsContent() {
     const blob = await res.blob();
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url; a.download = 'training-data.json'; a.click();
+    a.href = url; a.download = 'training-data.json.gz'; a.click();
     URL.revokeObjectURL(url);
   }
 
@@ -1301,14 +1301,14 @@ function AdminSettingsContent() {
             <div className="border border-gray-100 rounded-lg p-3 space-y-1">
               <p className="text-xs font-medium text-gray-600">ステップ 1 — 学習データをエクスポート</p>
               <button onClick={handleMlExport} className="btn btn-sm btn-secondary">
-                training-data.json をダウンロード
+                training-data.json.gz をダウンロード
               </button>
             </div>
 
             {/* Step 2: Local training instruction */}
             <div className="border border-gray-100 rounded-lg p-3 space-y-1">
               <p className="text-xs font-medium text-gray-600">ステップ 2 — ローカルPCで学習</p>
-              <pre className="text-xs bg-gray-50 rounded px-3 py-2 text-gray-700 overflow-x-auto">node scripts/train-spam-model.mjs training-data.json</pre>
+              <pre className="text-xs bg-gray-50 rounded px-3 py-2 text-gray-700 overflow-x-auto">python3 scripts/train-spam-model.py training-data.json.gz</pre>
               <p className="text-xs text-gray-400">→ model.json が生成されます</p>
             </div>
 

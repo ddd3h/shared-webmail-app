@@ -64,4 +64,5 @@ security.md
 
 # ML training artifacts (local workflow only)
 training-data.json
+training-data.json.gz
 model.json
