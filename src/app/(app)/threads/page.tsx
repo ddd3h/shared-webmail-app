@@ -544,6 +544,8 @@ function ThreadList() {
     const t = savedTab ?? searchParams.get('tab') ?? 'unread';
     setMailboxView(view);
     setTab(t);
+    const q = searchParams.get('q');
+    if (q) { setSearch(q); setSearchInput(q); }
     setInitialized(true);
   }, []);
 
@@ -628,7 +630,8 @@ function ThreadList() {
     }
     sessionStorage.setItem('threads-scroll', String(window.scrollY));
     sessionStorage.setItem('threads-tab', tab);
-    router.push(`/threads/${id}`);
+    const back = isSearching ? `?q=${encodeURIComponent(search)}` : '';
+    router.push(`/threads/${id}${back ? `?back=${encodeURIComponent(back)}` : ''}`);
   }
 
   function handleCheckboxClick(e: React.MouseEvent, id: string, index: number) {

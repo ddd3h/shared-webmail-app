@@ -235,6 +235,7 @@ function ThreadDetailPageInner({ params }: Props) {
   const [discussPosting, setDiscussPosting] = useState(false);
   const router = useRouter();
   const searchParams = useSearchParams();
+  const backUrl = '/threads' + (searchParams.get('back') ?? '');
   const replyBoxRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const [showScrollTop, setShowScrollTop] = useState(false);
@@ -242,7 +243,7 @@ function ThreadDetailPageInner({ params }: Props) {
 
   const load = useCallback(async () => {
     const tRes = await fetch(`/api/threads/${id}`);
-    if (!tRes.ok) { router.push('/threads'); return; }
+    if (!tRes.ok) { router.push(backUrl); return; }
     const tData = await tRes.json();
 
     // Filter assignable users to those with can_reply on this mailbox (team),
@@ -385,13 +386,13 @@ function ThreadDetailPageInner({ params }: Props) {
 
   async function markUnread() {
     const res = await fetch(`/api/threads/${id}/unread`, { method: 'POST' });
-    if (res.ok) { router.push('/threads'); }
+    if (res.ok) { router.push(backUrl); }
     else flashMsg('error', '未読にするのに失敗しました');
   }
 
   async function markSpam() {
     const res = await fetch(`/api/threads/${id}/spam`, { method: 'POST' });
-    if (res.ok) { router.push('/threads'); }
+    if (res.ok) { router.push(backUrl); }
     else flashMsg('error', '迷惑メールとしてマークできませんでした');
   }
 
@@ -407,7 +408,7 @@ function ThreadDetailPageInner({ params }: Props) {
       : 'このスレッドとすべてのメッセージを完全に削除しますか？\nこの操作は元に戻せません。';
     if (!confirm(confirmMsg)) return;
     const res = await fetch(`/api/threads/${id}/delete`, { method: 'POST' });
-    if (res.ok) { router.push('/threads'); }
+    if (res.ok) { router.push(backUrl); }
     else flashMsg('error', '削除に失敗しました');
   }
 
@@ -506,7 +507,7 @@ function ThreadDetailPageInner({ params }: Props) {
     return (
       <div className="max-w-full text-center py-16">
         <p className="text-gray-500 mb-4">スレッドが見つかりません</p>
-        <Link href="/threads" className="btn btn-primary">一覧に戻る</Link>
+        <Link href={backUrl} className="btn btn-primary">一覧に戻る</Link>
       </div>
     );
   }
@@ -530,14 +531,14 @@ function ThreadDetailPageInner({ params }: Props) {
           {/* Top row: back + subject + reply */}
           <div className="flex items-center gap-3 py-3 border-b border-gray-100">
             <Link
-              href="/threads"
+              href={backUrl}
               onClick={() => sessionStorage.setItem('threads-scroll', '0')}
               className="flex-shrink-0 inline-flex items-center gap-1 text-sm text-gray-400 hover:text-blue-600 transition-colors"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
               </svg>
-              <span className="hidden sm:inline text-xs">受信トレイ</span>
+              <span className="hidden sm:inline text-xs">{searchParams.get('back') ? '検索結果' : '受信トレイ'}</span>
             </Link>
 
             <h1 className="flex-1 min-w-0 text-sm font-semibold text-gray-900 leading-snug line-clamp-1">
