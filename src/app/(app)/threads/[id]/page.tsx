@@ -1034,7 +1034,7 @@ function ThreadDetailPageInner({ params }: Props) {
       <div ref={bottomRef} />
 
       {/* Floating scroll buttons */}
-      <div className={`fixed right-16 flex flex-col gap-2 z-40 ${isTeam ? 'bottom-40' : 'bottom-8'}`}>
+      <div className={`fixed right-16 flex flex-col gap-2 z-40 ${isTeam ? 'bottom-52' : 'bottom-20'}`}>
         {showScrollTop && (
           <button
             onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
