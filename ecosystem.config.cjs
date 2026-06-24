@@ -1,28 +1,31 @@
-// pm2 process config for the collaborative-editing (y-websocket) server.
+// pm2 process config — ONE process runs everything.
 //
-// Usage:
-//   export SESSION_SECRET="<same value as the Next.js app>"
+// The collab (y-websocket) server is started as a child process by the Next.js
+// app via src/instrumentation.ts, so there is no separate pm2 entry for it.
+//
+// Usage (values come from ./.env, no manual env needed):
+//   cd ~/shared-webmail-app
+//   npm run build                 # produces .next/standalone + copies assets
 //   pm2 start ecosystem.config.cjs
-//   pm2 save && pm2 startup   # survive reboots
+//   pm2 save && pm2 startup       # survive reboots
 //
-// SESSION_SECRET is intentionally NOT hard-coded here — export it in the shell
-// (or your secrets manager) before `pm2 start` so it is inherited below.
+// node_args loads ./.env at startup (Node >=20.12 --env-file-if-exists) so the
+// app — and the collab child it spawns — get DATABASE_URL / SESSION_SECRET etc.
 module.exports = {
   apps: [
     {
-      name: 'webmail-collab',
-      script: 'scripts/collab-server.mjs',
+      name: 'shared-webmail-app',
+      script: '.next/standalone/server.js',
       interpreter: 'node',
-      instances: 1,            // y-websocket keeps room state in memory; do NOT cluster
+      node_args: '--env-file-if-exists=.env',
+      cwd: __dirname,
+      instances: 1,
       exec_mode: 'fork',
       autorestart: true,
-      restart_delay: 2000,
-      max_restarts: 50,
       env: {
         NODE_ENV: 'production',
-        HOST: '0.0.0.0',
-        COLLAB_PORT: '1234',
-        SESSION_SECRET: process.env.SESSION_SECRET,
+        PORT: '3000',
+        HOSTNAME: '0.0.0.0',
       },
     },
   ],

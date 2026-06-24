@@ -3,10 +3,9 @@
   "private": true,
   "version": "0.1.0",
   "scripts": {
-    "dev": "concurrently -k -n web,collab -c cyan,green \"next dev\" \"npm run collab\"",
-    "dev:web": "next dev",
+    "dev": "next dev",
     "build": "next build",
-    "postbuild": "cp -r public .next/standalone/ && cp -r .next/static .next/standalone/.next/",
+    "postbuild": "cp -r public .next/standalone/ && cp -r .next/static .next/standalone/.next/ && cp -r .next/server .next/standalone/.next/",
     "start": "node .next/standalone/server.js",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",

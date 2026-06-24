@@ -64,3 +64,23 @@ if (!g.__imapSyncStarted) {
 
   console.log('[cron] IMAP sync started — poll interval from SYNC_DEFAULT_INTERVAL_SEC, IDLE per mailbox');
 }
+
+// Embed the collaborative-editing (y-websocket) server as a child of this Next.js
+// process, so a single `pm2 start shared-webmail-app` brings up everything.
+// It listens on COLLAB_PORT (default 1234); nginx proxies wss://<host>/collab → it.
+if (!g.__collabStarted) {
+  g.__collabStarted = true;
+  import('node:child_process').then(({ spawn }) => {
+    const child = spawn(
+      process.execPath,
+      ['--env-file-if-exists=.env', 'scripts/collab-server.mjs'],
+      { cwd: process.cwd(), stdio: 'inherit', env: process.env },
+    );
+    child.on('error', (e) => console.error('[collab] spawn error:', e));
+    const kill = () => { try { child.kill(); } catch { /* already dead */ } };
+    process.on('exit', kill);
+    process.on('SIGTERM', kill);
+    process.on('SIGINT', kill);
+    console.log('[collab] embedded y-websocket server starting (child process)');
+  }).catch(e => console.error('[collab] failed to start:', e));
+}

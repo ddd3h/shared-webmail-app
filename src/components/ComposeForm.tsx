@@ -29,8 +29,19 @@ async function loadYjsLibs() {
   return { Y: YLib!, WebsocketProvider: WebsocketProviderClass!, IndexeddbPersistence: IndexeddbPersistenceClass! };
 }
 
-// Central collaboration server URL (y-websocket). Defaults to localhost dev server.
-const COLLAB_WS_URL = process.env.NEXT_PUBLIC_COLLAB_WS_URL || 'ws://localhost:1234';
+// Central collaboration server URL (y-websocket). Resolution order:
+//   1. explicit NEXT_PUBLIC_COLLAB_WS_URL
+//   2. derived from NEXT_PUBLIC_APP_URL when it's https (→ wss://<host>/collab)
+//   3. localhost dev fallback
+// This lets production work from just the existing .env (NEXT_PUBLIC_APP_URL).
+const COLLAB_WS_URL = (() => {
+  if (process.env.NEXT_PUBLIC_COLLAB_WS_URL) return process.env.NEXT_PUBLIC_COLLAB_WS_URL;
+  const app = process.env.NEXT_PUBLIC_APP_URL || '';
+  if (app.startsWith('https://')) {
+    return app.replace(/^https:\/\//, 'wss://').replace(/\/+$/, '') + '/collab';
+  }
+  return 'ws://localhost:1234';
+})();
 
 // Module-level room registry — prevents duplicate providers for the same room
 // within the same JS context (StrictMode double-mount, concurrent effects, etc.)
