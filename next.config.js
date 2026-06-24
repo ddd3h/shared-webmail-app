@@ -49,6 +49,10 @@ const nextConfig = {
   // Docker/本番向け: standalone出力でイメージサイズを最小化
   output: 'standalone',
 
+  // Keep ws external so the in-process collab server (src/lib/collab/embedded.ts)
+  // gets a working ws module copied into the standalone node_modules.
+  serverExternalPackages: ['ws'],
+
   // Suppress server identity disclosure
   poweredByHeader: false,
 

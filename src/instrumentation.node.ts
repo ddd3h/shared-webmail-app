@@ -65,28 +65,17 @@ if (!g.__imapSyncStarted) {
   console.log('[cron] IMAP sync started — poll interval from SYNC_DEFAULT_INTERVAL_SEC, IDLE per mailbox');
 }
 
-// Embed the collaborative-editing (y-websocket) server as a child of this Next.js
-// process, so a single `pm2 start shared-webmail-app` brings up everything.
-// It listens on COLLAB_PORT (default 1234); nginx proxies wss://<host>/collab → it.
+// Run the collaborative-editing (y-websocket) server IN-PROCESS, so a single
+// `pm2 start shared-webmail-app` brings up everything. It listens on COLLAB_PORT
+// (default 1234); nginx proxies wss://<host>/collab → it.
 if (!g.__collabStarted) {
   g.__collabStarted = true;
-  Promise.all([import('node:child_process'), import('node:path')]).then(([{ spawn }, path]) => {
-    // In a standalone build the server changes cwd to <root>/.next/standalone,
-    // whose minimal node_modules lacks y-websocket. Resolve back to the project
-    // root (full node_modules + scripts/) so the collab child can load its deps.
+  Promise.all([import('node:path'), import('@/lib/collab/embedded')]).then(([path, { startEmbeddedCollab }]) => {
+    // In a standalone build the server cwd is <root>/.next/standalone, whose
+    // minimal node_modules lacks y-websocket — resolve back to the project root.
     const cwd = process.cwd();
     const standaloneSuffix = path.join('.next', 'standalone');
     const projectRoot = cwd.endsWith(standaloneSuffix) ? path.resolve(cwd, '..', '..') : cwd;
-    const child = spawn(
-      process.execPath,
-      ['--env-file-if-exists=.env', 'scripts/collab-server.mjs'],
-      { cwd: projectRoot, stdio: 'inherit', env: process.env },
-    );
-    child.on('error', (e) => console.error('[collab] spawn error:', e));
-    const kill = () => { try { child.kill(); } catch { /* already dead */ } };
-    process.on('exit', kill);
-    process.on('SIGTERM', kill);
-    process.on('SIGINT', kill);
-    console.log('[collab] embedded y-websocket server starting (child process)');
+    startEmbeddedCollab(projectRoot);
   }).catch(e => console.error('[collab] failed to start:', e));
 }
