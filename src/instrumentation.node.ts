@@ -70,11 +70,17 @@ if (!g.__imapSyncStarted) {
 // It listens on COLLAB_PORT (default 1234); nginx proxies wss://<host>/collab → it.
 if (!g.__collabStarted) {
   g.__collabStarted = true;
-  import('node:child_process').then(({ spawn }) => {
+  Promise.all([import('node:child_process'), import('node:path')]).then(([{ spawn }, path]) => {
+    // In a standalone build the server changes cwd to <root>/.next/standalone,
+    // whose minimal node_modules lacks y-websocket. Resolve back to the project
+    // root (full node_modules + scripts/) so the collab child can load its deps.
+    const cwd = process.cwd();
+    const standaloneSuffix = path.join('.next', 'standalone');
+    const projectRoot = cwd.endsWith(standaloneSuffix) ? path.resolve(cwd, '..', '..') : cwd;
     const child = spawn(
       process.execPath,
       ['--env-file-if-exists=.env', 'scripts/collab-server.mjs'],
-      { cwd: process.cwd(), stdio: 'inherit', env: process.env },
+      { cwd: projectRoot, stdio: 'inherit', env: process.env },
     );
     child.on('error', (e) => console.error('[collab] spawn error:', e));
     const kill = () => { try { child.kill(); } catch { /* already dead */ } };
