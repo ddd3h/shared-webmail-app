@@ -10,9 +10,9 @@ function buildFeatureTokens({ fromEmail, subject = '', textBody = '', fromName, 
   tokens.push(`d:${domain}`, `d:${domain}`, `d:${domain}`);
   tokens.push(`e:${fromEmail.toLowerCase()}`);
   if (fromName) tokens.push(`n:${fromName.toLowerCase().replace(/\s+/g, '_')}`);
-  const subj = subject.replace(/\s+/g, '');
+  const subj = (subject ?? '').replace(/\s+/g, '');
   for (let i = 0; i <= subj.length - 3; i++) { const tri = `s:${subj.slice(i, i+3)}`; tokens.push(tri, tri); }
-  const body = textBody.slice(0, 300).replace(/\s+/g, '');
+  const body = (textBody ?? '').slice(0, 300).replace(/\s+/g, '');
   for (let i = 0; i <= body.length - 3; i++) tokens.push(`b:${body.slice(i, i+3)}`);
   if (hasAttachments) tokens.push('has_attachment');
   return tokens;
