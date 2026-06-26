@@ -54,7 +54,7 @@ function AdminSettingsContent() {
   const [tab, setTab] = useState<'system' | 'mailboxes' | 'users' | 'spam'>('system');
 
   // Spam senders state
-  const [spamSenders, setSpamSenders] = useState<{ id: string; type: string; address: string; note: string | null; created_at: string; creator: { name: string } }[]>([]);
+  const [spamSenders, setSpamSenders] = useState<{ id: string; type: string; address: string; note: string | null; created_at: string; creator: { name: string } | null }[]>([]);
   const [spamTab, setSpamTab] = useState<'blocklist' | 'whitelist'>('blocklist');
   const [spamNewAddress, setSpamNewAddress] = useState('');
   const [spamNewNote, setSpamNewNote] = useState('');
@@ -552,6 +552,11 @@ function AdminSettingsContent() {
               <div>
                 <label className="label">同期間隔（秒）</label>
                 <input type="number" className="input" value={getVal('SYNC_DEFAULT_INTERVAL_SEC')} onChange={e => setVal('SYNC_DEFAULT_INTERVAL_SEC', e.target.value)} placeholder="180" />
+              </div>
+              <div>
+                <label className="label">迷惑メール ML 判定閾値（delta/n）</label>
+                <input type="number" step="0.1" min="0" className="input" value={getVal('SPAM_DELTA_THRESHOLD')} onChange={e => setVal('SPAM_DELTA_THRESHOLD', e.target.value)} placeholder="0.5" />
+                <p className="text-xs text-gray-400 mt-1">1トークンあたりの平均 log-odds 差。大きいほど保守的（誤検知が減る）。デフォルト: 0.5</p>
               </div>
               <div>
                 <label className="label">署名テンプレート</label>
@@ -1263,7 +1268,7 @@ function AdminSettingsContent() {
                         <tr key={item.id} className="hover:bg-gray-50 transition-colors">
                           <td className="px-4 py-3 font-mono text-gray-900 text-xs">{item.address}</td>
                           <td className="px-4 py-3 text-gray-500 text-xs">{item.note || '—'}</td>
-                          <td className="px-4 py-3 text-gray-500 text-xs">{item.creator.name}</td>
+                          <td className="px-4 py-3 text-gray-500 text-xs">{item.creator?.name ?? 'ML'}</td>
                           <td className="px-4 py-3 text-gray-400 text-xs">{new Date(item.created_at).toLocaleDateString('ja-JP')}</td>
                           <td className="px-4 py-3 text-right">
                             <button

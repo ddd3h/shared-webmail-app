@@ -214,15 +214,12 @@ async function syncFolder(
                 where: { id: threadId },
                 data: { is_spam: true, spam_reason: spamResult.reason, spam_flagged_at: new Date() }
               });
-              if (spamResult.reason === 'ml_model' && fromEmail) {
-                const adminUser = await prisma.users.findFirst({ where: { role: 'admin' }, select: { id: true } });
-                if (adminUser) {
-                  await prisma.spam_senders.upsert({
-                    where: { type_address: { type: 'blocklist', address: fromEmail.toLowerCase() } },
-                    create: { type: 'blocklist', address: fromEmail.toLowerCase(), note: 'ML自動判定', created_by_id: adminUser.id },
-                    update: {},
-                  }).catch(() => {});
-                }
+              if (fromEmail && spamResult.reason !== 'blocklist') {
+                await prisma.spam_senders.upsert({
+                  where: { type_address: { type: 'blocklist', address: fromEmail.toLowerCase() } },
+                  create: { type: 'blocklist', address: fromEmail.toLowerCase(), note: 'ML自動判定', created_by_id: undefined },
+                  update: {},
+                }).catch(() => {});
               }
             }
           } catch {

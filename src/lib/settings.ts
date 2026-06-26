@@ -33,7 +33,8 @@ export type AppSettingKey =
   | 'NOTIFY_FROM_EMAIL'
   | 'NOTIFY_ADMIN_EMAIL'
   | 'BULK_DELETE_THRESHOLD'
-  | 'MAILER_ORG_NAME';
+  | 'MAILER_ORG_NAME'
+  | 'SPAM_DELTA_THRESHOLD';
 
 export const SECRET_SETTING_KEYS = new Set<AppSettingKey>([
   'VAPID_PRIVATE_KEY',
@@ -80,6 +81,7 @@ export const MANAGED_SETTING_KEYS: AppSettingKey[] = [
   'NOTIFY_FROM_EMAIL',
   'NOTIFY_ADMIN_EMAIL',
   'MAILER_ORG_NAME',
+  'SPAM_DELTA_THRESHOLD',
 ];
 
 export async function getSetting(key: AppSettingKey) {

@@ -25,6 +25,7 @@
 | [13_known_issues_and_todos.md](./13_known_issues_and_todos.md) | 既知の課題・TODO | 未実装箇所・リスク・優先度 |
 | [14_change_guide.md](./14_change_guide.md) | 変更ガイド | 画面追加・API追加・DB変更時の手順 |
 | [15_draft_saving.md](./15_draft_saving.md) | 下書き保存機能 | デバウンス保存の仕組み・コラボ連携・既知バグ一覧 |
+| [16_spam_detection.md](./16_spam_detection.md) | 迷惑メール検出システム | 検出パイプライン・MLモデル・ブロックリスト・既知の制限 |
 
 ### 付録
 

@@ -1,6 +1,7 @@
 import dns from 'dns/promises';
 import { prisma } from '@/lib/db';
 import { predictSpam } from '@/lib/spam-classifier';
+import { getSetting } from '@/lib/settings';
 
 // --- IP helpers ---
 
@@ -142,11 +143,16 @@ export async function detectSpam(params: {
     return { isSpam: true, reason: 'heuristic' };
   }
 
-  // 6. ML classification — high-confidence only (≥ 0.95)
+  // 6. ML classification — delta/n threshold from settings (default 0.5)
   try {
+    const thresholdStr = await getSetting('SPAM_DELTA_THRESHOLD');
+    const threshold = thresholdStr ? parseFloat(thresholdStr) : 0.5;
     const mlResult = await predictSpam({ fromEmail, subject, textBody, fromName, hasAttachments });
-    if (mlResult?.label === 'spam' && mlResult.confidence >= 0.84) {
-      return { isSpam: true, reason: 'ml_model' };
+    if (mlResult?.label === 'spam') {
+      const deltaNormalized = mlResult.delta / mlResult.n;
+      if (deltaNormalized >= threshold) {
+        return { isSpam: true, reason: 'ml_model' };
+      }
     }
   } catch {
     // ML failure must not block mail sync

@@ -1,6 +1,6 @@
 import { prisma } from '@/lib/db';
 
-type SpamPrediction = { label: 'spam' | 'ham'; confidence: number } | null;
+type SpamPrediction = { label: 'spam' | 'ham'; delta: number; n: number } | null;
 
 type ModelJson = {
   classes: string[];
@@ -61,11 +61,9 @@ function predict(model: ModelJson, tokens: string[]): SpamPrediction {
 
   const bestIdx = logScores[0] >= logScores[1] ? 0 : 1;
   const secondIdx = 1 - bestIdx;
+  const delta = logScores[bestIdx] - logScores[secondIdx];
 
-  // Softmax: 1 / (1 + exp(second - best))
-  const confidence = 1 / (1 + Math.exp(logScores[secondIdx] - logScores[bestIdx]));
-
-  return { label: classes[bestIdx] as 'spam' | 'ham', confidence };
+  return { label: classes[bestIdx] as 'spam' | 'ham', delta, n: tokens.length };
 }
 
 async function loadModel(): Promise<ModelJson | null> {

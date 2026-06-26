@@ -30,8 +30,8 @@ function predict(model, tokens) {
   });
   const bestIdx = logScores[0] >= logScores[1] ? 0 : 1;
   const secondIdx = 1 - bestIdx;
-  const confidence = 1 / (1 + Math.exp(logScores[secondIdx] - logScores[bestIdx]));
-  return { label: classes[bestIdx], confidence };
+  const delta = logScores[bestIdx] - logScores[secondIdx];
+  return { label: classes[bestIdx], delta, n: tokens.length };
 }
 
 async function main() {
@@ -57,22 +57,32 @@ async function main() {
     const msg = t.messages[0];
     if (!msg) continue;
     const tokens = buildFeatureTokens({ fromEmail: msg.from_email, subject: msg.subject, textBody: msg.text_body, fromName: msg.from_name, hasAttachments: msg.has_attachments });
-    const { label, confidence } = predict(model, tokens);
+    const { label, delta, n } = predict(model, tokens);
+    const deltaNorm = delta / n;
     const isCorrect = label === 'spam';
     if (isCorrect) correctCount++;
-    if (isCorrect && confidence >= 0.95) highConfidenceCount++;
-    rows.push({ subject: (t.subject || '').slice(0, 40), from: msg.from_email.slice(0, 30), reason: t.spam_reason ?? '—', predicted: label, confidence: (confidence * 100).toFixed(1) + '%', ok: isCorrect ? '✓' : '✗' });
+    rows.push({ subject: (t.subject || '').slice(0, 38), from: msg.from_email.slice(0, 28), reason: t.spam_reason ?? '—', predicted: label, delta: delta.toFixed(1), n: String(n), deltaNorm: deltaNorm.toFixed(2), ok: isCorrect ? '✓' : '✗' });
   }
 
-  const col = (s, n) => String(s).padEnd(n);
-  const header = col('', 2) + col('件名', 42) + col('送信者', 32) + col('登録理由', 14) + col('予測', 6) + col('信頼度', 8);
+  const col = (s, w) => String(s).padEnd(w);
+  const header = col('', 2) + col('件名', 40) + col('送信者', 30) + col('登録理由', 14) + col('予測', 6) + col('delta', 10) + col('n', 6) + col('delta/n', 9);
   console.log(header);
   console.log('-'.repeat(header.length));
-  for (const r of rows) console.log(col(r.ok, 2) + col(r.subject, 42) + col(r.from, 32) + col(r.reason, 14) + col(r.predicted, 6) + col(r.confidence, 8));
+  for (const r of rows) console.log(col(r.ok, 2) + col(r.subject, 40) + col(r.from, 30) + col(r.reason, 14) + col(r.predicted, 6) + col(r.delta, 10) + col(r.n, 6) + col(r.deltaNorm, 9));
 
   const total = rows.length;
   console.log(`\n正解率: ${correctCount}/${total} (${((correctCount/total)*100).toFixed(1)}%)`);
-  console.log(`信頼度95%以上で正解: ${highConfidenceCount}/${total} (${((highConfidenceCount/total)*100).toFixed(1)}%)`);
+
+  const spamRows = rows.filter(r => r.predicted === 'spam');
+  const hamRows  = rows.filter(r => r.predicted === 'ham');
+  if (spamRows.length) {
+    const avg = spamRows.reduce((s, r) => s + parseFloat(r.deltaNorm), 0) / spamRows.length;
+    console.log(`spam 判定の delta/n 平均: ${avg.toFixed(2)} (n=${spamRows.length})`);
+  }
+  if (hamRows.length) {
+    const avg = hamRows.reduce((s, r) => s + parseFloat(r.deltaNorm), 0) / hamRows.length;
+    console.log(`ham  判定の delta/n 平均: ${avg.toFixed(2)} (n=${hamRows.length}) ← 誤検知候補`);
+  }
 }
 
 main().catch(console.error).finally(() => prisma.$disconnect());

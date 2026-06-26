@@ -539,10 +539,10 @@ model spam_senders {
   type          String   // 'whitelist' | 'blocklist'
   address       String   // email address or domain (e.g. "spam.com")
   note          String?
-  created_by_id String
+  created_by_id String?
   created_at    DateTime @default(now())
 
-  creator users @relation(fields: [created_by_id], references: [id])
+  creator users? @relation(fields: [created_by_id], references: [id])
 
   @@unique([type, address])
   @@index([type, address])
