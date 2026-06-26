@@ -98,9 +98,9 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
   const session = await getSession();
   requireAuth(session);
 
-  const draft = await prisma.drafts.findUnique({ where: { id } });
+  const { draft, accessible } = await checkAccess(id, session!.userId, true);
   if (!draft) return NextResponse.json({ error: 'not_found' }, { status: 404 });
-  if (draft.user_id !== session!.userId) return NextResponse.json({ error: 'forbidden' }, { status: 403 });
+  if (!accessible) return NextResponse.json({ error: 'forbidden' }, { status: 403 });
 
   await prisma.drafts.delete({ where: { id } });
   return NextResponse.json({ ok: true });
