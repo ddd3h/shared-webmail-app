@@ -106,6 +106,21 @@ function escapeHtml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
+function linkifyText(text: string): (string | JSX.Element)[] {
+  const parts: (string | JSX.Element)[] = [];
+  const re = /https?:\/\/\S+/g;
+  let lastIndex = 0;
+  let match;
+  while ((match = re.exec(text)) !== null) {
+    const url = match[0].replace(/[.,!?;:'")\]>]+$/, '');
+    if (match.index > lastIndex) parts.push(text.slice(lastIndex, match.index));
+    parts.push(<a key={match.index} href={url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline break-all">{url}</a>);
+    lastIndex = match.index + match[0].length;
+  }
+  if (lastIndex < text.length) parts.push(text.slice(lastIndex));
+  return parts;
+}
+
 function MessageBody({ html, text }: { html: string | null; text: string | null }) {
   const [quoteExpanded, setQuoteExpanded] = useState(false);
 
@@ -156,14 +171,14 @@ ${quoteHideStyle}
   if (text) {
     const boundary = findTextQuoteBoundary(text);
     if (boundary === null) {
-      return <pre className="whitespace-pre-wrap text-sm text-gray-700 font-sans leading-relaxed">{text}</pre>;
+      return <pre className="whitespace-pre-wrap text-sm text-gray-700 font-sans leading-relaxed">{linkifyText(text)}</pre>;
     }
     const lines = text.split('\n');
     const main = lines.slice(0, boundary).join('\n').trimEnd();
     const quote = lines.slice(boundary).join('\n');
     return (
       <div>
-        <pre className="whitespace-pre-wrap text-sm text-gray-700 font-sans leading-relaxed">{main}</pre>
+        <pre className="whitespace-pre-wrap text-sm text-gray-700 font-sans leading-relaxed">{linkifyText(main)}</pre>
         <button
           onClick={() => setQuoteExpanded(v => !v)}
           className="mt-2 inline-flex items-center gap-1.5 px-2.5 py-1 text-xs text-gray-500 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors"
@@ -173,7 +188,7 @@ ${quoteHideStyle}
         </button>
         {quoteExpanded && (
           <pre className="mt-2 whitespace-pre-wrap text-sm text-gray-400 font-sans leading-relaxed border-l-2 border-gray-200 pl-3">
-            {quote}
+            {linkifyText(quote)}
           </pre>
         )}
       </div>

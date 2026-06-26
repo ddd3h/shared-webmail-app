@@ -110,6 +110,7 @@ export default function ComposeForm({
   const [subject, setSubject] = useState(initialSubject);
   const [files, setFiles] = useState<File[]>([]);
   const [attachError, setAttachError] = useState('');
+  const [isDragging, setIsDragging] = useState(false);
   const [sigVisible, setSigVisible] = useState(true);
   const [signature, setSignature] = useState('');
   const [showSigPicker, setShowSigPicker] = useState(false);
@@ -370,6 +371,20 @@ export default function ComposeForm({
 
   const MAX_FILE_BYTES = 10 * 1024 * 1024; // 10 MB per file
   const MAX_FILES = 10;
+
+  function addFiles(list: File[]) {
+    const oversized = list.filter(f => f.size > MAX_FILE_BYTES);
+    if (oversized.length > 0) { setAttachError(`「${oversized[0].name}」は10MBを超えています`); return; }
+    if (files.length + list.length > MAX_FILES) { setAttachError(`添付ファイルは${MAX_FILES}件までです`); return; }
+    setAttachError('');
+    setFiles(prev => [...prev, ...list]);
+  }
+
+  const dragHandlers = {
+    onDragOver: (e: React.DragEvent) => { e.preventDefault(); setIsDragging(true); },
+    onDragLeave: (e: React.DragEvent) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setIsDragging(false); },
+    onDrop: (e: React.DragEvent) => { e.preventDefault(); setIsDragging(false); addFiles(Array.from(e.dataTransfer.files)); },
+  };
 
   function validate() {
     if (!toChips.length) return '宛先を入力してください';
@@ -787,6 +802,12 @@ export default function ComposeForm({
     </button>
   );
 
+  const dragOverlay = isDragging && (
+    <div className="absolute inset-0 z-50 bg-blue-50/90 border-2 border-dashed border-blue-400 rounded-xl flex items-center justify-center pointer-events-none">
+      <p className="text-blue-600 font-semibold text-sm">ファイルをドロップして添付</p>
+    </div>
+  );
+
   const fileInput = (
     <label className={`cursor-pointer flex items-center gap-1 text-xs text-gray-500 hover:text-gray-700 p-1.5 rounded-lg hover:bg-gray-200 transition-colors ${!isInline ? 'border border-gray-200 bg-white' : ''}`} title="ファイル添付">
       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -795,20 +816,7 @@ export default function ComposeForm({
       <span className={isInline ? 'hidden md:inline' : 'hidden sm:inline'}>ファイル添付</span>
       <input type="file" multiple className="sr-only" onChange={e => {
         if (!e.target.files) return;
-        const added = Array.from(e.target.files);
-        const oversized = added.filter(f => f.size > MAX_FILE_BYTES);
-        if (oversized.length > 0) {
-          setAttachError(`「${oversized[0].name}」は10MBを超えています`);
-          e.target.value = '';
-          return;
-        }
-        if (files.length + added.length > MAX_FILES) {
-          setAttachError(`添付ファイルは${MAX_FILES}件までです`);
-          e.target.value = '';
-          return;
-        }
-        setAttachError('');
-        setFiles(prev => [...prev, ...added]);
+        addFiles(Array.from(e.target.files));
         e.target.value = '';
       }} />
     </label>
@@ -831,26 +839,29 @@ export default function ComposeForm({
       <>
         {newContactsPrompt}
         {overlay}
-        <div className="flex-1 overflow-y-auto">
-          <div className="pt-3 pb-2">
-            {conflictBanner}
-            {fieldsSection}
-            {editorSection}
-            {signatureSection}
-            {attachmentsSection}
-            {error && <p className="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2 mb-3 mx-5">{error}</p>}
-          </div>
-        </div>
-        <div className="border-t border-gray-200 flex-shrink-0 bg-gray-50 sm:rounded-b-2xl" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
-          <div className="flex items-center justify-end px-4 pt-2 pb-0 sm:hidden">
-            {syncStatus}
-          </div>
-          <div className="flex items-center justify-between px-4 py-2.5">
-            <div className="flex items-center gap-1.5">
-              {fileInput}
-              <span className="hidden sm:block">{syncStatus}</span>
+        <div className="relative flex flex-col flex-1 min-h-0" {...dragHandlers}>
+          {dragOverlay}
+          <div className="flex-1 overflow-y-auto">
+            <div className="pt-3 pb-2">
+              {conflictBanner}
+              {fieldsSection}
+              {editorSection}
+              {signatureSection}
+              {attachmentsSection}
+              {error && <p className="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2 mb-3 mx-5">{error}</p>}
             </div>
-            <div className="flex items-center gap-1.5">{aiBtn}{cancelBtn}{sendBtn}</div>
+          </div>
+          <div className="border-t border-gray-200 flex-shrink-0 bg-gray-50 sm:rounded-b-2xl" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
+            <div className="flex items-center justify-end px-4 pt-2 pb-0 sm:hidden">
+              {syncStatus}
+            </div>
+            <div className="flex items-center justify-between px-4 py-2.5">
+              <div className="flex items-center gap-1.5">
+                {fileInput}
+                <span className="hidden sm:block">{syncStatus}</span>
+              </div>
+              <div className="flex items-center gap-1.5">{aiBtn}{cancelBtn}{sendBtn}</div>
+            </div>
           </div>
         </div>
       </>
@@ -872,7 +883,8 @@ export default function ComposeForm({
   const headerSub = mode === 'reply' ? (toChips[0] || '') : `Fw: ${subject}`;
 
   return (
-    <div className={`card overflow-hidden shadow-lg ${accent}`}>
+    <div className={`relative card overflow-hidden shadow-lg ${accent}`} {...dragHandlers}>
+      {dragOverlay}
       {newContactsPrompt}
       {overlay}
       {/* Header */}
