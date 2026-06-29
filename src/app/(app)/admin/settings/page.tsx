@@ -25,6 +25,32 @@ const DEFAULT_MB_FORM: MbForm = {
   mattermost_channel_id: '',
   sync_mode: 'poll',
 };
+type ActiveSession = {
+  id: string;
+  ip_address: string;
+  user_agent: string | null;
+  network_type: string;
+  expires_at: string;
+  last_activity_at: string;
+  created_at: string;
+  user: { id: string; name: string; email: string } | null;
+};
+
+type LoginLog = {
+  id: string;
+  email: string;
+  ip_address: string;
+  user_agent: string | null;
+  success: boolean;
+  failure_reason: string | null;
+  network_type: string | null;
+  org_name: string | null;
+  country: string | null;
+  city: string | null;
+  created_at: string;
+  user: { name: string; email: string } | null;
+};
+
 type MailboxFull = {
   id: string;
   type: 'personal' | 'team';
@@ -51,7 +77,7 @@ function AdminSettingsContent() {
   const [mbLoading, setMbLoading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [msg, setMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
-  const [tab, setTab] = useState<'system' | 'mailboxes' | 'users' | 'spam'>('system');
+  const [tab, setTab] = useState<'system' | 'mailboxes' | 'users' | 'spam' | 'login_logs'>('system');
 
   // Spam senders state
   const [spamSenders, setSpamSenders] = useState<{ id: string; type: string; address: string; note: string | null; created_at: string; creator: { name: string } | null }[]>([]);
@@ -66,6 +92,39 @@ function AdminSettingsContent() {
   const [mlUploading, setMlUploading] = useState(false);
   const [mlMsg, setMlMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [mlFile, setMlFile] = useState<File | null>(null);
+
+  const [activeSessions, setActiveSessions] = useState<ActiveSession[]>([]);
+  const [sessionsLoading, setSessionsLoading] = useState(false);
+  const [revokingSession, setRevokingSession] = useState<string | null>(null);
+
+  async function loadActiveSessions() {
+    setSessionsLoading(true);
+    const data = await fetch('/api/admin/sessions').then(r => r.json()).catch(() => ({ items: [] }));
+    setActiveSessions(data.items || []);
+    setSessionsLoading(false);
+  }
+
+  async function revokeSession(id: string) {
+    if (!confirm('このセッションを強制終了しますか？')) return;
+    setRevokingSession(id);
+    const res = await fetch(`/api/admin/sessions/${id}`, { method: 'DELETE' });
+    setRevokingSession(null);
+    if (res.ok) { loadActiveSessions(); showMsg('success', 'セッションを遮断しました'); }
+    else showMsg('error', 'セッション遮断に失敗しました');
+  }
+
+  const [loginLogs, setLoginLogs] = useState<LoginLog[]>([]);
+  const [loginLogsLoading, setLoginLogsLoading] = useState(false);
+  const [loginLogsSearch, setLoginLogsSearch] = useState('');
+
+  async function loadLoginLogs(q = '') {
+    setLoginLogsLoading(true);
+    const params = new URLSearchParams({ limit: '100' });
+    if (q) params.set('q', q);
+    const data = await fetch(`/api/admin/login-logs?${params}`).then(r => r.json()).catch(() => ({ items: [] }));
+    setLoginLogs(data.items || []);
+    setLoginLogsLoading(false);
+  }
 
   async function loadMlStats() {
     const res = await fetch('/api/admin/spam-classifier');
@@ -513,6 +572,11 @@ function AdminSettingsContent() {
         <path strokeLinecap="round" strokeLinejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
       </svg>
     )},
+    { id: 'login_logs', label: 'ログイン履歴', icon: (
+      <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+      </svg>
+    )},
   ] as const;
 
   return (
@@ -534,7 +598,7 @@ function AdminSettingsContent() {
           {tabs.map(t => (
             <button
               key={t.id}
-              onClick={() => { setTab(t.id); if (t.id === 'mailboxes') loadMailboxes(); if (t.id === 'spam') { loadSpamSenders(); loadMlStats(); } }}
+              onClick={() => { setTab(t.id); if (t.id === 'mailboxes') loadMailboxes(); if (t.id === 'spam') { loadSpamSenders(); loadMlStats(); } if (t.id === 'login_logs') { loadLoginLogs(); loadActiveSessions(); } }}
               title={t.label}
               className={`pb-3 text-sm font-medium border-b-2 transition-colors flex items-center justify-center md:justify-start gap-1.5 flex-1 md:flex-none ${
                 tab === t.id ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'
@@ -1368,6 +1432,176 @@ function AdminSettingsContent() {
             {mlMsg && (
               <p className={`text-xs ${mlMsg.type === 'success' ? 'text-green-600' : 'text-red-600'}`}>{mlMsg.text}</p>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Login Logs Tab */}
+      {tab === 'login_logs' && (
+        <div className="space-y-6 max-w-5xl">
+
+          {/* Active Sessions */}
+          <div className="card p-5 space-y-3">
+            <div className="flex items-center justify-between">
+              <h2 className="font-semibold text-gray-900 text-sm">アクティブセッション</h2>
+              <button onClick={loadActiveSessions} className="text-xs text-gray-500 hover:text-gray-700 px-2 py-1 rounded hover:bg-gray-100">更新</button>
+            </div>
+            {sessionsLoading ? (
+              <p className="text-xs text-gray-400 py-4 text-center">読み込み中…</p>
+            ) : activeSessions.length === 0 ? (
+              <p className="text-xs text-gray-400 py-4 text-center">アクティブセッションなし</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm min-w-[600px]">
+                  <thead className="bg-gray-50 border-b border-gray-200">
+                    <tr>
+                      <th className="text-left px-3 py-2 text-xs font-semibold text-gray-500 whitespace-nowrap">ユーザー</th>
+                      <th className="text-left px-3 py-2 text-xs font-semibold text-gray-500 whitespace-nowrap">IP</th>
+                      <th className="text-left px-3 py-2 text-xs font-semibold text-gray-500 whitespace-nowrap">ネットワーク</th>
+                      <th className="text-left px-3 py-2 text-xs font-semibold text-gray-500 whitespace-nowrap">ログイン</th>
+                      <th className="text-left px-3 py-2 text-xs font-semibold text-gray-500 whitespace-nowrap">有効期限</th>
+                      <th />
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {activeSessions.map(s => {
+                      const networkLabels: Record<string, { label: string; cls: string }> = {
+                        public:      { label: '公共', cls: 'bg-red-100 text-red-700' },
+                        semi_public: { label: '学校/病院', cls: 'bg-amber-100 text-amber-700' },
+                        hosting:     { label: 'VPN/DC', cls: 'bg-purple-100 text-purple-700' },
+                        residential: { label: '自宅/オフィス', cls: 'bg-gray-100 text-gray-600' },
+                      };
+                      const nw = networkLabels[s.network_type] ?? { label: s.network_type, cls: 'bg-gray-100 text-gray-600' };
+                      return (
+                        <tr key={s.id} className="hover:bg-gray-50 transition-colors">
+                          <td className="px-3 py-2.5 text-xs whitespace-nowrap">
+                            <div className="font-medium text-gray-900">{s.user?.name ?? '—'}</div>
+                            <div className="text-gray-400">{s.user?.email ?? '—'}</div>
+                          </td>
+                          <td className="px-3 py-2.5 font-mono text-xs text-gray-600 whitespace-nowrap">{s.ip_address}</td>
+                          <td className="px-3 py-2.5 whitespace-nowrap">
+                            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${nw.cls}`}>{nw.label}</span>
+                          </td>
+                          <td className="px-3 py-2.5 text-xs text-gray-500 whitespace-nowrap">
+                            {new Date(s.created_at).toLocaleString('ja-JP', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                          </td>
+                          <td className="px-3 py-2.5 text-xs text-gray-500 whitespace-nowrap">
+                            {new Date(s.expires_at).toLocaleString('ja-JP', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                          </td>
+                          <td className="px-3 py-2.5 text-right whitespace-nowrap">
+                            <button
+                              onClick={() => revokeSession(s.id)}
+                              disabled={revokingSession === s.id}
+                              className="text-xs text-red-500 hover:text-red-700 hover:bg-red-50 px-2 py-1 rounded transition-colors disabled:opacity-50"
+                            >
+                              {revokingSession === s.id ? '処理中…' : '遮断'}
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          {/* Login History */}
+          <div>
+          <div className="flex items-center gap-3">
+            <input
+              type="search"
+              placeholder="メール・IP・組織・場所で検索…"
+              className="input text-sm flex-1 max-w-sm"
+              value={loginLogsSearch}
+              onChange={e => { setLoginLogsSearch(e.target.value); loadLoginLogs(e.target.value); }}
+            />
+            <button onClick={() => loadLoginLogs(loginLogsSearch)} className="btn btn-sm text-sm px-3 py-1.5 border border-gray-300 rounded-lg text-gray-600 hover:bg-gray-50">
+              更新
+            </button>
+          </div>
+
+          {loginLogsLoading ? (
+            <p className="text-sm text-gray-400 py-8 text-center">読み込み中…</p>
+          ) : loginLogs.length === 0 ? (
+            <p className="text-sm text-gray-400 py-8 text-center">ログインログがありません</p>
+          ) : (
+            <div className="card overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm min-w-[700px]">
+                  <thead className="bg-gray-50 border-b border-gray-200">
+                    <tr>
+                      <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 whitespace-nowrap">日時</th>
+                      <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 whitespace-nowrap">結果</th>
+                      <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 whitespace-nowrap">ユーザー</th>
+                      <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 whitespace-nowrap">IP</th>
+                      <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 whitespace-nowrap">場所</th>
+                      <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 whitespace-nowrap">組織</th>
+                      <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 whitespace-nowrap">ネットワーク</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {loginLogs.map(log => {
+                      const networkLabels: Record<string, { label: string; cls: string }> = {
+                        public:      { label: '公共 (30分)', cls: 'bg-red-100 text-red-700' },
+                        semi_public: { label: '学校/病院 (1時間)', cls: 'bg-amber-100 text-amber-700' },
+                        hosting:     { label: 'VPN/DC (1時間)', cls: 'bg-purple-100 text-purple-700' },
+                        residential: { label: '自宅/オフィス (12時間)', cls: 'bg-gray-100 text-gray-600' },
+                      };
+                      const failureLabels: Record<string, string> = {
+                        wrong_password: 'PW誤り',
+                        user_not_found: 'ユーザー未登録',
+                        rate_limited:   'レート制限',
+                      };
+                      const nw = log.network_type ? (networkLabels[log.network_type] ?? { label: log.network_type, cls: 'bg-gray-100 text-gray-600' }) : null;
+                      return (
+                        <tr key={log.id} className="hover:bg-gray-50 transition-colors">
+                          <td className="px-4 py-2.5 text-xs text-gray-500 whitespace-nowrap">
+                            {new Date(log.created_at).toLocaleString('ja-JP', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                          </td>
+                          <td className="px-4 py-2.5 whitespace-nowrap">
+                            {log.success ? (
+                              <span className="inline-flex items-center gap-1 text-xs text-emerald-600 font-medium">
+                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block" />成功
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 text-xs text-red-600 font-medium">
+                                <span className="w-1.5 h-1.5 rounded-full bg-red-500 inline-block" />失敗
+                                {log.failure_reason && (
+                                  <span className="ml-1 text-xs bg-red-50 text-red-600 px-1.5 py-0.5 rounded">
+                                    {failureLabels[log.failure_reason] ?? log.failure_reason}
+                                  </span>
+                                )}
+                              </span>
+                            )}
+                          </td>
+                          <td className="px-4 py-2.5 text-xs whitespace-nowrap">
+                            {log.user ? (
+                              <span className="text-gray-900">{log.user.name}</span>
+                            ) : (
+                              <span className="text-gray-400 font-mono">{log.email}</span>
+                            )}
+                          </td>
+                          <td className="px-4 py-2.5 font-mono text-xs text-gray-600 whitespace-nowrap">{log.ip_address}</td>
+                          <td className="px-4 py-2.5 text-xs text-gray-500 whitespace-nowrap">
+                            {[log.city, log.country].filter(Boolean).join(', ') || '—'}
+                          </td>
+                          <td className="px-4 py-2.5 text-xs text-gray-500 max-w-[160px] truncate whitespace-nowrap">{log.org_name || '—'}</td>
+                          <td className="px-4 py-2.5 whitespace-nowrap">
+                            {nw ? (
+                              <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${nw.cls}`}>{nw.label}</span>
+                            ) : (
+                              <span className="text-gray-300 text-xs">—</span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
           </div>
         </div>
       )}

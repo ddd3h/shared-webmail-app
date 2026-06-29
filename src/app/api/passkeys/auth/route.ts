@@ -7,6 +7,7 @@ import { setSessionCookie } from '@/lib/auth';
 import { checkRateLimit, getClientIp } from '@/lib/rate-limit';
 import { sendDosAlert } from '@/lib/dos-alert';
 import { logAudit } from '@/lib/audit';
+import { logLoginAttempt } from '@/lib/login-log';
 
 // 10 verification attempts per 5 minutes per IP
 const WINDOW_MS = 5 * 60 * 1000;
@@ -102,11 +103,21 @@ export async function POST(req: NextRequest) {
     metadata: { ip },
   });
 
-  const res = NextResponse.json({ ok: true });
-  await setSessionCookie(res, {
+  const userAgent = req.headers.get('user-agent') || '';
+  logLoginAttempt({
     userId: storedCred.user.id,
     email: storedCred.user.email,
-    role: storedCred.user.role,
+    ipAddress: ip,
+    userAgent,
+    success: true,
+    networkType: 'residential',
   });
+
+  const res = NextResponse.json({ ok: true });
+  await setSessionCookie(
+    res,
+    { userId: storedCred.user.id, email: storedCred.user.email, role: storedCred.user.role },
+    { ip, userAgent, networkType: 'residential' }
+  );
   return res;
 }

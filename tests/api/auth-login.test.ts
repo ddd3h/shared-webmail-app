@@ -6,6 +6,7 @@ vi.mock('@/lib/db', () => ({
   prisma: {
     users: { findUnique: vi.fn(), update: vi.fn().mockResolvedValue({}) },
     audit_logs: { create: vi.fn() },
+    login_logs: { create: vi.fn().mockResolvedValue({}) },
   }
 }));
 
@@ -27,6 +28,16 @@ vi.mock('@/lib/audit', () => ({
 // モック: DoSアラート
 vi.mock('@/lib/dos-alert', () => ({
   sendDosAlert: vi.fn(),
+}));
+
+// モック: IPルックアップ
+vi.mock('@/lib/ip-lookup', () => ({
+  lookupIp: vi.fn().mockResolvedValue(null),
+}));
+
+// モック: ログインログ
+vi.mock('@/lib/login-log', () => ({
+  logLoginAttempt: vi.fn(),
 }));
 
 import { POST } from '@/app/api/auth/login/route';
@@ -65,12 +76,12 @@ describe('POST /api/auth/login', () => {
     expect(prisma.users.findUnique).toHaveBeenCalledWith({ where: { email: 'test@example.com' } });
     expect(verifyPassword).toHaveBeenCalledWith('correct_password', 'hashed_password');
     expect(setSessionCookie).toHaveBeenCalledTimes(1);
-    expect(setSessionCookie).toHaveBeenCalledWith(res, {
-      userId: 'test-user-id',
-      email: 'test@example.com',
-      role: 'user'
-    });
-    
+    expect(setSessionCookie).toHaveBeenCalledWith(
+      res,
+      { userId: 'test-user-id', email: 'test@example.com', role: 'user' },
+      expect.objectContaining({ networkType: 'residential' })
+    );
+
     expect(res.status).toBe(200);
     expect(data.ok).toBe(true);
   });

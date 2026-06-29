@@ -65,6 +65,16 @@ if (!g.__imapSyncStarted) {
   console.log('[cron] IMAP sync started — poll interval from SYNC_DEFAULT_INTERVAL_SEC, IDLE per mailbox');
 }
 
+// Cleanup expired sessions daily to prevent unbounded table growth
+if (!g.__sessionCleanupStarted) {
+  g.__sessionCleanupStarted = true;
+  setInterval(() => {
+    prisma.sessions.deleteMany({ where: { expires_at: { lt: new Date() } } })
+      .then(r => { if (r.count > 0) console.log(`[session-cleanup] deleted ${r.count} expired sessions`); })
+      .catch(e => console.error('[session-cleanup] failed:', e));
+  }, 24 * 60 * 60 * 1000);
+}
+
 // Run the collaborative-editing (y-websocket) server IN-PROCESS, so a single
 // `pm2 start shared-webmail-app` brings up everything. It listens on COLLAB_PORT
 // (default 1234); nginx proxies wss://<host>/collab → it.

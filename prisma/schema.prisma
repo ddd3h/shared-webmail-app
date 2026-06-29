@@ -81,6 +81,8 @@ model users {
   mfi_snapshots              mfi_snapshots[]
   bulk_actions_requested     pending_bulk_actions[]
   spam_senders_created       spam_senders[]
+  sessions                   sessions[]
+  login_logs                 login_logs[]
   last_login_at              DateTime?
 }
 
@@ -555,4 +557,40 @@ model ml_spam_model {
   spam_count  Int
   ham_count   Int
   version     Int      @default(1)
+}
+
+model sessions {
+  id               String   @id
+  user_id          String
+  ip_address       String
+  user_agent       String?
+  network_type     String   @default("residential")
+  expires_at       DateTime
+  last_activity_at DateTime @default(now())
+  created_at       DateTime @default(now())
+
+  user users @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@index([user_id])
+  @@index([expires_at])
+}
+
+model login_logs {
+  id             String   @id @default(cuid())
+  user_id        String?
+  email          String
+  ip_address     String
+  user_agent     String?
+  success        Boolean
+  failure_reason String?
+  network_type   String?
+  org_name       String?
+  country        String?
+  city           String?
+  created_at     DateTime @default(now())
+
+  user users? @relation(fields: [user_id], references: [id], onDelete: SetNull)
+
+  @@index([created_at])
+  @@index([ip_address])
 }

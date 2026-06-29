@@ -22,7 +22,7 @@ describe('Auth Library', () => {
 
   describe('requireAuth', () => {
     it('セッションがある場合は何も起きない', () => {
-      const session = { userId: 'u1', email: 'e1', role: 'user', lastActivity: Date.now() };
+      const session = { sessionId: 'sid1', userId: 'u1', email: 'e1', role: 'user', networkType: 'residential', expiresAt: Date.now() + 43200000 };
       expect(() => requireAuth(session)).not.toThrow();
     });
 
