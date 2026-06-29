@@ -1154,7 +1154,7 @@ function ThreadList() {
         ) : tab === 'drafts' ? (
           drafts.length === 0 ? (
             <div className="py-16 text-center">
-              <div className="text-4xl mb-3">📝</div>
+              <svg className="w-12 h-12 mx-auto mb-3 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
               <p className="text-gray-400 text-sm">下書きはありません</p>
             </div>
           ) : (
@@ -1270,7 +1270,7 @@ function ThreadList() {
           )
         ) : threads.length === 0 ? (
           <div className="py-16 text-center">
-            <div className="text-4xl mb-3">✉</div>
+            <svg className="w-12 h-12 mx-auto mb-3 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>
             <p className="text-gray-400 text-sm">メールはありません</p>
             {search && (
               <button onClick={clearSearch} className="mt-3 text-sm text-blue-600 hover:underline">
