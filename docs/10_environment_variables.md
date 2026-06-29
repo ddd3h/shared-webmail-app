@@ -38,6 +38,8 @@
 | `ENCRYPTION_KEY_VERSION` | △ | 暗号鍵バージョン識別子（例: `"v1"`） | `src/lib/crypto.ts`（推定） | いいえ |
 | `GOOGLE_CLIENT_ID` | △ | Google OAuth クライアントID（コンタクト同期用） | `src/app/api/contacts/google/auth/route.ts`, `sync/route.ts`, `callback/route.ts` | ✅ |
 | `GOOGLE_CLIENT_SECRET` | △ | Google OAuth クライアントシークレット（コンタクト同期用） | `src/app/api/contacts/google/sync/route.ts`, `callback/route.ts` | ✅ |
+| `OPENROUTER_API_KEY` | △ | OpenRouter APIキー（AI返信アシスト用） | `src/app/api/ai/reply/route.ts` | ✅ |
+| `OPENROUTER_MODEL` | △ | 使用LLMモデル（デフォルト: `anthropic/claude-3.5-haiku`） | `src/app/api/ai/reply/route.ts` | いいえ |
 
 > **注意**: `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` は環境変数に設定しなくても、管理画面（`/admin/settings`）から生成・保存できる。保存先は `app_settings` テーブル。
 
@@ -158,6 +160,21 @@ GOOGLE_CLIENT_SECRET="GOCSPX-xxxxxxxx"
 
 ---
 
+### `OPENROUTER_API_KEY` / `OPENROUTER_MODEL`
+
+```env
+OPENROUTER_API_KEY="sk-or-..."
+OPENROUTER_MODEL="anthropic/claude-3.5-haiku"
+```
+
+- AI返信アシスト機能（`POST /api/ai/reply`）に使用。
+- APIキーは [openrouter.ai/keys](https://openrouter.ai/keys) で取得する。
+- 環境変数より管理画面（`/admin/settings`）の `app_settings` テーブルの値が優先される。
+- `OPENROUTER_API_KEY` が未設定の場合、AIボタンは503エラーを返す。
+- `AI_REPLY_EXTRA_PROMPT`（追加システムプロンプト）は管理画面のみで設定可能（環境変数なし）。
+
+---
+
 ## .env ファイルの管理
 
 `.env.example` ファイルが存在しない。新メンバーのオンボーディング時のため、以下のファイルを作成することを推奨:
@@ -178,6 +195,8 @@ NEXT_PUBLIC_APP_URL="http://localhost:3000"
 CRON_SECRET=""  # 本番環境では必ず設定
 GOOGLE_CLIENT_ID=""  # Google Contactsとの連携に必要
 GOOGLE_CLIENT_SECRET=""  # Google Contactsとの連携に必要
+OPENROUTER_API_KEY=""  # AI返信アシスト用（openrouter.ai で取得）
+OPENROUTER_MODEL=""  # デフォルト: anthropic/claude-3.5-haiku
 ```
 
 ---

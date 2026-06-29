@@ -106,6 +106,13 @@
 | POST | `/api/admin/notification-errors/[id]/retry` | 通知再試行 | 必要 | ✅ |
 | GET | `/api/admin/users` | ユーザー管理（管理者用） | 必要 | ✅ |
 | GET | `/api/cron/sync` | 全メールボックス同期 | 不要（CRON_SECRET任意） | — |
+| POST | `/api/ai/reply` | AI返信文生成・校正 | 必要 | — |
+| GET | `/api/admin/spam-classifier` | MLスパム分類器ステータス取得 | 必要 | ✅ |
+| POST | `/api/admin/spam-classifier/model` | MLモデルアップロード | 必要 | ✅ |
+| GET | `/api/admin/spam-classifier/export` | 学習データエクスポート | 必要 | ✅ |
+| GET | `/api/admin/spam-senders` | スパム送信者リスト取得 | 必要 | ✅ |
+| POST | `/api/admin/spam-senders` | スパム送信者追加 | 必要 | ✅ |
+| DELETE | `/api/admin/spam-senders/[id]` | スパム送信者削除 | 必要 | ✅ |
 
 ---
 
@@ -339,6 +346,38 @@
 ```
 
 **動作**: `push_subscriptions` テーブルに `upsert`（endpoint キーで一意）。
+
+---
+
+### `POST /api/ai/reply`
+
+**ファイル**: `src/app/api/ai/reply/route.ts`
+
+**概要**: OpenRouter経由でLLMを呼び出し、返信文の生成または校正を行う。`OPENROUTER_API_KEY` が未設定の場合は503を返す。
+
+**リクエストボディ（返信モード）**:
+```json
+{ "threadId": "cuid...", "draft": "<p>作成中の返信文（省略可）</p>" }
+```
+
+**リクエストボディ（新規作成モード）**:
+```json
+{ "subject": "件名", "to": "to@example.com", "draft": "<p>作成中の本文（省略可）</p>" }
+```
+
+**動作**:
+- `draft` が空 → 返信文/本文を新規生成
+- `draft` あり → 既存下書きを校正・改善
+- 返信モードはスレッド履歴最大10件（各本文先頭800文字）をコンテキストに含む
+
+**レスポンス**: `{ "text": "生成されたテキスト" }`
+
+**設定**（管理画面 `/admin/settings` の「AI返信アシスト」セクション）:
+| 設定キー | 説明 |
+|---|---|
+| `OPENROUTER_API_KEY` | OpenRouter APIキー（必須） |
+| `OPENROUTER_MODEL` | 使用モデル（デフォルト: `anthropic/claude-3.5-haiku`） |
+| `AI_REPLY_EXTRA_PROMPT` | システムプロンプト末尾に追加する指示（任意） |
 
 ---
 

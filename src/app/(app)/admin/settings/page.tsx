@@ -775,6 +775,16 @@ function AdminSettingsContent() {
                 <input className="input font-mono text-xs" value={getVal('OPENROUTER_MODEL')} onChange={e => setVal('OPENROUTER_MODEL', e.target.value)} placeholder="anthropic/claude-3.5-haiku" />
                 <p className="text-xs text-gray-400 mt-1">例: anthropic/claude-3.5-haiku、openai/gpt-4o-mini</p>
               </div>
+              <div>
+                <label className="label">追加プロンプト（任意）</label>
+                <textarea
+                  className="input text-sm font-mono min-h-[80px] resize-y"
+                  value={getVal('AI_REPLY_EXTRA_PROMPT')}
+                  onChange={e => setVal('AI_REPLY_EXTRA_PROMPT', e.target.value)}
+                  placeholder="例: 文末は「よろしくお願いいたします。」で統一してください。"
+                />
+                <p className="text-xs text-gray-400 mt-1">システムプロンプトの末尾に追加されます。文体・口調・禁止事項などを指定できます。</p>
+              </div>
             </div>
           </div>
 

@@ -6,13 +6,15 @@ import { getSetting } from '@/lib/settings';
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
 
 async function getOpenRouterConfig() {
-  const [dbKey, dbModel] = await Promise.all([
+  const [dbKey, dbModel, dbExtraPrompt] = await Promise.all([
     getSetting('OPENROUTER_API_KEY'),
     getSetting('OPENROUTER_MODEL'),
+    getSetting('AI_REPLY_EXTRA_PROMPT'),
   ]);
   return {
     apiKey: dbKey || process.env.OPENROUTER_API_KEY || '',
     model: dbModel || process.env.OPENROUTER_MODEL || 'anthropic/claude-3.5-haiku',
+    extraPrompt: dbExtraPrompt || '',
   };
 }
 
@@ -38,7 +40,7 @@ export async function POST(req: NextRequest) {
   const session = await getSession();
   requireAuth(session);
 
-  const { apiKey: OPENROUTER_API_KEY, model: OPENROUTER_MODEL } = await getOpenRouterConfig();
+  const { apiKey: OPENROUTER_API_KEY, model: OPENROUTER_MODEL, extraPrompt } = await getOpenRouterConfig();
 
   if (!OPENROUTER_API_KEY) {
     return NextResponse.json({ error: 'AI機能が設定されていません（OPENROUTER_API_KEY未設定）' }, { status: 503 });
@@ -91,7 +93,7 @@ export async function POST(req: NextRequest) {
 
     systemPrompt = `あなたはビジネスメールの返信を日本語で作成するアシスタントです。
 返信文のみを出力してください。件名・宛名・署名・前置きは不要です。
-敬語を使い、簡潔かつ丁寧なビジネス文体にしてください。`;
+敬語を使い、簡潔かつ丁寧なビジネス文体にしてください。${extraPrompt ? '\n' + extraPrompt : ''}`;
 
     userPrompt = isDraftEmpty
       ? `以下のメールスレッドに対する返信文を作成してください。\n\n件名: ${thread.subject}\n\n【会話履歴】\n${conversationText}\n\n返信文（本文のみ）:`
@@ -109,7 +111,7 @@ export async function POST(req: NextRequest) {
 
     systemPrompt = `あなたはビジネスメールの本文を日本語で作成するアシスタントです。
 本文のみを出力してください。件名・宛名・署名・前置きは不要です。
-敬語を使い、簡潔かつ丁寧なビジネス文体にしてください。`;
+敬語を使い、簡潔かつ丁寧なビジネス文体にしてください。${extraPrompt ? '\n' + extraPrompt : ''}`;
 
     userPrompt = isDraftEmpty
       ? `以下の情報をもとに、メールの本文を作成してください。\n\n${context}\n\n本文（本文のみ）:`
