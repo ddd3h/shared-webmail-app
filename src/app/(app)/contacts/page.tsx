@@ -227,7 +227,7 @@ export default function ContactsPage() {
                   <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-0.5">
                     {c.email && (
                       <Link
-                        href={`/threads?compose=${c.email}&name=${encodeURIComponent(c.name)}`}
+                        href={`/threads?compose=${encodeURIComponent(c.email)}&name=${encodeURIComponent(c.name)}`}
                         className="text-xs text-blue-600 hover:underline truncate"
                         onClick={e => e.stopPropagation()}
                       >
