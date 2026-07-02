@@ -3,6 +3,7 @@ import { Suspense, useEffect, useState, useRef } from 'react';
 import useSWR from 'swr';
 import { useRouter, useSearchParams } from 'next/navigation';
 import ComposeForm, { type SendPayload } from '@/components/ComposeForm';
+import SenderAvatar from '@/components/SenderAvatar';
 
 function ComposeModal({
   onClose,
@@ -1316,10 +1317,8 @@ function ThreadList() {
                     <div className="relative flex-shrink-0 mt-0.5">
                       <div
                         onClick={(e) => handleCheckboxClick(e, t.id, index)}
-                        className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold transition-all ${
-                          isSelected ? 'bg-blue-600 text-white'
-                          : isUnread ? 'bg-blue-100 text-blue-700 hover:bg-blue-200'
-                          : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                        className={`w-10 h-10 rounded-full flex items-center justify-center transition-all ${
+                          isSelected ? 'bg-blue-600 text-white' : ''
                         }`}
                       >
                         {isSelected ? (
@@ -1327,7 +1326,7 @@ function ThreadList() {
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
                           </svg>
                         ) : (
-                          (t.from_email?.[0] || '?').toUpperCase()
+                          <SenderAvatar email={t.from_email} name={t.from_name} size={40} />
                         )}
                       </div>
                       {isUnread && !isSelected && (
@@ -1407,11 +1406,7 @@ function ThreadList() {
                       />
                     </div>
                     {/* アバター */}
-                    <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ${
-                      isUnread ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-500'
-                    }`}>
-                      {(t.from_email?.[0] || '?').toUpperCase()}
-                    </div>
+                    <SenderAvatar email={t.from_email} name={t.from_name} size={32} />
                     {/* From */}
                     <div className={`flex-shrink-0 w-32 truncate text-sm ${isUnread ? 'font-bold text-gray-900' : 'text-gray-600'}`}>
                       {t.from_name || t.from_email?.split('@')[0] || '(不明)'}
