@@ -1,4 +1,3 @@
-import { syncMailbox } from './mail/sync';
 import { prisma } from './db';
 import { computeAndStoreMfi } from '@/app/api/mfi/compute';
 
@@ -9,32 +8,15 @@ export async function getActiveUsers() {
   return users;
 }
 
-export async function runBackgroundSync() {
-  console.log('[bg] Running global sync...');
-  const mailboxes = await prisma.mailboxes.findMany({
-    where: { is_active: true },
-    select: { id: true, email_address: true }
-  });
-
-  for (const mb of mailboxes) {
-    try {
-      await syncMailbox(mb.id);
-    } catch (e: any) {
-      console.error(`[bg] Sync failed for ${mb.email_address}:`, e?.message || e);
+// Compute MFI for every user. Snapshot writes are rate-limited to one per
+// 4 hours inside computeAndStoreMfi (shouldCreateSnapshot), so this is safe
+// to call on a much shorter interval.
+export async function computeMfiForAllUsers() {
+  const users = await getActiveUsers().catch(() => [] as { id: string; email: string }[]);
+  const results = await Promise.allSettled(users.map(u => computeAndStoreMfi(u.id)));
+  results.forEach((r, i) => {
+    if (r.status === 'rejected') {
+      console.error(`[mfi] snapshot failed for ${users[i].email}:`, r.reason?.message || r.reason);
     }
-  }
-
-  // 2. Compute MFI for all users with mailbox access (personal + team)
-  const users = await getActiveUsers();
-  await Promise.allSettled(users.map(u => computeAndStoreMfi(u.id)));
-}
-
-// Use a global flag so Next.js HMR in dev doesn't spawn duplicate intervals
-let bgInterval: NodeJS.Timeout | null = null;
-
-export function startBackgroundJobs() {
-  if (bgInterval) return;
-  // Run every 3 minutes
-  bgInterval = setInterval(runBackgroundSync, 180 * 1000);
-  console.log('[bg] Background jobs started (3m interval)');
+  });
 }

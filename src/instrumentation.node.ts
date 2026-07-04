@@ -6,6 +6,7 @@
 import { prisma } from '@/lib/db';
 import { syncMailbox } from '@/lib/mail/sync';
 import { reconcileIdleConnections } from '@/lib/mail/idle';
+import { computeMfiForAllUsers } from '@/lib/background-jobs';
 
 const DEFAULT_INTERVAL_SEC = 180;
 
@@ -63,6 +64,24 @@ if (!g.__imapSyncStarted) {
   }, 10_000);
 
   console.log('[cron] IMAP sync started — poll interval from SYNC_DEFAULT_INTERVAL_SEC, IDLE per mailbox');
+}
+
+// MFI snapshots — record for ALL users regardless of dashboard access.
+// Check every 15 minutes; actual writes are gated to once per 4 hours per user
+// by shouldCreateSnapshot() inside computeAndStoreMfi, so the short check
+// interval only bounds the drift past the 4-hour mark (worst case +15 min,
+// e.g. after a server restart).
+if (!g.__mfiSnapshotStarted) {
+  g.__mfiSnapshotStarted = true;
+
+  const runMfi = () =>
+    computeMfiForAllUsers().catch(e => console.error('[mfi] snapshot run failed:', e));
+
+  // First run shortly after startup to fill any gap from downtime.
+  setTimeout(runMfi, 15_000);
+  setInterval(runMfi, 15 * 60 * 1000);
+
+  console.log('[mfi] snapshot job started (15m check, 4h write cadence)');
 }
 
 // Cleanup expired sessions daily to prevent unbounded table growth
