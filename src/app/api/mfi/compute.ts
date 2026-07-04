@@ -1,6 +1,5 @@
 import { prisma } from '@/lib/db';
 import {
-  MFI_ALERT_THRESHOLD,
   computeDebt,
   computeBaseline,
   computeMFI,
@@ -9,7 +8,6 @@ import {
   buildActionHint,
   shouldCreateSnapshot,
 } from '@/lib/mfi';
-import { sendMfiBelowThresholdDm } from '@/lib/mattermost-dm';
 
 export type MfiResult = {
   mfi: number;
@@ -154,13 +152,6 @@ export async function computeAndStoreMfi(userId: string): Promise<MfiResult> {
       recorded_at: new Date()
     }
   });
-
-  if (data.mfi < MFI_ALERT_THRESHOLD) {
-    const user = await prisma.users.findUnique({ where: { id: userId }, select: { email: true } });
-    if (user?.email) {
-      sendMfiBelowThresholdDm(userId, user.email, data.mfi).catch(() => {});
-    }
-  }
 
   return data;
 }

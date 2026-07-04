@@ -6,7 +6,7 @@
 import { prisma } from '@/lib/db';
 import { syncMailbox } from '@/lib/mail/sync';
 import { reconcileIdleConnections } from '@/lib/mail/idle';
-import { computeMfiForAllUsers } from '@/lib/background-jobs';
+import { computeMfiForAllUsers, runMfiNoonAlerts } from '@/lib/background-jobs';
 
 const DEFAULT_INTERVAL_SEC = 180;
 
@@ -82,6 +82,35 @@ if (!g.__mfiSnapshotStarted) {
   setInterval(runMfi, 15 * 60 * 1000);
 
   console.log('[mfi] snapshot job started (15m check, 4h write cadence)');
+}
+
+// MFI low-score DM — judged once per weekday at 12:00 JST (not on every
+// snapshot). Checked every minute; the noon hour fires at most once per day
+// (lastAlertDate guard), so a restart during 12:00–12:59 still sends but a
+// second in-process trigger can't. The 12h DB throttle inside
+// sendMfiBelowThresholdDm additionally dedupes across restarts.
+if (!g.__mfiNoonAlertStarted) {
+  g.__mfiNoonAlertStarted = true;
+
+  const jstClock = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Tokyo', weekday: 'short', hour: 'numeric', hour12: false,
+  });
+  const jstDate = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Tokyo' }); // YYYY-MM-DD
+
+  let lastAlertDate = '';
+  setInterval(() => {
+    const now = new Date();
+    const parts = Object.fromEntries(jstClock.formatToParts(now).map(p => [p.type, p.value]));
+    const isWeekday = parts.weekday !== 'Sat' && parts.weekday !== 'Sun';
+    const today = jstDate.format(now);
+    if (isWeekday && Number(parts.hour) === 12 && lastAlertDate !== today) {
+      lastAlertDate = today;
+      console.log('[mfi] running weekday-noon DM alerts');
+      runMfiNoonAlerts().catch(e => console.error('[mfi] noon alerts failed:', e));
+    }
+  }, 60 * 1000);
+
+  console.log('[mfi] noon DM alert job started (weekdays 12:00 JST)');
 }
 
 // Cleanup expired sessions daily to prevent unbounded table growth
