@@ -6,6 +6,7 @@ import { ImapFlow } from 'imapflow';
 import MailComposer from 'nodemailer/lib/mail-composer';
 import { decrypt } from '@/lib/crypto';
 import path from 'path';
+import { APP_ROOT } from '@/lib/app-root';
 
 /**
  * Send (or retry sending) a pending message by its DB id.
@@ -50,7 +51,7 @@ export async function sendMailForMessage(messageId: string): Promise<void> {
   if (msg.attachments.length > 0) {
     mailOptions.attachments = msg.attachments.map(a => ({
       filename: a.filename,
-      path: path.join(process.cwd(), a.storage_key),
+      path: path.join(APP_ROOT, a.storage_key),
       contentType: a.content_type
     }));
   }

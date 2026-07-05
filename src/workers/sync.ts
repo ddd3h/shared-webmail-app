@@ -5,6 +5,7 @@ import { decrypt } from '@/lib/crypto';
 import { findOrCreateThread, ParsedMessage } from '@/lib/threading';
 import { mkdir, writeFile } from 'fs/promises';
 import path from 'path';
+import { APP_ROOT } from '@/lib/app-root';
 
 type ImapFlowMod = typeof import('imapflow');
 type MailparserMod = typeof import('mailparser');
@@ -101,7 +102,7 @@ async function main() {
             });
             // Save attachments (local fs) if present
             if (parsed?.attachments?.length) {
-              const baseDir = path.join(process.cwd(), 'storage', 'attachments');
+              const baseDir = path.join(APP_ROOT, 'storage', 'attachments');
               await mkdir(baseDir, { recursive: true });
               for (const a of parsed.attachments) {
                 const attId = crypto.randomUUID();
@@ -109,7 +110,7 @@ async function main() {
                 const contentType = a.contentType || 'application/octet-stream';
                 const buf: Buffer = a.content as Buffer;
                 const storageKey = path.join('storage', 'attachments', `${attId}`);
-                await writeFile(path.join(process.cwd(), storageKey), buf);
+                await writeFile(path.join(APP_ROOT, storageKey), buf);
                 await prisma.attachments.create({
                   data: { message_id: created.id, filename, content_type: contentType, size: buf.length, storage_key: storageKey }
                 });

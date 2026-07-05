@@ -2,8 +2,9 @@ import { resolveTxt } from 'node:dns/promises';
 import { createHash } from 'node:crypto';
 import { readFile, writeFile, mkdir, stat } from 'fs/promises';
 import path from 'path';
+import { APP_ROOT } from '@/lib/app-root';
 
-const CACHE_DIR = path.join(process.cwd(), 'storage', 'sender-icons');
+const CACHE_DIR = path.join(APP_ROOT, 'storage', 'sender-icons');
 const TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 const NEGATIVE_TTL_MS = 6 * 60 * 60 * 1000; // 6 hours for "no icon found"
 const MAX_ICON_BYTES = 512 * 1024;

@@ -7,6 +7,7 @@ import { sendMailForMessage } from '@/lib/mail/send-job';
 import { sanitizeEmailHtml } from '@/lib/sanitize';
 import { writeFile, mkdir } from 'fs/promises';
 import path from 'path';
+import { APP_ROOT } from '@/lib/app-root';
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -88,13 +89,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   // Save uploaded attachments
   if (files.length > 0) {
-    const storageDir = path.join(process.cwd(), 'storage', 'attachments');
+    const storageDir = path.join(APP_ROOT, 'storage', 'attachments');
     await mkdir(storageDir, { recursive: true });
     for (const file of files) {
       const buffer = Buffer.from(await file.arrayBuffer());
       const ext = file.name.includes('.') ? '.' + file.name.split('.').pop() : '';
       const storageKey = path.join('storage', 'attachments', `${crypto.randomUUID()}${ext}`);
-      await writeFile(path.join(process.cwd(), storageKey), buffer);
+      await writeFile(path.join(APP_ROOT, storageKey), buffer);
       await prisma.attachments.create({
         data: {
           message_id: msg.id,

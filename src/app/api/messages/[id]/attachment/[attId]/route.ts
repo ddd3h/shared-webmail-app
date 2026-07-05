@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db';
 import { getSession, requireAuth } from '@/lib/auth';
 import { createReadStream } from 'fs';
 import path from 'path';
+import { APP_ROOT } from '@/lib/app-root';
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string; attId: string }> }) {
   const { id, attId } = await params;
@@ -15,7 +16,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
 
   const att = await prisma.attachments.findUnique({ where: { id: attId } });
   if (!att || att.message_id !== msg.id) return NextResponse.json({ error: 'not_found' }, { status: 404 });
-  const abs = path.join(process.cwd(), att.storage_key);
+  const abs = path.join(APP_ROOT, att.storage_key);
   const stream = createReadStream(abs);
   const res = new NextResponse(stream as any, { headers: { 'Content-Type': att.content_type, 'Content-Length': String(att.size), 'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(att.filename)}` } });
   return res;

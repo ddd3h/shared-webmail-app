@@ -1,7 +1,8 @@
 import { readFile, writeFile, mkdir, stat, unlink } from 'fs/promises';
 import path from 'path';
+import { APP_ROOT } from '@/lib/app-root';
 
-const CACHE_DIR = path.join(process.cwd(), 'storage', 'avatars');
+const CACHE_DIR = path.join(APP_ROOT, 'storage', 'avatars');
 const TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 
 export async function getCachedAvatar(userId: string): Promise<{ data: Buffer; contentType: string } | null> {
