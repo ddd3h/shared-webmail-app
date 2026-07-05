@@ -95,19 +95,19 @@ fi
 step "アプリケーションを再起動しています..."
 
 if pm2 describe shared-webmail-app &>/dev/null; then
-  if [[ -f ecosystem.config.js ]]; then
-    pm2 reload ecosystem.config.js --update-env
+  if [[ -f ecosystem.config.cjs ]]; then
+    pm2 reload ecosystem.config.cjs --update-env
     ok "PM2 プロセスをリロードしました（ダウンタイムなし）"
   else
     pm2 restart shared-webmail-app
     ok "PM2 プロセスを再起動しました"
   fi
 else
-  if [[ -f ecosystem.config.js ]]; then
-    pm2 start ecosystem.config.js
+  if [[ -f ecosystem.config.cjs ]]; then
+    pm2 start ecosystem.config.cjs
     ok "PM2 でアプリを起動しました"
   else
-    err "ecosystem.config.js が見つかりません。production-setup.sh を先に実行してください"
+    err "ecosystem.config.cjs が見つかりません。production-setup.sh を先に実行してください"
   fi
 fi
 
