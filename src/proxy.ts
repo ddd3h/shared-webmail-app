@@ -12,7 +12,7 @@ export async function proxy(req: NextRequest) {
     pathname.startsWith('/_next') ||
     pathname.startsWith('/manifest') ||
     pathname.startsWith('/sw.js') ||
-    pathname.startsWith('/icons') ||
+    pathname.startsWith('/icon') || // icon-192.png, icon-512.png, icon-badge.png — must be fetchable unauthenticated (push notifications fetch these in the background, without a session cookie)
     pathname === '/favicon.ico'
   ) {
     return NextResponse.next();
