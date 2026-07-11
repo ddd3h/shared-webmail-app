@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { writeFile } from 'fs/promises';
 import path from 'path';
+import { APP_ROOT } from '@/lib/app-root';
 
 const ALLOWED_TYPES = ['image/png', 'image/jpeg', 'image/webp'];
 const MAX_SIZE = 5 * 1024 * 1024; // 5 MB
@@ -23,7 +24,7 @@ export async function POST(req: NextRequest) {
   }
 
   const buffer = Buffer.from(await file.arrayBuffer());
-  const publicDir = path.join(process.cwd(), 'public');
+  const publicDir = path.join(APP_ROOT, 'public');
 
   await Promise.all([
     writeFile(path.join(publicDir, 'icon-192.png'), buffer),

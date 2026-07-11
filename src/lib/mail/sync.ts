@@ -17,18 +17,34 @@ type MailboxForNotify = {
   permissions: { user_id: string }[];
 };
 
+// Builds a short, single-line preview of the message body for notifications:
+// collapses whitespace/newlines, drops quoted reply lines, and truncates.
+function buildBodySnippet(text: string | null, maxLen = 100): string {
+  if (!text) return '';
+  const cleaned = text
+    .split(/\r?\n/)
+    .filter(line => !line.trim().startsWith('>'))
+    .join(' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (cleaned.length <= maxLen) return cleaned;
+  return cleaned.slice(0, maxLen).trimEnd() + '…';
+}
+
 async function notifyNewMessage({
   mb,
   threadId,
   subject,
   fromEmail,
   fromName,
+  text,
 }: {
   mb: MailboxForNotify;
   threadId: string;
   subject: string;
   fromEmail: string;
   fromName: string | null;
+  text: string | null;
 }) {
   let userIds: string[] = [];
   if (mb.type === 'team') {
@@ -38,8 +54,9 @@ async function notifyNewMessage({
   }
   if (userIds.length === 0) return;
 
-  const title = `新着メール: ${subject}`;
-  const body = fromName ? `${fromName} <${fromEmail}>` : fromEmail;
+  const title = fromName ? `${fromName} <${fromEmail}>` : fromEmail;
+  const snippet = buildBodySnippet(text);
+  const body = snippet ? `${subject}\n${snippet}` : subject;
   const url = `/threads/${threadId}`;
 
   Promise.all(userIds.map(async (userId) => {
@@ -249,7 +266,7 @@ async function syncFolder(
 
         // Notify only for incoming non-spam messages
         if (direction === 'incoming' && !isSpam) {
-          await notifyNewMessage({ mb, threadId, subject, fromEmail, fromName });
+          await notifyNewMessage({ mb, threadId, subject, fromEmail, fromName, text });
         }
 
         await prisma.mailbox_sync_states.upsert({

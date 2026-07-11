@@ -18,8 +18,6 @@ function ComposeModal({
   initialTo?: string[];
   initialSubject?: string;
 }) {
-  const [minimized, setMinimized] = useState(false);
-
   async function handleSend(payload: SendPayload): Promise<string | null> {
     const fd = new FormData();
     fd.append('mailbox_id', payload.mailboxId);
@@ -36,49 +34,36 @@ function ComposeModal({
     return d.error || '送信に失敗しました';
   }
 
-  if (minimized) {
-    return (
-      <div className="fixed bottom-0 right-6 z-50 w-80 shadow-2xl rounded-t-xl overflow-hidden">
-        <div className="flex items-center justify-between px-4 py-2.5 bg-gray-800 text-white cursor-pointer hover:bg-gray-700 transition-colors" onClick={() => setMinimized(false)}>
-          <span className="text-sm font-medium truncate">{initialDraftId ? '下書きを編集' : '新規メール作成'}</span>
-          <div className="flex items-center gap-1.5 ml-2 flex-shrink-0" onClick={e => e.stopPropagation()}>
-            <button onClick={() => setMinimized(false)} className="p-1 rounded hover:bg-gray-600 transition-colors" title="展開">
-              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" /></svg>
-            </button>
-            <button onClick={onClose} className="p-1 rounded hover:bg-gray-600 transition-colors" title="閉じる">
-              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-            </button>
-          </div>
-        </div>
-      </div>
-    );
+  async function handleSchedule(payload: SendPayload, scheduledAt: Date): Promise<string | null> {
+    const fd = new FormData();
+    fd.append('mode', 'compose');
+    fd.append('mailboxId', payload.mailboxId);
+    fd.append('to', JSON.stringify(payload.to));
+    if (payload.cc.length) fd.append('cc', JSON.stringify(payload.cc));
+    if (payload.bcc.length) fd.append('bcc', JSON.stringify(payload.bcc));
+    fd.append('subject', payload.subject);
+    fd.append('html', payload.html);
+    fd.append('text', payload.text);
+    fd.append('scheduledAt', scheduledAt.toISOString());
+    payload.files.forEach(f => fd.append('file', f));
+    const res = await fetch('/api/scheduled-sends', { method: 'POST', body: fd });
+    if (res.ok) return null;  // ComposeForm calls onCancel (=onClose) itself
+    const d = await res.json().catch(() => ({}));
+    return d.error || '予約に失敗しました';
   }
 
+  // ComposeForm owns its own modal shell (backdrop, header, minimize) for
+  // mode="compose" — no wrapper markup needed here.
   return (
-    <div className="fixed inset-0 z-50 flex flex-col sm:items-center sm:justify-center sm:p-4">
-      <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={() => setMinimized(true)} />
-      <div className="relative w-full h-full sm:h-auto sm:max-w-5xl bg-white sm:rounded-2xl sm:shadow-2xl flex flex-col sm:max-h-[94vh]">
-        <div className="flex items-center justify-between px-5 py-3 border-b border-gray-200 flex-shrink-0 bg-gray-800 sm:rounded-t-2xl">
-          <h2 className="font-semibold text-white text-sm">{initialDraftId ? '下書きを編集' : '新規メール作成'}</h2>
-          <div className="flex items-center gap-1">
-            <button onClick={() => setMinimized(true)} className="p-1.5 rounded text-gray-300 hover:text-white hover:bg-gray-700 transition-colors" title="最小化">
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" /></svg>
-            </button>
-            <button onClick={onClose} className="p-1.5 rounded text-gray-300 hover:text-white hover:bg-gray-700 transition-colors" title="閉じる">
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-            </button>
-          </div>
-        </div>
-        <ComposeForm
-          mode="compose"
-          draftId={initialDraftId}
-          initialTo={initialTo}
-          initialSubject={initialSubject}
-          onSend={handleSend}
-          onCancel={onClose}
-        />
-      </div>
-    </div>
+    <ComposeForm
+      mode="compose"
+      draftId={initialDraftId}
+      initialTo={initialTo}
+      initialSubject={initialSubject}
+      onSend={handleSend}
+      onSchedule={handleSchedule}
+      onCancel={onClose}
+    />
   );
 }
 

@@ -2,9 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { getSession, requireAuth } from '@/lib/auth';
 import { canReplyMailbox } from '@/lib/rbac';
-import { logAudit } from '@/lib/audit';
 import { sendMailForMessage } from '@/lib/mail/send-job';
-import { sanitizeEmailHtml } from '@/lib/sanitize';
+import { deliverCompose, type DeliverAttachment } from '@/lib/mail/deliver';
 import { writeFile, mkdir } from 'fs/promises';
 import path from 'path';
 import { APP_ROOT } from '@/lib/app-root';
@@ -42,50 +41,14 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'missing_fields' }, { status: 400 });
   }
 
-  const mailbox = await prisma.mailboxes.findUnique({
-    where: { id: mailbox_id },
-    include: { credentials: true }
-  });
+  const mailbox = await prisma.mailboxes.findUnique({ where: { id: mailbox_id } });
   if (!mailbox) return NextResponse.json({ error: 'mailbox_not_found' }, { status: 404 });
   if (!(await canReplyMailbox(session!.userId, mailbox_id))) {
     return NextResponse.json({ error: 'forbidden' }, { status: 403 });
   }
 
-  const { normalizeSubject } = await import('@/lib/subject');
-  const thread = await prisma.threads.create({
-    data: {
-      mailbox_id,
-      subject,
-      normalized_subject: normalizeSubject(subject),
-      status: 'open',
-      unread_count: 0,
-      last_message_at: new Date(),
-      assigned_user_id: null
-    }
-  });
-
-  const msg = await prisma.messages.create({
-    data: {
-      thread_id: thread.id,
-      mailbox_id,
-      external_message_id: `local:${crypto.randomUUID()}`,
-      direction: 'outgoing',
-      from_name: mailbox.sender_name || mailbox.display_name,
-      from_email: mailbox.email_address,
-      to_raw: to.join(', '),
-      cc_raw: cc?.join(', ') || null,
-      bcc_raw: bcc?.join(', ') || null,
-      subject,
-      text_body: text || null,
-      html_body: html ? sanitizeEmailHtml(html) : null,
-      sent_at: new Date(),
-      received_at: null,
-      raw_headers: null,
-      has_attachments: files.length > 0
-    }
-  });
-
-  // Save uploaded attachments
+  // Save uploaded attachments to disk (attachment DB rows are created once the message exists)
+  const attachments: DeliverAttachment[] = [];
   if (files.length > 0) {
     const storageDir = path.join(APP_ROOT, 'storage', 'attachments');
     await mkdir(storageDir, { recursive: true });
@@ -94,40 +57,25 @@ export async function POST(req: NextRequest) {
       const ext = file.name.includes('.') ? '.' + file.name.split('.').pop() : '';
       const storageKey = path.join('storage', 'attachments', `${crypto.randomUUID()}${ext}`);
       await writeFile(path.join(APP_ROOT, storageKey), buffer);
-      await prisma.attachments.create({
-        data: {
-          message_id: msg.id,
-          filename: file.name,
-          content_type: file.type || 'application/octet-stream',
-          size: file.size,
-          storage_key: storageKey
-        }
+      attachments.push({
+        filename: file.name,
+        content_type: file.type || 'application/octet-stream',
+        size: file.size,
+        storage_key: storageKey
       });
     }
   }
 
-  await prisma.message_sends.create({
-    data: {
-      message_id: msg.id,
-      thread_id: thread.id,
-      mailbox_id,
-      sent_by_user_id: session!.userId,
-      status: 'pending',
-      sent_at: new Date()
-    }
+  const { threadId, messageId } = await deliverCompose({
+    mailboxId: mailbox_id,
+    userId: session!.userId,
+    to, cc, bcc, subject, text, html,
+    attachments
   });
 
-  await logAudit({
-    actorUserId: session!.userId,
-    actionType: 'compose_sent',
-    targetType: 'threads',
-    targetId: thread.id,
-    metadata: { to, subject }
+  sendMailForMessage(messageId).catch((e) => {
+    console.error('[compose] sendMailForMessage failed', messageId, e?.message || e);
   });
 
-  sendMailForMessage(msg.id).catch((e) => {
-    console.error('[compose] sendMailForMessage failed', msg.id, e?.message || e);
-  });
-
-  return NextResponse.json({ ok: true, thread_id: thread.id, message_id: msg.id });
+  return NextResponse.json({ ok: true, thread_id: threadId, message_id: messageId });
 }

@@ -86,7 +86,9 @@ const nextConfig = {
       },
     ];
   },
-  allowedDevOrigins: ['100.114.62.43'],
+  // '*' matches exactly one dot-separated segment, so '192.168.*.*' allows any
+  // host on the local 192.168.x.x LAN (not just one IP) to reach the dev server.
+  allowedDevOrigins: ['100.114.62.43', '192.168.*.*'],
 };
 
 module.exports = nextConfig;

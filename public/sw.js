@@ -6,7 +6,7 @@ self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
       // Pre-cache the offline page if it exists
-      return cache.addAll(['/icon-192.png', '/icon-512.png']).catch(() => {});
+      return cache.addAll(['/icon-192.png', '/icon-512.png', '/icon-badge.png']).catch(() => {});
     })
   );
 });
@@ -51,7 +51,7 @@ self.addEventListener('push', (event) => {
   const options = {
     body: data.body || '新しいメールがあります',
     icon: '/icon-192.png',
-    badge: '/icon-192.png',
+    badge: '/icon-badge.png',
     data: { url: data.url || '/' },
     tag: data.tag || 'mail-notification',
     renotify: true,

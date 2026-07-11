@@ -217,6 +217,13 @@ function AdminSettingsContent() {
   const [iconMsg, setIconMsg] = useState('');
   const [iconTs, setIconTs] = useState(Date.now());
 
+  // Notification badge icon (Android status-bar glyph)
+  const [badgeFile, setBadgeFile] = useState<File | null>(null);
+  const [badgePreview, setBadgePreview] = useState<string | null>(null);
+  const [badgeUploading, setBadgeUploading] = useState(false);
+  const [badgeMsg, setBadgeMsg] = useState('');
+  const [badgeTs, setBadgeTs] = useState(Date.now());
+
   // Mailbox modal
   const [showMbModal, setShowMbModal] = useState(false);
   const [mbModalId, setMbModalId] = useState<string | null>(null);
@@ -312,6 +319,47 @@ function AdminSettingsContent() {
       }
     } finally {
       setIconUploading(false);
+    }
+  }
+
+  async function uploadBadgeIcon() {
+    if (!badgeFile) return;
+    setBadgeUploading(true);
+    setBadgeMsg('');
+    try {
+      const fd = new FormData();
+      fd.append('badge', badgeFile);
+      const res = await fetch('/api/admin/pwa-badge-icon', { method: 'POST', body: fd });
+      if (res.ok) {
+        setBadgeMsg('アップロードしました');
+        setBadgeFile(null);
+        if (badgePreview) { URL.revokeObjectURL(badgePreview); setBadgePreview(null); }
+        setBadgeTs(Date.now());
+      } else {
+        const d = await res.json().catch(() => ({}));
+        const msg = d.error === 'too_large' ? 'ファイルが大きすぎます（2MB以下）'
+          : d.error === 'invalid_type' ? 'PNG・WebP のみ対応しています'
+          : 'アップロードに失敗しました';
+        setBadgeMsg(msg);
+      }
+    } finally {
+      setBadgeUploading(false);
+    }
+  }
+
+  async function resetBadgeIcon() {
+    setBadgeUploading(true);
+    setBadgeMsg('');
+    try {
+      const res = await fetch('/api/admin/pwa-badge-icon', { method: 'DELETE' });
+      if (res.ok) {
+        setBadgeMsg('デフォルトに戻しました');
+        setBadgeTs(Date.now());
+      } else {
+        setBadgeMsg('リセットに失敗しました');
+      }
+    } finally {
+      setBadgeUploading(false);
     }
   }
 
@@ -952,6 +1000,71 @@ function AdminSettingsContent() {
                 {iconMsg && (
                   <p className={`text-xs ${iconMsg.includes('失敗') || iconMsg.includes('すぎ') || iconMsg.includes('のみ') ? 'text-red-600' : 'text-emerald-600'}`}>
                     {iconMsg}
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="card p-6">
+            <h2 className="font-semibold text-gray-900 mb-1">通知バッジアイコン</h2>
+            <p className="text-xs text-gray-500 mb-4">
+              Android通知のステータスバーに表示される小さいアイコンです。透過PNG（背景なし・白いシルエットのみ）を使ってください。
+              通常のPWAアイコンをそのまま使うと、透過が無いため塗りつぶした四角（■）で表示されてしまいます。
+            </p>
+            <div className="flex items-start gap-5 flex-wrap">
+              <div className="flex flex-col items-center gap-1.5">
+                <span className="text-xs text-gray-400">現在のバッジアイコン</span>
+                <img
+                  key={badgeTs}
+                  src={`/icon-badge.png?t=${badgeTs}`}
+                  alt="現在の通知バッジアイコン"
+                  className="w-20 h-20 rounded-2xl border border-gray-200 shadow-sm object-contain bg-gray-800 p-2"
+                />
+              </div>
+              {badgePreview && (
+                <div className="flex flex-col items-center gap-1.5">
+                  <span className="text-xs text-gray-400">アップロード後</span>
+                  <img
+                    src={badgePreview}
+                    alt="新バッジアイコンプレビュー"
+                    className="w-20 h-20 rounded-2xl border-2 border-blue-400 shadow-sm object-contain bg-gray-800 p-2"
+                  />
+                </div>
+              )}
+              <div className="flex flex-col gap-2">
+                <label className="cursor-pointer inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-gray-100 hover:bg-gray-200 transition-colors text-sm text-gray-700 font-medium border border-gray-200">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                  </svg>
+                  画像を選択
+                  <input
+                    type="file"
+                    accept="image/png,image/webp"
+                    className="sr-only"
+                    onChange={e => {
+                      const f = e.target.files?.[0];
+                      if (!f) return;
+                      setBadgeFile(f);
+                      if (badgePreview) URL.revokeObjectURL(badgePreview);
+                      setBadgePreview(URL.createObjectURL(f));
+                      setBadgeMsg('');
+                    }}
+                  />
+                </label>
+                <div className="flex items-center gap-2">
+                  {badgeFile && (
+                    <button onClick={uploadBadgeIcon} disabled={badgeUploading} className="btn btn-primary btn-sm">
+                      {badgeUploading ? 'アップロード中…' : 'アップロード'}
+                    </button>
+                  )}
+                  <button onClick={resetBadgeIcon} disabled={badgeUploading} className="btn btn-secondary btn-sm">
+                    デフォルトに戻す
+                  </button>
+                </div>
+                {badgeMsg && (
+                  <p className={`text-xs ${badgeMsg.includes('失敗') || badgeMsg.includes('すぎ') || badgeMsg.includes('のみ') ? 'text-red-600' : 'text-emerald-600'}`}>
+                    {badgeMsg}
                   </p>
                 )}
               </div>

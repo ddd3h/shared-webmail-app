@@ -369,6 +369,26 @@ function ThreadDetailPageInner({ params }: Props) {
     return '送信に失敗しました';
   }
 
+  async function handleReplySchedule(payload: SendPayload, scheduledAt: Date): Promise<string | null> {
+    const msgId = lastIncomingIdRef.current;
+    if (!msgId) return '返信対象のメッセージが見つかりません';
+    const fd = new FormData();
+    fd.append('mode', 'reply');
+    fd.append('mailboxId', payload.mailboxId);
+    fd.append('replyToMessageId', msgId);
+    fd.append('to', JSON.stringify(payload.to));
+    if (payload.cc.length) fd.append('cc', JSON.stringify(payload.cc));
+    if (payload.bcc.length) fd.append('bcc', JSON.stringify(payload.bcc));
+    fd.append('html', payload.html);
+    fd.append('text', payload.text);
+    fd.append('scheduledAt', scheduledAt.toISOString());
+    payload.files.forEach(f => fd.append('file', f));
+    const res = await fetch('/api/scheduled-sends', { method: 'POST', body: fd });
+    if (res.ok) { flashMsg('success', '返信を予約しました'); return null; }  // ComposeForm calls onCancel itself
+    const d = await res.json().catch(() => ({}));
+    return d.error || '予約に失敗しました';
+  }
+
   function openForward() {
     if (!data) return;
     const lastMsg = data.messages[data.messages.length - 1];
@@ -394,6 +414,24 @@ function ThreadDetailPageInner({ params }: Props) {
     const res = await fetch('/api/messages/compose', { method: 'POST', body: fd });
     if (res.ok) { flashMsg('success', '転送しました'); return null; }  // ComposeForm calls onCancel after contact prompt
     return '転送に失敗しました';
+  }
+
+  async function handleForwardSchedule(payload: SendPayload, scheduledAt: Date): Promise<string | null> {
+    const fd = new FormData();
+    fd.append('mode', 'compose');
+    fd.append('mailboxId', payload.mailboxId || data!.mailbox.id);
+    fd.append('to', JSON.stringify(payload.to));
+    if (payload.cc.length) fd.append('cc', JSON.stringify(payload.cc));
+    if (payload.bcc.length) fd.append('bcc', JSON.stringify(payload.bcc));
+    fd.append('subject', payload.subject);
+    fd.append('html', payload.html);
+    fd.append('text', payload.text);
+    fd.append('scheduledAt', scheduledAt.toISOString());
+    payload.files.forEach(f => fd.append('file', f));
+    const res = await fetch('/api/scheduled-sends', { method: 'POST', body: fd });
+    if (res.ok) { flashMsg('success', '転送を予約しました'); return null; }  // ComposeForm calls onCancel itself
+    const d = await res.json().catch(() => ({}));
+    return d.error || '予約に失敗しました';
   }
 
   async function changeAssign(userId: string) {
@@ -1026,6 +1064,7 @@ function ThreadDetailPageInner({ params }: Props) {
             threadId={id}
             draftId={replyDraftId}
             onSend={handleReplySend}
+            onSchedule={handleReplySchedule}
             onCancel={() => { setShowReply(false); setReplyDraftId(undefined); }}
           />
         ) : canReply ? (
@@ -1056,6 +1095,7 @@ function ThreadDetailPageInner({ params }: Props) {
             initialSubject={forwardInitialSubject}
             initialBody={forwardInitialBody}
             onSend={handleForwardSend}
+            onSchedule={handleForwardSchedule}
             onCancel={() => setShowForward(false)}
           />
         </div>

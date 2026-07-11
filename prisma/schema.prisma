@@ -30,6 +30,7 @@ enum JobStatus {
   pending
   success
   failed
+  canceled
 }
 
 enum NotificationPriority {
@@ -84,6 +85,7 @@ model users {
   sessions                   sessions[]
   login_logs                 login_logs[]
   last_login_at              DateTime?
+  scheduled_sends            scheduled_sends[]
 }
 
 model mailboxes {
@@ -110,6 +112,7 @@ model mailboxes {
   sends       message_sends[]
   sync_state  mailbox_sync_states?
   drafts      drafts[]
+  scheduled_sends scheduled_sends[]
 }
 
 model mailbox_credentials {
@@ -182,6 +185,7 @@ model threads {
   mm_notifications      mattermost_notifications[]
   notifications         notification_events[]
   drafts                drafts[]
+  scheduled_sends       scheduled_sends[]
 }
 
 // Per-user read tracking for shared (team) mail threads
@@ -593,4 +597,48 @@ model login_logs {
 
   @@index([created_at])
   @@index([ip_address])
+}
+
+// Emails scheduled to be sent at a future time. Kept separate from `messages`
+// so a pending scheduled send never appears as an already-sent reply to other
+// users sharing a team mailbox.
+model scheduled_sends {
+  id                   String    @id @default(cuid())
+  user_id              String
+  mailbox_id           String
+  mode                 String    // 'compose' | 'reply' | 'forward'
+  thread_id            String?
+  reply_to_message_id  String?
+  to_raw               String
+  cc_raw               String?
+  bcc_raw              String?
+  subject              String
+  html_body            String?
+  text_body            String?
+  scheduled_at         DateTime
+  status               JobStatus @default(pending)
+  error_message        String?
+  sent_message_id      String?
+  created_at           DateTime  @default(now())
+  updated_at           DateTime  @updatedAt
+
+  user    users     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  mailbox mailboxes @relation(fields: [mailbox_id], references: [id])
+  thread  threads?  @relation(fields: [thread_id], references: [id])
+
+  attachments scheduled_send_attachments[]
+
+  @@index([status, scheduled_at])
+}
+
+model scheduled_send_attachments {
+  id                String   @id @default(cuid())
+  scheduled_send_id String
+  filename          String
+  content_type      String
+  size              Int
+  storage_key       String
+  created_at        DateTime @default(now())
+
+  scheduled_send scheduled_sends @relation(fields: [scheduled_send_id], references: [id], onDelete: Cascade)
 }

@@ -7,6 +7,7 @@ import { useDraft } from '@/hooks/useDraft';
 import DraftStatusBar from './DraftStatus';
 import EmailChipInput from './EmailChipInput';
 import SendingOverlay from './SendingOverlay';
+import ScheduleSendModal from './ScheduleSendModal';
 
 const RichEditor = dynamic(() => import('./RichEditor'), { ssr: false });
 
@@ -78,6 +79,7 @@ export interface ComposeFormProps {
   draftId?: string;
   threadId?: string;
   onSend: (payload: SendPayload) => Promise<string | null>;
+  onSchedule?: (payload: SendPayload, scheduledAt: Date) => Promise<string | null>;
   onCancel: () => void;
   minBodyHeight?: number;
 }
@@ -97,6 +99,7 @@ export default function ComposeForm({
   draftId,
   threadId,
   onSend,
+  onSchedule,
   onCancel,
   minBodyHeight,
 }: ComposeFormProps) {
@@ -116,9 +119,15 @@ export default function ComposeForm({
   const [showSigPicker, setShowSigPicker] = useState(false);
   const sigPickerRef = useRef<HTMLDivElement>(null);
   const [showQuote, setShowQuote] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [minimized, setMinimized] = useState(false);
   const [showOverlay, setShowOverlay] = useState(false);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
+  const [showSchedulePicker, setShowSchedulePicker] = useState(false);
+  const [scheduledAtInput, setScheduledAtInput] = useState('');
+  const [scheduleError, setScheduleError] = useState('');
+  const [scheduling, setScheduling] = useState(false);
   const [aiLoading, setAiLoading] = useState(false);
   const [editorBody, setEditorBody] = useState(initialBody);
   const [newContactEmails, setNewContactEmails] = useState<string[]>([]);
@@ -399,7 +408,35 @@ export default function ComposeForm({
     const err = validate();
     if (err) { setError(err); return; }
     setError('');
+
+    // A datetime is armed via the schedule modal — the send button confirms
+    // the reservation ("予約送信") instead of sending immediately.
+    if (scheduledAtInput) {
+      const when = new Date(scheduledAtInput);
+      if (Number.isNaN(when.getTime()) || when.getTime() <= Date.now()) {
+        setScheduleError('未来の日時を指定してください');
+        setShowSchedulePicker(true);
+        return;
+      }
+      void handleSchedule(when);
+      return;
+    }
+
     setShowOverlay(true);
+  }
+
+  function buildSendPayload(): SendPayload {
+    const editorHtml = editorRef.current?.getHTML() || '';
+    const editorText = editorRef.current?.getText() || '';
+    const sigSection = signature && sigVisible
+      ? `<p>${signature.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>')}</p>`
+      : '';
+    let html = editorHtml + sigSection;
+    if (mode === 'reply' && quote) {
+      html += `<p style="color:#6b7280;font-size:12px;margin-top:16px">${quote.header}</p><blockquote style="border-left:3px solid #d1d5db;margin:8px 0;padding:4px 12px;color:#6b7280">${quote.html}</blockquote>`;
+    }
+    const text = signature && sigVisible ? `${editorText}\n\n${signature}` : editorText;
+    return { mailboxId: selectedMailbox, to: toChips, cc: ccChips, bcc: bccChips, subject, html, text, files };
   }
 
   async function executeSend() {
@@ -407,22 +444,13 @@ export default function ComposeForm({
     setSending(true);
     setError('');
     try {
-      const editorHtml = editorRef.current?.getHTML() || '';
-      const editorText = editorRef.current?.getText() || '';
-      const sigSection = signature && sigVisible
-        ? `<p>${signature.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>')}</p>`
-        : '';
-      let html = editorHtml + sigSection;
-      if (mode === 'reply' && quote) {
-        html += `<p style="color:#6b7280;font-size:12px;margin-top:16px">${quote.header}</p><blockquote style="border-left:3px solid #d1d5db;margin:8px 0;padding:4px 12px;color:#6b7280">${quote.html}</blockquote>`;
-      }
-      const text = signature && sigVisible ? `${editorText}\n\n${signature}` : editorText;
-      const err = await onSend({ mailboxId: selectedMailbox, to: toChips, cc: ccChips, bcc: bccChips, subject, html, text, files });
+      const payload = buildSendPayload();
+      const err = await onSend(payload);
       if (err) { setError(err); return; }
       await draft.deleteDraft();
       // Check for recipients not yet in contacts
       const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      const allEmails = [...new Set([...toChips, ...ccChips, ...bccChips])].filter(e => EMAIL_RE.test(e));
+      const allEmails = [...new Set([...payload.to, ...payload.cc, ...payload.bcc])].filter(e => EMAIL_RE.test(e));
       const unknown = await findUnknownEmails(allEmails);
       if (unknown.length > 0) {
         setNewContactEmails(unknown);
@@ -432,6 +460,21 @@ export default function ComposeForm({
       }
     } finally {
       setSending(false);
+    }
+  }
+
+  async function handleSchedule(when: Date) {
+    setScheduleError('');
+    setScheduling(true);
+    try {
+      const payload = buildSendPayload();
+      const err2 = await onSchedule!(payload, when);
+      if (err2) { setError(err2); return; }
+      await draft.deleteDraft();
+      setShowSchedulePicker(false);
+      onCancel();
+    } finally {
+      setScheduling(false);
     }
   }
 
@@ -457,9 +500,15 @@ export default function ComposeForm({
     }
   }
 
-  const bodyHeight = minBodyHeight ?? (mode === 'compose' ? 360 : mode === 'forward' ? 180 : 200);
   const isInline = mode !== 'compose';
-  const px = isInline ? 'px-4' : 'px-5';
+  // Whether this render is shown in the fullscreen modal shell — compose is
+  // always modal; reply/forward only when toggled fullscreen. All layout
+  // sizing (paddings, field row density, editor height) follows this rather
+  // than `isInline` so a fullscreen reply looks identical to compose, not
+  // like a stretched version of the compact inline card.
+  const isModal = !isInline || isFullscreen;
+  const bodyHeight = minBodyHeight ?? (isModal ? 360 : mode === 'forward' ? 180 : 200);
+  const px = isModal ? 'px-2 sm:px-5' : 'px-4';
 
   async function handleFieldConflictReload() {
     if (!draft.draftId) return;
@@ -501,15 +550,15 @@ export default function ComposeForm({
   // ── Shared sections ────────────────────────────────────────────────
 
   const fieldsSection = (
-    <div className={`${isInline ? 'border-b border-gray-100 px-4 py-2 space-y-1 text-xs' : 'px-5 space-y-0'}`}>
+    <div className={`${!isModal ? 'border-b border-gray-100 px-4 py-2 space-y-1 text-xs' : 'px-2 sm:px-5 space-y-0'}`}>
       {/* From */}
-      <div className={isInline ? 'flex items-center gap-2 py-0.5' : 'flex items-center gap-3 border-b border-gray-100 py-2.5'}>
-        <span className={`text-gray-400 flex-shrink-0 ${isInline ? 'w-7' : 'w-12 text-xs font-medium'}`}>From</span>
+      <div className={!isModal ? 'flex items-center gap-2 py-0.5' : 'flex items-center gap-3 border-b border-gray-100 py-2.5'}>
+        <span className={`text-gray-400 flex-shrink-0 ${!isModal ? 'w-7' : 'w-12 text-xs font-medium'}`}>From</span>
         {mailboxes.length > 1 ? (
           <select
             value={selectedMailbox}
             onChange={e => setSelectedMailbox(e.target.value)}
-            className={isInline ? 'flex-1 bg-transparent border-0 outline-none text-gray-700 cursor-pointer text-xs' : 'select flex-1 text-sm py-1'}
+            className={!isModal ? 'flex-1 bg-transparent border-0 outline-none text-gray-700 cursor-pointer text-xs' : 'select flex-1 text-sm py-1'}
           >
             {mailboxes.map(mb => <option key={mb.id} value={mb.id}>{mb.display_name} &lt;{mb.email_address}&gt;</option>)}
           </select>
@@ -519,8 +568,8 @@ export default function ComposeForm({
       </div>
 
       {/* To */}
-      <div className={isInline ? 'flex items-start gap-2 py-0.5' : 'flex items-start gap-3 border-b border-gray-100 py-2'}>
-        <span className={`text-gray-400 flex-shrink-0 pt-0.5 ${isInline ? 'w-7' : 'w-12 text-xs font-medium'}`}>To</span>
+      <div className={!isModal ? 'flex items-start gap-2 py-0.5' : 'flex items-start gap-3 border-b border-gray-100 py-2'}>
+        <span className={`text-gray-400 flex-shrink-0 pt-0.5 ${!isModal ? 'w-7' : 'w-12 text-xs font-medium'}`}>To</span>
         <div className="flex-1 min-w-0">
           <EmailChipInput
             chips={toChips}
@@ -534,7 +583,7 @@ export default function ComposeForm({
               <button
                 type="button"
                 onClick={() => setShowCc(true)}
-                className={isInline
+                className={!isModal
                   ? 'flex-shrink-0 px-1.5 py-0.5 rounded text-xs text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors'
                   : 'text-xs text-blue-600 hover:underline flex-shrink-0 pt-2'}
               >
@@ -545,7 +594,7 @@ export default function ComposeForm({
               <button
                 type="button"
                 onClick={() => setShowBcc(true)}
-                className={isInline
+                className={!isModal
                   ? 'flex-shrink-0 px-1.5 py-0.5 rounded text-xs text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors'
                   : 'text-xs text-blue-600 hover:underline flex-shrink-0 pt-2'}
               >
@@ -558,8 +607,8 @@ export default function ComposeForm({
 
       {/* CC */}
       {showCc && (
-        <div className={isInline ? 'flex items-start gap-2 py-0.5' : 'flex items-start gap-3 border-b border-gray-100 py-2'}>
-          <span className={`text-gray-400 flex-shrink-0 pt-0.5 ${isInline ? 'w-7' : 'w-12 text-xs font-medium'}`}>CC</span>
+        <div className={!isModal ? 'flex items-start gap-2 py-0.5' : 'flex items-start gap-3 border-b border-gray-100 py-2'}>
+          <span className={`text-gray-400 flex-shrink-0 pt-0.5 ${!isModal ? 'w-7' : 'w-12 text-xs font-medium'}`}>CC</span>
           <div className="flex-1 min-w-0">
             <EmailChipInput
               chips={ccChips}
@@ -570,19 +619,19 @@ export default function ComposeForm({
           <button
             type="button"
             onClick={() => { setShowCc(false); setCcChips([]); }}
-            className={isInline
+            className={!isModal
               ? 'flex-shrink-0 px-1.5 py-0.5 rounded text-xs text-blue-600 bg-blue-50 transition-colors'
               : 'text-xs text-gray-400 hover:text-gray-600 flex-shrink-0 pt-2'}
           >
-            {isInline ? 'CC' : '×'}
+            {!isModal ? 'CC' : '×'}
           </button>
         </div>
       )}
 
       {/* BCC */}
       {showBcc && (
-        <div className={isInline ? 'flex items-start gap-2 py-0.5' : 'flex items-start gap-3 border-b border-gray-100 py-2'}>
-          <span className={`text-gray-400 flex-shrink-0 pt-0.5 ${isInline ? 'w-7' : 'w-12 text-xs font-medium'}`}>BCC</span>
+        <div className={!isModal ? 'flex items-start gap-2 py-0.5' : 'flex items-start gap-3 border-b border-gray-100 py-2'}>
+          <span className={`text-gray-400 flex-shrink-0 pt-0.5 ${!isModal ? 'w-7' : 'w-12 text-xs font-medium'}`}>BCC</span>
           <div className="flex-1 min-w-0">
             <EmailChipInput
               chips={bccChips}
@@ -593,19 +642,19 @@ export default function ComposeForm({
           <button
             type="button"
             onClick={() => { setShowBcc(false); setBccChips([]); }}
-            className={isInline
+            className={!isModal
               ? 'flex-shrink-0 px-1.5 py-0.5 rounded text-xs text-blue-600 bg-blue-50 transition-colors'
               : 'text-xs text-gray-400 hover:text-gray-600 flex-shrink-0 pt-2'}
           >
-            {isInline ? 'BCC' : '×'}
+            {!isModal ? 'BCC' : '×'}
           </button>
         </div>
       )}
 
       {/* Subject (compose + forward) */}
       {mode !== 'reply' && (
-        <div className={isInline ? 'flex items-center gap-2 py-0.5' : 'flex items-center gap-3 border-b border-gray-100 py-2.5'}>
-          <span className={`text-gray-400 flex-shrink-0 ${isInline ? 'w-7' : 'w-12 text-xs font-medium'}`}>件名</span>
+        <div className={!isModal ? 'flex items-center gap-2 py-0.5' : 'flex items-center gap-3 border-b border-gray-100 py-2.5'}>
+          <span className={`text-gray-400 flex-shrink-0 ${!isModal ? 'w-7' : 'w-12 text-xs font-medium'}`}>件名</span>
           <input
             type="text"
             className="flex-1 text-sm text-gray-900 focus:outline-none placeholder-gray-400 bg-transparent"
@@ -649,7 +698,7 @@ export default function ComposeForm({
   ) : null;
 
   const editorSection = (
-    <div className={mode === 'compose' ? 'pt-3 pb-2 px-5' : 'p-3'}>
+    <div className={isModal ? 'pt-3 pb-2 px-2 sm:px-5' : 'p-3'}>
       <RichEditor
         ref={editorRef}
         placeholder={mode === 'reply' ? '返信内容を入力してください…' : '本文を入力してください…'}
@@ -784,23 +833,48 @@ export default function ComposeForm({
   const cancelBtn = (
     <button
       onClick={onCancel}
-      className={`inline-flex items-center justify-center rounded-lg text-xs font-medium text-gray-600 bg-white border border-gray-200 hover:bg-gray-100 transition-colors ${isInline ? 'p-1.5 md:px-3 md:py-1.5' : 'p-1.5 sm:px-3 sm:py-1.5'}`}
+      className={`inline-flex items-center justify-center rounded-lg text-xs font-medium text-gray-600 bg-white border border-gray-200 hover:bg-gray-100 transition-colors ${!isModal ? 'p-1.5 md:px-3 md:py-1.5' : 'p-1.5 sm:px-3 sm:py-1.5'}`}
     >
-      <svg className={`w-4 h-4 ${isInline ? 'md:hidden' : 'sm:hidden'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <svg className={`w-4 h-4 ${!isModal ? 'md:hidden' : 'sm:hidden'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
       </svg>
-      <span className={isInline ? 'hidden md:inline' : 'hidden sm:inline'}>キャンセル</span>
+      <span className={!isModal ? 'hidden md:inline' : 'hidden sm:inline'}>キャンセル</span>
     </button>
   );
 
   const sendBtn = (
-    <button onClick={triggerSend} disabled={sending} className="btn btn-primary btn-sm gap-1">
+    <button onClick={triggerSend} disabled={sending || scheduling} className="btn btn-primary btn-sm gap-1">
       <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
       </svg>
-      {sending ? '送信中…' : mode === 'forward' ? '転送する' : '送信する'}
+      {scheduling ? '予約中…' : sending ? '送信中…' : scheduledAtInput ? '予約送信' : mode === 'forward' ? '転送する' : '送信'}
     </button>
   );
+
+  const scheduleBtn = onSchedule ? (
+    <button
+      type="button"
+      onClick={() => setShowSchedulePicker(true)}
+      title="送信日時を指定"
+      className={`inline-flex items-center justify-center p-1.5 sm:px-3 sm:py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+        scheduledAtInput ? 'text-blue-700 bg-blue-50 border-blue-200' : 'text-gray-600 bg-white border-gray-200 hover:bg-gray-100'
+      }`}
+    >
+      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+      </svg>
+    </button>
+  ) : null;
+
+  const scheduleModal = (showSchedulePicker && onSchedule) ? (
+    <ScheduleSendModal
+      initialValue={scheduledAtInput}
+      initialError={scheduleError}
+      onConfirm={(v) => { setScheduledAtInput(v); setScheduleError(''); setShowSchedulePicker(false); }}
+      onClear={scheduledAtInput ? () => { setScheduledAtInput(''); setScheduleError(''); setShowSchedulePicker(false); } : undefined}
+      onClose={() => setShowSchedulePicker(false)}
+    />
+  ) : null;
 
   const dragOverlay = isDragging && (
     <div className="absolute inset-0 z-50 bg-blue-50/90 border-2 border-dashed border-blue-400 rounded-xl flex items-center justify-center pointer-events-none">
@@ -809,11 +883,11 @@ export default function ComposeForm({
   );
 
   const fileInput = (
-    <label className={`cursor-pointer flex items-center gap-1 text-xs text-gray-500 hover:text-gray-700 p-1.5 rounded-lg hover:bg-gray-200 transition-colors ${!isInline ? 'border border-gray-200 bg-white' : ''}`} title="ファイル添付">
+    <label className={`cursor-pointer flex items-center gap-1 text-xs text-gray-500 hover:text-gray-700 p-1.5 rounded-lg hover:bg-gray-200 transition-colors ${isModal ? 'border border-gray-200 bg-white' : ''}`} title="ファイル添付">
       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
       </svg>
-      <span className={isInline ? 'hidden md:inline' : 'hidden sm:inline'}>ファイル添付</span>
+      <span className={!isModal ? 'hidden md:inline' : 'hidden sm:inline'}>ファイル添付</span>
       <input type="file" multiple className="sr-only" onChange={e => {
         if (!e.target.files) return;
         addFiles(Array.from(e.target.files));
@@ -833,44 +907,27 @@ export default function ComposeForm({
     />
   );
 
-  // ── COMPOSE mode: renders fields+footer for use inside modal ────────
-  if (!isInline) {
-    return (
-      <>
-        {newContactsPrompt}
-        {overlay}
-        <div className="relative flex flex-col flex-1 min-h-0" {...dragHandlers}>
-          {dragOverlay}
-          <div className="flex-1 overflow-y-auto">
-            <div className="pt-3 pb-2">
-              {conflictBanner}
-              {fieldsSection}
-              {editorSection}
-              {signatureSection}
-              {attachmentsSection}
-              {error && <p className="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2 mb-3 mx-5">{error}</p>}
-            </div>
-          </div>
-          <div className="border-t border-gray-200 flex-shrink-0 bg-gray-50 sm:rounded-b-2xl" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
-            <div className="flex items-center justify-end px-4 pt-2 pb-0 sm:hidden">
-              {syncStatus}
-            </div>
-            <div className="flex items-center justify-between px-4 py-2.5">
-              <div className="flex items-center gap-1.5">
-                {fileInput}
-                <span className="hidden sm:block">{syncStatus}</span>
-              </div>
-              <div className="flex items-center gap-1.5">{aiBtn}{cancelBtn}{sendBtn}</div>
-            </div>
-          </div>
-        </div>
-      </>
-    );
-  }
+  // ── Shared chrome: one modal shell (backdrop + centered card + header +
+  // scrollable body + footer) is used both for compose (always modal) and
+  // for reply/forward when expanded to fullscreen — instead of maintaining
+  // two near-duplicate layouts. Only the inline reply/forward card (the
+  // default, non-fullscreen reply/forward view) has its own lighter chrome.
+  const accent = mode === 'reply' ? 'border-blue-200' : mode === 'forward' ? 'border-green-200' : 'border-gray-200';
+  const modalTitle = mode === 'compose' ? (draftId ? '下書きを編集' : '新規メール作成') : mode === 'reply' ? '返信を作成' : '転送';
+  const modalSub = mode === 'reply' ? (toChips[0] || '') : mode === 'forward' ? `Fw: ${subject}` : '';
+  const modalIcon = mode === 'reply' ? (
+    <svg className="w-4 h-4 text-blue-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+    </svg>
+  ) : mode === 'forward' ? (
+    <svg className="w-4 h-4 text-green-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 9l3 3m0 0l-3 3m3-3H8m13 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+    </svg>
+  ) : null;
 
-  // ── REPLY / FORWARD mode: self-contained card ────────────────────
-  const accent = mode === 'reply' ? 'border-blue-200' : 'border-green-200';
-  const headerIcon = mode === 'reply' ? (
+  // reply/forward's inline card (light header, colored icon) uses its own
+  // theme-matching icon color instead of the modal shell's dark-bg variant.
+  const inlineIcon = mode === 'reply' ? (
     <svg className="w-4 h-4 text-blue-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
     </svg>
@@ -879,69 +936,179 @@ export default function ComposeForm({
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 9l3 3m0 0l-3 3m3-3H8m13 0a9 9 0 11-18 0 9 9 0 0118 0z" />
     </svg>
   );
-  const headerTitle = mode === 'reply' ? '返信を作成' : '転送';
-  const headerSub = mode === 'reply' ? (toChips[0] || '') : `Fw: ${subject}`;
 
-  return (
-    <div className={`relative card overflow-hidden shadow-lg ${accent}`} {...dragHandlers}>
-      {dragOverlay}
-      {newContactsPrompt}
-      {overlay}
-      {/* Header */}
-      <div className="flex items-center justify-between px-4 py-2.5 bg-gray-50 border-b border-gray-200">
-        <div className="flex items-center gap-2 text-sm text-gray-700 min-w-0">
-          {headerIcon}
-          <span className="font-medium flex-shrink-0">{headerTitle}</span>
-          {headerSub && <span className="text-gray-400 text-xs truncate">→ {headerSub}</span>}
-        </div>
-        <div className="flex items-center gap-2 flex-shrink-0">
-          {presenceAvatars}
-          <button onClick={onCancel} className="text-gray-400 hover:text-gray-600 p-1 rounded hover:bg-gray-200 transition-colors">
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
-        </div>
+  // How to leave the modal shell differs by mode: compose has no "home" to
+  // return to, so it minimizes to a floating bar; reply/forward's home is
+  // the inline card, so it just un-fullscreens.
+  function requestCollapse() {
+    if (!isInline) setMinimized(true);
+    else setIsFullscreen(false);
+  }
+
+  const minimizeBtn = !isInline ? (
+    <button onClick={() => setMinimized(true)} className="p-1.5 rounded text-gray-300 hover:text-white hover:bg-gray-700 transition-colors" title="最小化">
+      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" /></svg>
+    </button>
+  ) : null;
+
+  const fullscreenToggleBtn = isInline ? (
+    <button
+      type="button"
+      onClick={() => setIsFullscreen(v => !v)}
+      title={isFullscreen ? '元のサイズに戻す' : 'フルスクリーンで開く'}
+      className={isFullscreen
+        ? 'p-1.5 rounded text-gray-300 hover:text-white hover:bg-gray-700 transition-colors'
+        : 'text-gray-400 hover:text-gray-600 p-1 rounded hover:bg-gray-200 transition-colors'}
+    >
+      {isFullscreen ? (
+        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 9V4.5M9 9H4.5M9 9L3.75 3.75M15 9h4.5M15 9V4.5M15 9l5.25-5.25M15 15v4.5M15 15H4.5m10.5 0l5.25 5.25M9 15H4.5M9 15v4.5M9 15l-5.25 5.25" />
+        </svg>
+      ) : (
+        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3.75 3.75h4.5m-4.5 0v4.5m0-4.5L9 9M20.25 3.75h-4.5m4.5 0v4.5m0-4.5L15 9M3.75 20.25h4.5m-4.5 0v-4.5m0 4.5L9 15M20.25 20.25h-4.5m4.5 0v-4.5m0 4.5L15 15" />
+        </svg>
+      )}
+    </button>
+  ) : null;
+
+  const modalHeaderBar = (
+    <div className="flex items-center justify-between px-3 sm:px-5 py-3 border-b border-gray-200 flex-shrink-0 bg-gray-800 sm:rounded-t-2xl">
+      <div className="flex items-center gap-2 min-w-0">
+        {modalIcon}
+        <h2 className="font-semibold text-white text-sm flex-shrink-0">{modalTitle}</h2>
+        {modalSub && <span className="text-gray-400 text-xs truncate">→ {modalSub}</span>}
       </div>
+      <div className="flex items-center gap-1 flex-shrink-0">
+        {presenceAvatars}
+        {minimizeBtn}
+        {fullscreenToggleBtn}
+        <button onClick={onCancel} className="p-1.5 rounded text-gray-300 hover:text-white hover:bg-gray-700 transition-colors" title="閉じる">
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+    </div>
+  );
 
+  const inlineHeaderBar = (
+    <div className="flex items-center justify-between px-4 py-2.5 bg-gray-50 border-b border-gray-200 flex-shrink-0">
+      <div className="flex items-center gap-2 text-sm text-gray-700 min-w-0">
+        {inlineIcon}
+        <span className="font-medium flex-shrink-0">{modalTitle}</span>
+        {modalSub && <span className="text-gray-400 text-xs truncate">→ {modalSub}</span>}
+      </div>
+      <div className="flex items-center gap-1 flex-shrink-0">
+        {presenceAvatars}
+        {fullscreenToggleBtn}
+        <button onClick={onCancel} className="text-gray-400 hover:text-gray-600 p-1 rounded hover:bg-gray-200 transition-colors">
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+    </div>
+  );
+
+  const bodyContent = (
+    <>
       {conflictBanner}
       {fieldsSection}
       {editorSection}
       {signatureSection}
       {quoteSection}
       {attachmentsSection}
+    </>
+  );
 
-      {/* Footer */}
-      <div className="bg-gray-50 border-t border-gray-200">
-        <div className="flex items-center justify-between px-3 pt-2 pb-0 md:hidden">
-          <p className="text-xs text-amber-600 flex items-center gap-1">
-            <svg className="w-3 h-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+  const footerBar = (
+    <div className="bg-gray-50 border-t border-gray-200 flex-shrink-0" style={isModal ? { paddingBottom: 'env(safe-area-inset-bottom)' } : undefined}>
+      <div className="flex items-center justify-between px-3 pt-2 pb-0 md:hidden">
+        <p className="text-xs text-amber-600 flex items-center gap-1">
+          <svg className="w-3 h-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+          </svg>
+          外部に送信されます
+        </p>
+        {syncStatus}
+      </div>
+      <div className="flex items-center justify-between px-3 py-2 md:px-4 md:py-2.5">
+        <div className="flex items-center gap-1.5">
+          {fileInput}
+          <p className="hidden md:flex text-xs text-amber-600 items-center gap-1">
+            <svg className="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
             </svg>
             外部に送信されます
           </p>
-          {syncStatus}
+          <span className="hidden md:block">{syncStatus}</span>
         </div>
-        <div className="flex items-center justify-between px-3 py-2 md:px-4 md:py-2.5">
-          <div className="flex items-center gap-1.5">
-            {fileInput}
-            <p className="hidden md:flex text-xs text-amber-600 items-center gap-1">
-              <svg className="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-              </svg>
-              外部に送信されます
-            </p>
-            <span className="hidden md:block">{syncStatus}</span>
+        <div className="flex items-center gap-1.5">{aiBtn}{scheduleBtn}{cancelBtn}{sendBtn}</div>
+      </div>
+    </div>
+  );
+
+  const errorBanner = error && (
+    <div className="px-3 pb-2 flex-shrink-0">
+      <p className="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">{error}</p>
+    </div>
+  );
+
+  if (isModal) {
+    if (minimized) {
+      return (
+        <div className="fixed bottom-0 right-6 z-[110] w-80 shadow-2xl rounded-t-xl overflow-hidden">
+          <div className="flex items-center justify-between px-4 py-2.5 bg-gray-800 text-white cursor-pointer hover:bg-gray-700 transition-colors" onClick={() => setMinimized(false)}>
+            <span className="text-sm font-medium truncate">{modalTitle}</span>
+            <div className="flex items-center gap-1.5 ml-2 flex-shrink-0" onClick={e => e.stopPropagation()}>
+              <button onClick={() => setMinimized(false)} className="p-1 rounded hover:bg-gray-600 transition-colors" title="展開">
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" /></svg>
+              </button>
+              <button onClick={onCancel} className="p-1 rounded hover:bg-gray-600 transition-colors" title="閉じる">
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+              </button>
+            </div>
           </div>
-          <div className="flex items-center gap-1.5">{aiBtn}{cancelBtn}{sendBtn}</div>
+        </div>
+      );
+    }
+
+    return (
+      <div className="fixed inset-0 z-[110] flex flex-col sm:items-center sm:justify-center sm:p-4">
+        <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={requestCollapse} />
+        {newContactsPrompt}
+        {overlay}
+        {scheduleModal}
+        <div
+          className={`relative w-full h-full sm:h-auto sm:max-w-5xl sm:max-h-[94vh] bg-white sm:rounded-2xl sm:shadow-2xl border ${accent} flex flex-col overflow-hidden`}
+          {...dragHandlers}
+        >
+          {dragOverlay}
+          {modalHeaderBar}
+          <div className="flex-1 overflow-y-auto">
+            <div className="pt-3 pb-2">
+              {bodyContent}
+              {errorBanner}
+            </div>
+          </div>
+          {footerBar}
         </div>
       </div>
+    );
+  }
 
-      {error && (
-        <div className="px-3 pb-2">
-          <p className="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">{error}</p>
-        </div>
-      )}
+  // ── Inline reply/forward card (default, non-fullscreen) ──────────────
+  return (
+    <div className={`relative card overflow-hidden shadow-lg ${accent}`} {...dragHandlers}>
+      {dragOverlay}
+      {newContactsPrompt}
+      {overlay}
+      {scheduleModal}
+      {inlineHeaderBar}
+      {bodyContent}
+      {footerBar}
+      {errorBanner}
     </div>
   );
 }

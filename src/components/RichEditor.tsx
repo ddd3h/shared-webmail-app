@@ -9,6 +9,7 @@ import Image from '@tiptap/extension-image';
 import Collaboration from '@tiptap/extension-collaboration';
 import CollaborationCaret from '@tiptap/extension-collaboration-caret';
 import { Extension } from '@tiptap/core';
+import { DOMParser as PMDOMParser } from '@tiptap/pm/model';
 import DOMPurify from 'dompurify';
 import type * as Y from 'yjs';
 import type { WebsocketProvider } from 'y-websocket';
@@ -32,6 +33,14 @@ const PURIFY_CONFIG = {
 function purify(html: string): string {
   if (typeof window === 'undefined') return '';
   return DOMPurify.sanitize(html, PURIFY_CONFIG) as string;
+}
+
+// Serializing an empty blank-line paragraph (from pressing Enter twice) produces
+// bare <p></p> — browsers collapse its margins into neighboring paragraphs, so the
+// visual gap becomes identical to a single Enter once rendered outside the live
+// editor (sent mail, other clients). Force a <br> so the blank line keeps its height.
+function normalizeEmptyParagraphs(html: string): string {
+  return html.replace(/<p([^>]*)>(?:\s|&nbsp;)*<\/p>/g, '<p$1><br></p>');
 }
 
 // Custom FontSize extension using TextStyle marks
@@ -123,28 +132,82 @@ const RichEditor = forwardRef<RichEditorHandle, Props>(
           style: `min-height: ${minHeight}px; color: #111827; padding: 12px;`,
           'data-placeholder': placeholder ?? '',
         },
-        handlePaste(_, event) {
-          const items = Array.from(event.clipboardData?.items ?? []);
-          const imgItem = items.find(i => i.type.startsWith('image/'));
-          if (imgItem) {
+        handlePaste(view, event) {
+          // IMPORTANT: use `view` (the live ProseMirror EditorView ProseMirror hands
+          // us for THIS event), not the outer `editor` closure variable. When this
+          // editor has a non-empty useEditor() deps array (ydoc/provider, for
+          // collaborative team drafts), Tiptap's react bindings only recreate the
+          // editor on dep changes and never re-sync editorProps into the live
+          // instance — so a closure-captured `editor` can end up permanently
+          // pointing at an already-destroyed instance the moment ydoc/provider
+          // resolve, throwing "commandManager is null" on every future paste.
+          // `view` has no such staleness: ProseMirror always passes the current one.
+          const types = event.clipboardData?.types ?? [];
+          const hasText = types.includes('text/html') || types.includes('text/plain');
+
+          // Only treat this as an image paste when there's no text representation —
+          // rich sources (Word, web pages) often also place a bitmap snapshot of the
+          // selection on the clipboard alongside the real text/html, and picking the
+          // image first silently swallowed the text paste.
+          if (!hasText) {
+            const items = Array.from(event.clipboardData?.items ?? []);
+            const imgItem = items.find(i => i.type.startsWith('image/'));
+            if (imgItem) {
+              event.preventDefault();
+              const file = imgItem.getAsFile();
+              if (!file) return true;
+              const reader = new FileReader();
+              reader.onload = () => {
+                const imageType = view.state.schema.nodes.image;
+                if (!imageType) return;
+                const node = imageType.create({ src: reader.result as string });
+                view.dispatch(view.state.tr.replaceSelectionWith(node));
+                onInput?.();
+              };
+              reader.readAsDataURL(file);
+              return true;
+            }
+          }
+
+          if (types.includes('text/html')) {
             event.preventDefault();
-            const file = imgItem.getAsFile();
-            if (!file) return true;
-            const reader = new FileReader();
-            reader.onload = () => {
-              editor?.chain().focus().setImage({ src: reader.result as string }).run();
-              onInput?.();
+            const raw = event.clipboardData!.getData('text/html');
+            const plain = event.clipboardData!.getData('text/plain');
+
+            const insertHtml = (html: string) => {
+              const dom = document.createElement('div');
+              dom.innerHTML = html;
+              const slice = PMDOMParser.fromSchema(view.state.schema).parseSlice(dom, { preserveWhitespace: true });
+              view.dispatch(view.state.tr.replaceSelection(slice));
             };
-            reader.readAsDataURL(file);
+
+            // Real-world pasted HTML (Word, Google Docs, news sites) is often messy
+            // enough that even after sanitizing it doesn't cleanly fit the editor's
+            // schema — parsing/inserting it can throw. Any failure in the rich-HTML
+            // path falls back to inserting plain text so paste never silently no-ops.
+            const insertPlainFallback = () => {
+              if (!plain) return;
+              const escaped = plain
+                .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+                .replace(/\n/g, '<br>');
+              insertHtml(escaped);
+            };
+
+            try {
+              const sanitized = purify(raw);
+              if (sanitized.replace(/<[^>]+>/g, '').trim() === '') {
+                insertPlainFallback();
+              } else {
+                insertHtml(sanitized);
+              }
+            } catch (e) {
+              console.warn('[RichEditor] rich paste failed, falling back to plain text', e);
+              insertPlainFallback();
+            }
+            onInput?.();
             return true;
           }
-          if (event.clipboardData?.types.includes('text/html')) {
-            event.preventDefault();
-            const raw = event.clipboardData.getData('text/html');
-            editor?.chain().focus().insertContent(purify(raw)).run();
-            setTimeout(() => onInput?.(), 0);
-            return true;
-          }
+
           return false;
         },
       },
@@ -190,7 +253,7 @@ const RichEditor = forwardRef<RichEditorHandle, Props>(
     }, [provider, onCollaboratorsChange]);
 
     useImperativeHandle(ref, () => ({
-      getHTML: () => editor?.getHTML() ?? '',
+      getHTML: () => normalizeEmptyParagraphs(editor?.getHTML() ?? ''),
       getText: () => editor?.getText() ?? '',
       focus: () => { editor?.commands.focus(); },
       setHTML: (html: string) => { editor?.commands.setContent(purify(html)); },
@@ -206,7 +269,7 @@ const RichEditor = forwardRef<RichEditorHandle, Props>(
         type="button"
         onMouseDown={(e) => { e.preventDefault(); onClick(); }}
         title={title}
-        className={`px-2 py-1 rounded text-sm transition-colors select-none ${
+        className={`flex-shrink-0 px-2 py-1 rounded text-sm transition-colors select-none ${
           active ? 'bg-blue-100 text-blue-700' : 'text-gray-600 hover:bg-gray-200 hover:text-gray-900'
         }`}
       >
@@ -217,7 +280,7 @@ const RichEditor = forwardRef<RichEditorHandle, Props>(
     return (
       <div className="border border-gray-200 rounded-lg overflow-hidden focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-blue-500">
         {/* Toolbar */}
-        <div className="flex items-center gap-0.5 px-2 py-1.5 border-b border-gray-200 bg-gray-50 flex-wrap">
+        <div className="flex items-center gap-0.5 px-2 py-1.5 border-b border-gray-200 bg-gray-50 flex-nowrap overflow-x-auto">
           <ToolBtn onClick={() => editor.chain().focus().toggleBold().run()} title="太字 (Ctrl+B)" active={editor.isActive('bold')}>
             <strong>B</strong>
           </ToolBtn>
@@ -240,14 +303,14 @@ const RichEditor = forwardRef<RichEditorHandle, Props>(
               editor.chain().focus().setFontSize(`${e.target.value}pt`).run();
             }}
             onMouseDown={(e) => e.stopPropagation()}
-            className="text-xs border border-gray-200 rounded px-1.5 py-1 bg-white text-gray-600 cursor-pointer hover:border-gray-300 focus:outline-none focus:border-blue-400"
+            className="flex-shrink-0 text-xs border border-gray-200 rounded px-1.5 py-1 bg-white text-gray-600 cursor-pointer hover:border-gray-300 focus:outline-none focus:border-blue-400"
             title="フォントサイズ (pt)"
           >
             {FONT_SIZES.map(pt => <option key={pt} value={pt}>{pt}pt</option>)}
           </select>
 
           {/* Text color */}
-          <div className="relative group">
+          <div className="relative group flex-shrink-0">
             <button
               type="button"
               onMouseDown={(e) => e.preventDefault()}

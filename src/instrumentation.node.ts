@@ -7,6 +7,7 @@ import { prisma } from '@/lib/db';
 import { syncMailbox } from '@/lib/mail/sync';
 import { reconcileIdleConnections } from '@/lib/mail/idle';
 import { computeMfiForAllUsers, runMfiNoonAlerts } from '@/lib/background-jobs';
+import { dispatchDueScheduledSends } from '@/lib/mail/deliver';
 
 const DEFAULT_INTERVAL_SEC = 180;
 
@@ -111,6 +112,23 @@ if (!g.__mfiNoonAlertStarted) {
   }, 60 * 1000);
 
   console.log('[mfi] noon DM alert job started (weekdays 12:00 JST)');
+}
+
+// Scheduled ("予約送信") emails — check every minute for anything whose
+// scheduled_at has arrived and actually send it. This is the app's real dispatch
+// path; /api/cron/scheduled-send is only a fallback for external-cron deployments.
+if (!g.__scheduledSendStarted) {
+  g.__scheduledSendStarted = true;
+
+  const runScheduledSend = () =>
+    dispatchDueScheduledSends()
+      .then(({ dispatched }) => { if (dispatched > 0) console.log(`[scheduled-send] dispatched ${dispatched} message(s)`); })
+      .catch(e => console.error('[scheduled-send] dispatch run failed:', e));
+
+  setTimeout(runScheduledSend, 10_000);
+  setInterval(runScheduledSend, 60 * 1000);
+
+  console.log('[scheduled-send] dispatch job started (checks every 1m)');
 }
 
 // Cleanup expired sessions daily to prevent unbounded table growth
