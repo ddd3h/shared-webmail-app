@@ -190,11 +190,9 @@ export async function POST(req: NextRequest) {
         where: { id: { in: chunk } },
         data: { is_spam: true, spam_reason: 'manual', spam_flagged_at: new Date() }
       });
-      // Blocklist sender of first incoming message for each thread
+      // Blocklist every incoming sender on each thread, not just the first one
       const senderRows = await prisma.messages.findMany({
         where: { thread_id: { in: chunk }, direction: 'incoming' },
-        orderBy: { created_at: 'asc' },
-        distinct: ['thread_id'],
         select: { from_email: true }
       });
       const uniqueAddresses = [...new Set(senderRows.map(r => r.from_email.toLowerCase()).filter(Boolean))];
@@ -210,6 +208,17 @@ export async function POST(req: NextRequest) {
         where: { id: { in: chunk } },
         data: { is_spam: false, spam_reason: null, spam_flagged_at: null }
       });
+      // Also remove these threads' incoming senders from the blocklist
+      const senderRows = await prisma.messages.findMany({
+        where: { thread_id: { in: chunk }, direction: 'incoming' },
+        select: { from_email: true }
+      });
+      const uniqueAddresses = [...new Set(senderRows.map(r => r.from_email.toLowerCase()).filter(Boolean))];
+      if (uniqueAddresses.length > 0) {
+        await prisma.spam_senders.deleteMany({
+          where: { type: 'blocklist', address: { in: uniqueAddresses } }
+        });
+      }
     } else if (action === 'delete') {
       const threadsToDelete = await prisma.threads.findMany({
         where: { id: { in: chunk } },

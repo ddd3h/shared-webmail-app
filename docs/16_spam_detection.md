@@ -12,16 +12,19 @@
 
 ## 2. 検出パイプライン
 
-`src/lib/spam.ts` の `detectSpam()` が実行順序を制御する。**順序は厳守**（ホワイトリストが最優先）。
+`src/lib/spam.ts` の `detectSpam()` が実行順序を制御する。**順序は厳守**。
+
+リスト判定（①②）は `checkSenderLists()` に統合されており、**具体性優先**で評価する:
+アドレス完全一致 whitelist → アドレス完全一致 blocklist → ドメイン一致 whitelist → ドメイン一致 blocklist。
+ドメインをホワイトリストに入れても、個別アドレスのブロックリスト登録が優先される。
 
 ```
 受信メッセージ
     │
     ▼
-① ホワイトリスト確認 ──(一致)──▶ スパムではない（終了）
-    │
-    ▼
-② ブロックリスト確認 ──(一致)──▶ spam / reason: "blocklist"
+①② リスト確認（checkSenderLists）
+    ├─(whitelist一致)──▶ スパムではない（終了）
+    ├─(blocklist一致)──▶ spam / reason: "blocklist"
     │
     ▼
 ③ Spamhaus IP (zen.spamhaus.org) ──(リスト掲載)──▶ spam / reason: "spamhaus_ip"
@@ -46,8 +49,8 @@
 
 | # | レイヤー | データソース | 備考 |
 |---|---|---|---|
-| ① | ホワイトリスト | DB `spam_senders` (type='whitelist') | アドレス完全一致 or ドメイン一致 |
-| ② | ブロックリスト | DB `spam_senders` (type='blocklist') | 同上 |
+| ① | ホワイトリスト | DB `spam_senders` (type='whitelist') | アドレス完全一致 > ドメイン一致（`checkSenderLists`で②と統合評価） |
+| ② | ブロックリスト | DB `spam_senders` (type='blocklist') | アドレス完全一致はドメインwhitelistより優先 |
 | ③ | Spamhaus IP | DNS `{逆順IP}.zen.spamhaus.org` | Receivedヘッダーから外部IPを抽出。プライベートIPはスキップ |
 | ④ | Spamhaus Domain | DNS `{domain}.dbl.spamhaus.org` | From アドレスのドメイン部分を使用 |
 | ⑤ | ヒューリスティック | ハードコードパターン | 件名/本文の正規表現マッチ |
@@ -384,8 +387,10 @@ node prisma/eval-spam-ml.mjs
 | トリガー | `created_by_id` | `note` |
 |---|---|---|
 | 受信時の自動検出（`blocklist` 以外の reason） | `null` | `ML自動判定` |
-| ユーザーが「迷惑メール」ボタンを押す | そのユーザーのID | `手動マーク` |
+| ユーザーが「迷惑メール」ボタンを押す（スレッド内の**全 incoming 送信者**を登録） | そのユーザーのID | `手動マーク` |
 | 管理者が手動で追加 | 管理者のID | 任意入力 |
+
+「迷惑メールではない」（unspam）操作時は、そのスレッドの incoming 送信者に一致するブロックリスト行を削除する（誤マークした送信者が永久ブロックされるのを防ぐ）。
 
 管理設定 > 迷惑メール管理 の「登録者」列では `created_by_id` が `null` のエントリを **「ML」** と表示する。
 
@@ -398,22 +403,30 @@ node prisma/eval-spam-ml.mjs
 `src/lib/mail/sync.ts` の受信メッセージ処理内：
 
 ```typescript
-// 1. spam 検出
-const spamResult = await detectSpam({ fromEmail, receivedHeaders, subject, textBody, fromName, hasAttachments });
+// 1. スレッドが既に is_spam なら継承（別アドレスからの追撃メールも通知させない）
+const thread = await prisma.threads.findUnique({ where: { id: threadId }, select: { is_spam: true } });
+if (thread?.is_spam) {
+  isSpam = true;
+} else {
+  // 2. spam 検出
+  const spamResult = await detectSpam({ fromEmail, receivedHeaders, subject, textBody, fromName, hasAttachments });
 
-if (spamResult?.isSpam) {
-  // 2. スレッドにフラグを立てる
-  await prisma.threads.update({ data: { is_spam: true, spam_reason, spam_flagged_at } });
+  if (spamResult?.isSpam) {
+    // 3. スレッドにフラグを立てる
+    await prisma.threads.update({ data: { is_spam: true, spam_reason, spam_flagged_at } });
 
-  // 3. ブロックリスト追加（reason が 'blocklist' 以外のみ）
-  await prisma.spam_senders.upsert({ ... created_by_id: undefined ... });
+    // 4. ブロックリスト追加（reason が 'blocklist' 以外のみ）
+    await prisma.spam_senders.upsert({ ... created_by_id: undefined ... });
+  }
 }
 
-// 4. スパムスレッドは通知しない
+// 5. スパムスレッドは通知しない
 if (!isSpam) {
   await notifyNewMessage(...);
 }
 ```
+
+検出処理が例外を投げた場合は fail-open（同期は止めない）だが、`console.error` と同期エラー一覧に記録される。
 
 ---
 

@@ -83,25 +83,26 @@ function hasSpamKeywords(subject: string, body: string): boolean {
 }
 
 // --- Whitelist / blocklist DB check ---
+// Precedence: exact address beats domain, so a domain whitelist entry cannot
+// override an individually blocklisted address (and vice versa).
 
-async function isWhitelisted(fromEmail: string): Promise<boolean> {
-  const domain = fromEmail.split('@')[1]?.toLowerCase() || '';
+export async function checkSenderLists(fromEmail: string): Promise<'whitelist' | 'blocklist' | null> {
   const addr = fromEmail.toLowerCase();
-  const entries = await prisma.spam_senders.findMany({
-    where: { type: 'whitelist' },
-    select: { address: true },
-  });
-  return entries.some(e => addr === e.address.toLowerCase() || domain === e.address.toLowerCase());
-}
+  if (!addr) return null;
+  const domain = addr.split('@')[1] || '';
 
-async function isBlocklisted(fromEmail: string): Promise<boolean> {
-  const domain = fromEmail.split('@')[1]?.toLowerCase() || '';
-  const addr = fromEmail.toLowerCase();
   const entries = await prisma.spam_senders.findMany({
-    where: { type: 'blocklist' },
-    select: { address: true },
+    where: { type: { in: ['whitelist', 'blocklist'] } },
+    select: { type: true, address: true },
   });
-  return entries.some(e => addr === e.address.toLowerCase() || domain === e.address.toLowerCase());
+  const whitelist = new Set(entries.filter(e => e.type === 'whitelist').map(e => e.address.toLowerCase()));
+  const blocklist = new Set(entries.filter(e => e.type === 'blocklist').map(e => e.address.toLowerCase()));
+
+  if (whitelist.has(addr)) return 'whitelist';
+  if (blocklist.has(addr)) return 'blocklist';
+  if (domain && whitelist.has(domain)) return 'whitelist';
+  if (domain && blocklist.has(domain)) return 'blocklist';
+  return null;
 }
 
 // --- Main detection function ---
@@ -119,11 +120,10 @@ export async function detectSpam(params: {
   const { fromEmail, receivedHeaders, subject = '', textBody = '', fromName, hasAttachments } = params;
   const domain = fromEmail.split('@')[1]?.toLowerCase() || '';
 
-  // 1. Whitelist check — overrides everything
-  if (await isWhitelisted(fromEmail)) return null;
-
-  // 2. Blocklist check
-  if (await isBlocklisted(fromEmail)) {
+  // 1-2. Whitelist / blocklist check (exact address beats domain match)
+  const listResult = await checkSenderLists(fromEmail);
+  if (listResult === 'whitelist') return null;
+  if (listResult === 'blocklist') {
     return { isSpam: true, reason: 'blocklist' };
   }
 
@@ -143,7 +143,9 @@ export async function detectSpam(params: {
     return { isSpam: true, reason: 'heuristic' };
   }
 
-  // 6. ML classification — delta/n threshold from settings (default 0.5)
+  // 6. ML classification — threshold is the average per-token log-odds margin
+  // (delta / n). Default 0.5 is calibrated against measured spam samples
+  // (delta/n 0.53-1.63); see docs/16_spam_detection.md §3-5.
   try {
     const thresholdStr = await getSetting('SPAM_DELTA_THRESHOLD');
     const threshold = thresholdStr ? parseFloat(thresholdStr) : 0.5;
@@ -159,7 +161,7 @@ export async function detectSpam(params: {
   }
 
   // 7. Final whitelist re-check (race condition guard)
-  if (await isWhitelisted(fromEmail)) return null;
+  if ((await checkSenderLists(fromEmail)) === 'whitelist') return null;
 
   return null;
 }

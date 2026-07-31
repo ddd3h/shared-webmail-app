@@ -223,25 +223,37 @@ async function syncFolder(
 
         // Spam detection for incoming messages
         let isSpam = false;
-        if (direction === 'incoming' && fromEmail) {
+        if (direction === 'incoming') {
           try {
-            const spamResult = await detectSpam({ fromEmail, receivedHeaders, subject, textBody: text || '', fromName, hasAttachments: parsedAttachments.length > 0 });
-            if (spamResult?.isSpam) {
+            // Messages arriving on an already-spam thread inherit the flag,
+            // even from a different sender address — no notification, no reopen.
+            const thread = await prisma.threads.findUnique({
+              where: { id: threadId },
+              select: { is_spam: true }
+            });
+            if (thread?.is_spam) {
               isSpam = true;
-              await prisma.threads.update({
-                where: { id: threadId },
-                data: { is_spam: true, spam_reason: spamResult.reason, spam_flagged_at: new Date() }
-              });
-              if (fromEmail && spamResult.reason !== 'blocklist') {
-                await prisma.spam_senders.upsert({
-                  where: { type_address: { type: 'blocklist', address: fromEmail.toLowerCase() } },
-                  create: { type: 'blocklist', address: fromEmail.toLowerCase(), note: 'ML自動判定', created_by_id: undefined },
-                  update: {},
-                }).catch(() => {});
+            } else {
+              const spamResult = await detectSpam({ fromEmail, receivedHeaders, subject, textBody: text || '', fromName, hasAttachments: parsedAttachments.length > 0 });
+              if (spamResult?.isSpam) {
+                isSpam = true;
+                await prisma.threads.update({
+                  where: { id: threadId },
+                  data: { is_spam: true, spam_reason: spamResult.reason, spam_flagged_at: new Date() }
+                });
+                if (fromEmail && spamResult.reason !== 'blocklist') {
+                  await prisma.spam_senders.upsert({
+                    where: { type_address: { type: 'blocklist', address: fromEmail.toLowerCase() } },
+                    create: { type: 'blocklist', address: fromEmail.toLowerCase(), note: 'ML自動判定', created_by_id: undefined },
+                    update: {},
+                  }).catch(() => {});
+                }
               }
             }
-          } catch {
-            // Do not block sync on spam detection failure
+          } catch (spamErr) {
+            // Fail-open so a spam-detection outage doesn't halt sync, but never silently
+            console.error(`Spam detection failed for uid ${uid} in ${folderName}:`, spamErr);
+            errors.push(`Spam detection failed for uid ${uid} in ${folderName}: ${spamErr}`);
           }
         }
 

@@ -21,12 +21,12 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
   });
   if (!canAccess) return NextResponse.json({ error: 'forbidden' }, { status: 403 });
 
-  // Get sender email from first incoming message
-  const firstIncoming = await prisma.messages.findFirst({
+  // Blocklist every incoming sender on the thread, not just the first one
+  const incoming = await prisma.messages.findMany({
     where: { thread_id: id, direction: 'incoming' },
-    orderBy: { created_at: 'asc' },
     select: { from_email: true }
   });
+  const addresses = [...new Set(incoming.map(m => m.from_email.toLowerCase()).filter(Boolean))];
 
   await prisma.$transaction(async (tx) => {
     await tx.threads.update({
@@ -34,12 +34,12 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
       data: { is_spam: true, spam_reason: 'manual', spam_flagged_at: new Date() }
     });
 
-    if (firstIncoming?.from_email) {
+    for (const address of addresses) {
       await tx.spam_senders.upsert({
-        where: { type_address: { type: 'blocklist', address: firstIncoming.from_email.toLowerCase() } },
+        where: { type_address: { type: 'blocklist', address } },
         create: {
           type: 'blocklist',
-          address: firstIncoming.from_email.toLowerCase(),
+          address,
           note: '手動マーク',
           created_by_id: session!.userId,
         },
@@ -48,5 +48,5 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
     }
   });
 
-  return NextResponse.json({ ok: true, blocklisted: firstIncoming?.from_email ?? null });
+  return NextResponse.json({ ok: true, blocklisted: addresses });
 }

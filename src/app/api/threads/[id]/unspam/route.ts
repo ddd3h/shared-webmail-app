@@ -21,10 +21,23 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
   });
   if (!canAccess) return NextResponse.json({ error: 'forbidden' }, { status: 403 });
 
-  await prisma.threads.update({
-    where: { id },
-    data: { is_spam: false, spam_reason: null, spam_flagged_at: null }
+  // Also remove this thread's incoming senders from the blocklist, so a
+  // mistakenly-marked sender isn't silenced forever
+  const incoming = await prisma.messages.findMany({
+    where: { thread_id: id, direction: 'incoming' },
+    select: { from_email: true }
   });
+  const addresses = [...new Set(incoming.map(m => m.from_email.toLowerCase()).filter(Boolean))];
 
-  return NextResponse.json({ ok: true });
+  await prisma.$transaction([
+    prisma.threads.update({
+      where: { id },
+      data: { is_spam: false, spam_reason: null, spam_flagged_at: null }
+    }),
+    prisma.spam_senders.deleteMany({
+      where: { type: 'blocklist', address: { in: addresses } }
+    })
+  ]);
+
+  return NextResponse.json({ ok: true, unblocked: addresses });
 }
