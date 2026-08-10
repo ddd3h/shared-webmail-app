@@ -1,30 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { getSession, requireAuth } from '@/lib/auth';
-
-async function checkAccess(draftId: string, userId: string, requireReply = false) {
-  const draft = await prisma.drafts.findUnique({
-    where: { id: draftId },
-    include: { updatedBy: { select: { name: true } } },
-  });
-  if (!draft) return { draft: null, accessible: false };
-
-  if (draft.user_id === userId) return { draft, accessible: true };
-
-  if (!draft.is_shared || !draft.mailbox_id) return { draft, accessible: false };
-
-  const accessible = await prisma.mailboxes.findFirst({
-    where: {
-      id: draft.mailbox_id,
-      OR: [
-        { type: 'personal', owner_user_id: userId },
-        { permissions: { some: { user_id: userId, [requireReply ? 'can_reply' : 'can_view']: true } } },
-      ],
-    },
-    select: { id: true },
-  });
-  return { draft, accessible: !!accessible };
-}
+import { checkAccess } from '@/lib/draft-access';
+import { deleteStoredFiles } from '@/lib/attachment-storage';
 
 // GET /api/drafts/[id]
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -36,7 +14,13 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   if (!draft) return NextResponse.json({ error: 'not_found' }, { status: 404 });
   if (!accessible) return NextResponse.json({ error: 'forbidden' }, { status: 403 });
 
-  const response: Record<string, unknown> = { ...draft };
+  const attachments = await prisma.draft_attachments.findMany({
+    where: { draft_id: draft.id },
+    orderBy: { created_at: 'asc' },
+    select: { id: true, filename: true, content_type: true, size: true },
+  });
+
+  const response: Record<string, unknown> = { ...draft, attachments };
   if (draft.yjs_state) {
     response.yjs_state_b64 = draft.yjs_state.toString('base64');
   }
@@ -102,6 +86,14 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
   if (!draft) return NextResponse.json({ error: 'not_found' }, { status: 404 });
   if (!accessible) return NextResponse.json({ error: 'forbidden' }, { status: 403 });
 
+  // Attachment rows cascade with the draft; their files on disk do not, so
+  // collect the keys first and unlink after the row is gone.
+  const attachments = await prisma.draft_attachments.findMany({
+    where: { draft_id: id },
+    select: { storage_key: true },
+  });
   await prisma.drafts.delete({ where: { id } });
+  await deleteStoredFiles(attachments.map(a => a.storage_key));
+
   return NextResponse.json({ ok: true });
 }

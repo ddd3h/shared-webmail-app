@@ -4,6 +4,7 @@ import { getSession, requireAuth } from '@/lib/auth';
 import { buildThreadsWhere } from '@/lib/threads-filter';
 import { logAudit } from '@/lib/audit';
 import { deleteImapMessagesBulk } from '@/lib/mail/delete-utils';
+import { deleteStoredFiles } from '@/lib/attachment-storage';
 
 export async function POST(req: NextRequest) {
   const session = await getSession();
@@ -57,7 +58,12 @@ export async function POST(req: NextRequest) {
     }
 
     const eventIds = (await prisma.notification_events.findMany({ where: { thread_id: { in: threadIds } }, select: { id: true } })).map(e => e.id);
-    
+    // draft_attachments rows cascade with their draft, but the files on disk don't
+    const draftFiles = await prisma.draft_attachments.findMany({
+      where: { draft: { thread_id: { in: threadIds } } },
+      select: { storage_key: true },
+    });
+
     await prisma.$transaction([
       prisma.notification_deliveries.deleteMany({ where: { notification_event_id: { in: eventIds } } }),
       prisma.drafts.deleteMany({ where: { thread_id: { in: threadIds } } }),
@@ -74,6 +80,8 @@ export async function POST(req: NextRequest) {
       prisma.messages.deleteMany({ where: { thread_id: { in: threadIds } } }),
       prisma.threads.deleteMany({ where: { id: { in: threadIds } } }),
     ]);
+
+    await deleteStoredFiles(draftFiles.map(f => f.storage_key));
 
     for (const data of mailboxMap.values()) {
       if (data.uids.length > 0) {

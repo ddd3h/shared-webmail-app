@@ -4,6 +4,7 @@ import { getSession, requireAuth } from '@/lib/auth';
 import { hashPassword } from '@/lib/password';
 import { logAudit } from '@/lib/audit';
 import { clearAvatarCache } from '@/lib/avatar-cache';
+import { deleteStoredFiles } from '@/lib/attachment-storage';
 import { z } from 'zod';
 
 // PUT /api/users/[id] - edit user (admin only)
@@ -91,6 +92,12 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
     metadata: { email: target.email }
   });
 
+  // draft_attachments rows cascade with their draft, but the files on disk don't
+  const draftFiles = await prisma.draft_attachments.findMany({
+    where: { draft: { user_id: id } },
+    select: { storage_key: true },
+  });
+
   // Nullify relations before delete to avoid FK constraint errors
   await prisma.$transaction([
     prisma.threads.updateMany({ where: { assigned_user_id: id }, data: { assigned_user_id: null } }),
@@ -102,6 +109,8 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
     prisma.drafts.deleteMany({ where: { user_id: id } }),
     prisma.users.delete({ where: { id } }),
   ]);
+
+  await deleteStoredFiles(draftFiles.map(f => f.storage_key));
 
   return NextResponse.json({ ok: true });
 }

@@ -4,9 +4,8 @@ import { getSession, requireAuth } from '@/lib/auth';
 import { canReplyMailbox } from '@/lib/rbac';
 import { sendMailForMessage } from '@/lib/mail/send-job';
 import { deliverCompose, type DeliverAttachment } from '@/lib/mail/deliver';
-import { writeFile, mkdir } from 'fs/promises';
-import path from 'path';
-import { APP_ROOT } from '@/lib/app-root';
+import { saveUploadedFiles } from '@/lib/attachment-storage';
+import { resolveDraftAttachments, DraftAttachmentAccessError } from '@/lib/draft-access';
 
 // POST /api/messages/compose - send a brand-new email (not a reply)
 export async function POST(req: NextRequest) {
@@ -16,6 +15,7 @@ export async function POST(req: NextRequest) {
   const contentType = req.headers.get('content-type') || '';
   let mailbox_id: string, to: string[], cc: string[] | undefined, bcc: string[] | undefined,
     subject: string, text: string | undefined, html: string | undefined, files: File[] = [];
+  let draftAttachmentIds: string[] = [];
 
   if (contentType.includes('multipart/form-data')) {
     const fd = await req.formData();
@@ -27,6 +27,7 @@ export async function POST(req: NextRequest) {
     text = (fd.get('text') as string) || undefined;
     html = (fd.get('html') as string) || undefined;
     files = fd.getAll('file').filter(f => f instanceof File && (f as File).size > 0) as File[];
+    draftAttachmentIds = fd.getAll('draft_attachment_id').map(String).filter(Boolean);
   } else {
     const body = await req.json().catch(() => ({}));
     ({ mailbox_id, subject } = body);
@@ -47,23 +48,19 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'forbidden' }, { status: 403 });
   }
 
-  // Save uploaded attachments to disk (attachment DB rows are created once the message exists)
-  const attachments: DeliverAttachment[] = [];
-  if (files.length > 0) {
-    const storageDir = path.join(APP_ROOT, 'storage', 'attachments');
-    await mkdir(storageDir, { recursive: true });
-    for (const file of files) {
-      const buffer = Buffer.from(await file.arrayBuffer());
-      const ext = file.name.includes('.') ? '.' + file.name.split('.').pop() : '';
-      const storageKey = path.join('storage', 'attachments', `${crypto.randomUUID()}${ext}`);
-      await writeFile(path.join(APP_ROOT, storageKey), buffer);
-      attachments.push({
-        filename: file.name,
-        content_type: file.type || 'application/octet-stream',
-        size: file.size,
-        storage_key: storageKey
-      });
+  // Save uploaded attachments to disk and adopt any carried over from a draft
+  // (attachment DB rows are created once the message exists)
+  let attachments: DeliverAttachment[];
+  try {
+    attachments = [
+      ...(await saveUploadedFiles(files)),
+      ...(await resolveDraftAttachments(draftAttachmentIds, session!.userId)),
+    ];
+  } catch (e) {
+    if (e instanceof DraftAttachmentAccessError) {
+      return NextResponse.json({ error: 'forbidden' }, { status: 403 });
     }
+    throw e;
   }
 
   const { threadId, messageId } = await deliverCompose({

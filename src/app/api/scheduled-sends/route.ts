@@ -2,9 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { getSession, requireAuth } from '@/lib/auth';
 import { canReplyMailbox } from '@/lib/rbac';
-import { writeFile, mkdir } from 'fs/promises';
-import path from 'path';
-import { APP_ROOT } from '@/lib/app-root';
+import { saveUploadedFiles } from '@/lib/attachment-storage';
+import { resolveDraftAttachments, DraftAttachmentAccessError } from '@/lib/draft-access';
+import type { DeliverAttachment } from '@/lib/mail/deliver';
 
 type Mode = 'compose' | 'reply' | 'forward';
 
@@ -21,6 +21,7 @@ export async function POST(req: NextRequest) {
     to: string[], cc: string[] | undefined, bcc: string[] | undefined,
     subject: string | undefined, text: string | undefined, html: string | undefined,
     scheduledAt: string, files: File[] = [];
+  let draftAttachmentIds: string[] = [];
 
   if (contentType.includes('multipart/form-data')) {
     const fd = await req.formData();
@@ -35,6 +36,7 @@ export async function POST(req: NextRequest) {
     html = (fd.get('html') as string) || undefined;
     scheduledAt = fd.get('scheduledAt') as string;
     files = fd.getAll('file').filter(f => f instanceof File && (f as File).size > 0) as File[];
+    draftAttachmentIds = fd.getAll('draft_attachment_id').map(String).filter(Boolean);
   } else {
     const body = await req.json().catch(() => ({}));
     mode = body.mode || 'compose';
@@ -82,6 +84,21 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  // Resolved before the row is created so an unauthorized draft attachment id
+  // fails the request outright instead of leaving a half-built scheduled send.
+  let attachments: DeliverAttachment[];
+  try {
+    attachments = [
+      ...(await saveUploadedFiles(files)),
+      ...(await resolveDraftAttachments(draftAttachmentIds, session!.userId)),
+    ];
+  } catch (e) {
+    if (e instanceof DraftAttachmentAccessError) {
+      return NextResponse.json({ error: 'forbidden' }, { status: 403 });
+    }
+    throw e;
+  }
+
   const scheduled = await prisma.scheduled_sends.create({
     data: {
       user_id: session!.userId,
@@ -100,24 +117,16 @@ export async function POST(req: NextRequest) {
     }
   });
 
-  if (files.length > 0) {
-    const storageDir = path.join(APP_ROOT, 'storage', 'attachments');
-    await mkdir(storageDir, { recursive: true });
-    for (const file of files) {
-      const buffer = Buffer.from(await file.arrayBuffer());
-      const ext = file.name.includes('.') ? '.' + file.name.split('.').pop() : '';
-      const storageKey = path.join('storage', 'attachments', `${crypto.randomUUID()}${ext}`);
-      await writeFile(path.join(APP_ROOT, storageKey), buffer);
-      await prisma.scheduled_send_attachments.create({
-        data: {
-          scheduled_send_id: scheduled.id,
-          filename: file.name,
-          content_type: file.type || 'application/octet-stream',
-          size: file.size,
-          storage_key: storageKey
-        }
-      });
-    }
+  if (attachments.length > 0) {
+    await prisma.scheduled_send_attachments.createMany({
+      data: attachments.map(a => ({
+        scheduled_send_id: scheduled.id,
+        filename: a.filename,
+        content_type: a.content_type,
+        size: a.size,
+        storage_key: a.storage_key
+      }))
+    });
   }
 
   return NextResponse.json({ ok: true, id: scheduled.id });

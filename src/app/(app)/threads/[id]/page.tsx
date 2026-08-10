@@ -359,7 +359,7 @@ function ThreadDetailPageInner({ params }: Props) {
     if (payload.to.length) fd.append('to', JSON.stringify(payload.to));
     if (payload.cc.length) fd.append('cc', JSON.stringify(payload.cc));
     if (payload.bcc.length) fd.append('bcc', JSON.stringify(payload.bcc));
-    payload.files.forEach(f => fd.append('file', f));
+    payload.draftAttachmentIds.forEach(id => fd.append('draft_attachment_id', id));
     const res = await fetch(`/api/messages/${msgId}/reply`, { method: 'POST', body: fd });
     if (res.ok) {
       flashMsg('success', '返信を送信しました');
@@ -382,7 +382,7 @@ function ThreadDetailPageInner({ params }: Props) {
     fd.append('html', payload.html);
     fd.append('text', payload.text);
     fd.append('scheduledAt', scheduledAt.toISOString());
-    payload.files.forEach(f => fd.append('file', f));
+    payload.draftAttachmentIds.forEach(id => fd.append('draft_attachment_id', id));
     const res = await fetch('/api/scheduled-sends', { method: 'POST', body: fd });
     if (res.ok) { flashMsg('success', '返信を予約しました'); return null; }  // ComposeForm calls onCancel itself
     const d = await res.json().catch(() => ({}));
@@ -410,7 +410,7 @@ function ThreadDetailPageInner({ params }: Props) {
     fd.append('html', payload.html);
     fd.append('text', payload.text);
     fd.append('mailbox_id', payload.mailboxId || data!.mailbox.id);
-    payload.files.forEach(f => fd.append('file', f));
+    payload.draftAttachmentIds.forEach(id => fd.append('draft_attachment_id', id));
     const res = await fetch('/api/messages/compose', { method: 'POST', body: fd });
     if (res.ok) { flashMsg('success', '転送しました'); return null; }  // ComposeForm calls onCancel after contact prompt
     return '転送に失敗しました';
@@ -427,7 +427,7 @@ function ThreadDetailPageInner({ params }: Props) {
     fd.append('html', payload.html);
     fd.append('text', payload.text);
     fd.append('scheduledAt', scheduledAt.toISOString());
-    payload.files.forEach(f => fd.append('file', f));
+    payload.draftAttachmentIds.forEach(id => fd.append('draft_attachment_id', id));
     const res = await fetch('/api/scheduled-sends', { method: 'POST', body: fd });
     if (res.ok) { flashMsg('success', '転送を予約しました'); return null; }  // ComposeForm calls onCancel itself
     const d = await res.json().catch(() => ({}));

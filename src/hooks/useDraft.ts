@@ -30,6 +30,7 @@ export function useDraft(initialDraftId?: string, isShared?: boolean) {
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingRef = useRef<DraftData | null>(null);
   const savingRef = useRef(false);
+  const savingPromiseRef = useRef<Promise<string | null> | null>(null);
   const draftIdRef = useRef<string | null>(initialDraftId || null);
   const mountedRef = useRef(true);
   const serverUpdatedAtRef = useRef<string | null>(null);
@@ -53,9 +54,7 @@ export function useDraft(initialDraftId?: string, isShared?: boolean) {
     }
   }, [initialDraftId]);
 
-  const saveNow = useCallback(async (data: DraftData): Promise<string | null> => {
-    if (savingRef.current) return draftIdRef.current;
-    savingRef.current = true;
+  const performSave = useCallback(async (data: DraftData): Promise<string | null> => {
     if (mountedRef.current) setStatus('saving');
     try {
       let id = draftIdRef.current;
@@ -99,10 +98,30 @@ export function useDraft(initialDraftId?: string, isShared?: boolean) {
     } catch {
       if (mountedRef.current) setStatus('error');
       return draftIdRef.current;
-    } finally {
-      savingRef.current = false;
     }
   }, [isShared]);
+
+  // Coalesces concurrent callers onto the in-flight save instead of dropping
+  // them, so ensureDraftId() can await an id that a keystroke-triggered save is
+  // still creating.
+  const saveNow = useCallback((data: DraftData): Promise<string | null> => {
+    if (savingRef.current && savingPromiseRef.current) return savingPromiseRef.current;
+    savingRef.current = true;
+    const promise = performSave(data).finally(() => {
+      savingRef.current = false;
+      savingPromiseRef.current = null;
+    });
+    savingPromiseRef.current = promise;
+    return promise;
+  }, [performSave]);
+
+  // Returns a draft id that definitely exists server-side, creating the draft if
+  // needed. Attachments upload to /api/drafts/[id]/attachments, so they can't be
+  // saved before the draft row itself exists.
+  const ensureDraftId = useCallback(async (data: DraftData): Promise<string | null> => {
+    if (draftIdRef.current) return draftIdRef.current;
+    return saveNow(data);
+  }, [saveNow]);
 
   const scheduleSave = useCallback((data: DraftData) => {
     lastTypedAtRef.current = Date.now();
@@ -145,6 +164,7 @@ export function useDraft(initialDraftId?: string, isShared?: boolean) {
     conflict,
     scheduleSave,
     saveNow,
+    ensureDraftId,
     deleteDraft,
     stripBodyFromPending,
     initServerTimestamp,

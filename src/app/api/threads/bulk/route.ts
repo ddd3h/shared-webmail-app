@@ -6,6 +6,7 @@ import { sendBulkDeleteApprovalDm } from '@/lib/mattermost-dm';
 import { randomUUID } from 'crypto';
 import { deleteImapMessagesBulk } from '@/lib/mail/delete-utils';
 import { getSetting } from '@/lib/settings';
+import { deleteStoredFiles } from '@/lib/attachment-storage';
 
 // POST /api/threads/bulk
 export async function POST(req: NextRequest) {
@@ -232,6 +233,11 @@ export async function POST(req: NextRequest) {
         const id = t.id;
         const imapUids = t.messages.map(m => m.imap_uid).filter((u): u is number => u !== null);
         const eventIds = (await prisma.notification_events.findMany({ where: { thread_id: id }, select: { id: true } })).map(e => e.id);
+        // draft_attachments rows cascade with their draft, but the files on disk don't
+        const draftFiles = await prisma.draft_attachments.findMany({
+          where: { draft: { thread_id: id } },
+          select: { storage_key: true },
+        });
 
         await prisma.$transaction([
           prisma.notification_deliveries.deleteMany({ where: { notification_event_id: { in: eventIds } } }),
@@ -249,6 +255,8 @@ export async function POST(req: NextRequest) {
           prisma.messages.deleteMany({ where: { thread_id: id } }),
           prisma.threads.delete({ where: { id } }),
         ]);
+
+        await deleteStoredFiles(draftFiles.map(f => f.storage_key));
 
         if (t.mailbox.credentials && imapUids.length > 0) {
           deleteImapMessagesBulk(t.mailbox.credentials, imapUids).catch(() => {});

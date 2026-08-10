@@ -27,7 +27,7 @@ function ComposeModal({
     fd.append('subject', payload.subject);
     fd.append('html', payload.html);
     fd.append('text', payload.text);
-    payload.files.forEach(f => fd.append('file', f));
+    payload.draftAttachmentIds.forEach(id => fd.append('draft_attachment_id', id));
     const res = await fetch('/api/messages/compose', { method: 'POST', body: fd });
     if (res.ok) { onSent(); return null; }  // ComposeForm calls onCancel (=onClose) after contact prompt
     const d = await res.json().catch(() => ({}));
@@ -45,7 +45,7 @@ function ComposeModal({
     fd.append('html', payload.html);
     fd.append('text', payload.text);
     fd.append('scheduledAt', scheduledAt.toISOString());
-    payload.files.forEach(f => fd.append('file', f));
+    payload.draftAttachmentIds.forEach(id => fd.append('draft_attachment_id', id));
     const res = await fetch('/api/scheduled-sends', { method: 'POST', body: fd });
     if (res.ok) return null;  // ComposeForm calls onCancel (=onClose) itself
     const d = await res.json().catch(() => ({}));
@@ -251,7 +251,14 @@ type DraftItem = {
   mailbox: { display_name: string; type: string } | null;
   user: { name: string };
   thread: { subject: string } | null;
+  _count: { attachments: number };
 };
+
+const AttachmentClip = () => (
+  <svg className="flex-shrink-0 w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-label="添付あり">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
+  </svg>
+);
 
 const fetcher = (url: string) => fetch(url, { cache: 'no-store' }).then(r => r.json());
 
@@ -1189,6 +1196,7 @@ function ThreadList() {
                         <span className="flex-1 min-w-0 truncate text-sm text-amber-700 font-medium">
                           {d.thread?.subject ? `Re: ${d.thread.subject}` : d.subject || '(件名なし)'}
                         </span>
+                        {d._count?.attachments > 0 && <AttachmentClip />}
                         {d.is_shared && (
                           <span className="flex-shrink-0 text-xs px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-600 font-medium">共有</span>
                         )}
@@ -1217,6 +1225,7 @@ function ThreadList() {
                     </div>
                     <div className="flex-1 min-w-0 flex items-center gap-2">
                       <span className="truncate text-sm text-amber-700 font-medium">{d.thread?.subject ? `Re: ${d.thread.subject}` : d.subject || '(件名なし)'}</span>
+                      {d._count?.attachments > 0 && <AttachmentClip />}
                       {d.is_shared && (
                         <span className="flex-shrink-0 text-xs px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-600 font-medium">共有下書き</span>
                       )}

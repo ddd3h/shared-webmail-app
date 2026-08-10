@@ -35,7 +35,8 @@ export async function GET(req: NextRequest) {
     include: {
       user: { select: { name: true, email: true } },
       mailbox: { select: { display_name: true, type: true } },
-      thread: { select: { subject: true } }
+      thread: { select: { subject: true } },
+      _count: { select: { attachments: true } }
     }
   });
 

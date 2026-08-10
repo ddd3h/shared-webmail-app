@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getSession, requireAuth } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { logAudit } from '@/lib/audit';
+import { deleteStoredFiles } from '@/lib/attachment-storage';
 
 // DELETE (via POST) /api/threads/[id]/delete
 export async function POST(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -46,6 +47,12 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
   // Delete in dependency order
   const eventIds = (await prisma.notification_events.findMany({ where: { thread_id: id }, select: { id: true } })).map(e => e.id);
 
+  // draft_attachments rows cascade with their draft, but the files on disk don't
+  const draftFiles = await prisma.draft_attachments.findMany({
+    where: { draft: { thread_id: id } },
+    select: { storage_key: true },
+  });
+
   await prisma.$transaction([
     prisma.notification_deliveries.deleteMany({ where: { notification_event_id: { in: eventIds } } }),
     prisma.drafts.deleteMany({ where: { thread_id: id } }),
@@ -62,6 +69,8 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
     prisma.messages.deleteMany({ where: { thread_id: id } }),
     prisma.threads.delete({ where: { id } }),
   ]);
+
+  await deleteStoredFiles(draftFiles.map(f => f.storage_key));
 
   // Fire-and-forget: delete from IMAP server
   if (thread.mailbox.credentials && imapUids.length > 0) {

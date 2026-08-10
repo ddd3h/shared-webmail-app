@@ -56,6 +56,14 @@ const nextConfig = {
   // Suppress server identity disclosure
   poweredByHeader: false,
 
+  experimental: {
+    // proxy.ts buffers every request body, capped at 10MB by default — over that
+    // the body is silently truncated and req.formData() throws. Attachment
+    // uploads allow 10 files × 10MB (see src/lib/attachment-limits.ts), so the
+    // cap has to clear that plus multipart overhead.
+    proxyClientMaxBodySize: '110mb',
+  },
+
   // Force a single yjs instance to prevent "Yjs was already imported" error
   // when both ESM and CJS variants are loaded in the same bundle.
   webpack(config) {

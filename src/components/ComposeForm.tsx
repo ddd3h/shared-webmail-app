@@ -3,7 +3,8 @@ import { useState, useRef, useEffect, useMemo } from 'react';
 import DOMPurify from 'dompurify';
 import dynamic from 'next/dynamic';
 import type { RichEditorHandle, CollabUser } from './RichEditor';
-import { useDraft } from '@/hooks/useDraft';
+import { useDraft, type DraftData } from '@/hooks/useDraft';
+import { MAX_ATTACHMENT_BYTES, MAX_ATTACHMENTS } from '@/lib/attachment-limits';
 import DraftStatusBar from './DraftStatus';
 import EmailChipInput from './EmailChipInput';
 import SendingOverlay from './SendingOverlay';
@@ -56,6 +57,13 @@ const _yjsRooms = new Map<string, YjsRoom>();
 
 export type ComposeMode = 'compose' | 'reply' | 'forward';
 
+export type DraftAttachment = {
+  id: string;
+  filename: string;
+  content_type: string;
+  size: number;
+};
+
 export type SendPayload = {
   mailboxId: string;
   to: string[];
@@ -64,7 +72,8 @@ export type SendPayload = {
   subject: string;
   html: string;
   text: string;
-  files: File[];
+  // Attachments live on the draft server-side; the send routes copy them off it.
+  draftAttachmentIds: string[];
 };
 
 export interface ComposeFormProps {
@@ -111,8 +120,9 @@ export default function ComposeForm({
   const [showCc, setShowCc] = useState(initialCc.length > 0);
   const [showBcc, setShowBcc] = useState(initialBcc.length > 0);
   const [subject, setSubject] = useState(initialSubject);
-  const [files, setFiles] = useState<File[]>([]);
+  const [savedAtts, setSavedAtts] = useState<DraftAttachment[]>([]);
   const [attachError, setAttachError] = useState('');
+  const [uploading, setUploading] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [sigVisible, setSigVisible] = useState(true);
   const [signature, setSignature] = useState('');
@@ -135,6 +145,9 @@ export default function ComposeForm({
 
   const editorRef = useRef<RichEditorHandle>(null);
   const richContentRef = useRef(initialBody);
+  // Last attachment revision this client is known to be in sync with — see
+  // bumpAttachmentRev()/the attRev effect for how collaborators stay aligned.
+  const attRevRef = useRef(0);
 
   // Yjs collaborative editing state (shared team drafts only)
   const [ydoc, setYdoc] = useState<import('yjs').Doc | null>(null);
@@ -238,6 +251,7 @@ export default function ComposeForm({
         }
         if (d.subject) setSubject(d.subject);
         if (d.mailbox_id) setSelectedMailbox(d.mailbox_id);
+        if (Array.isArray(d.attachments)) setSavedAtts(d.attachments);
         if (d.updated_at) draft.initServerTimestamp(d.updated_at);
 
         // Yjs state restore from DB
@@ -338,6 +352,26 @@ export default function ComposeForm({
     return () => meta.unobserve(apply);
   }, [ydoc]);
 
+  // Refetch the attachment list when a collaborator adds or removes one. Only the
+  // revision counter travels through Yjs; the list comes from the server so every
+  // client sees the same rows and ids.
+  useEffect(() => {
+    if (!ydoc || !draft.draftId) return;
+    const meta = ydoc.getMap('meta');
+    const draftId = draft.draftId;
+    const apply = () => {
+      const rev = Number(meta.get('attRev')) || 0;
+      if (rev === attRevRef.current) return; // our own bump, already applied
+      attRevRef.current = rev;
+      fetch(`/api/drafts/${draftId}/attachments`)
+        .then(r => (r.ok ? r.json() : null))
+        .then(j => { if (j && Array.isArray(j.attachments)) setSavedAtts(j.attachments); })
+        .catch(() => {});
+    };
+    meta.observe(apply);
+    return () => meta.unobserve(apply);
+  }, [ydoc, draft.draftId]);
+
   // Seed the shared signature once — the first collaborator's signature wins,
   // so everyone sees the same one instead of their own personal default.
   useEffect(() => {
@@ -357,12 +391,12 @@ export default function ComposeForm({
     }
   }
 
-  function saveDraft(overrides: { to?: string[]; cc?: string[]; bcc?: string[]; subject?: string } = {}) {
+  function draftPayload(overrides: { to?: string[]; cc?: string[]; bcc?: string[]; subject?: string } = {}): DraftData {
     const resolvedTo = overrides.to ?? toChips;
     const resolvedCc = overrides.cc ?? ccChips;
     const resolvedBcc = overrides.bcc ?? bccChips;
     const resolvedSubject = overrides.subject ?? subject;
-    draft.scheduleSave({
+    return {
       mailbox_id: selectedMailbox || undefined,
       thread_id: mode === 'reply' ? threadId : undefined,
       to_raw: resolvedTo.join(', '),
@@ -375,32 +409,83 @@ export default function ComposeForm({
       html_body: ydoc ? undefined : editorRef.current?.getHTML(),
       text_body: ydoc ? undefined : editorRef.current?.getText(),
       is_shared: isTeam,
-    });
+    };
   }
 
-  const MAX_FILE_BYTES = 10 * 1024 * 1024; // 10 MB per file
-  const MAX_FILES = 10;
+  function saveDraft(overrides: { to?: string[]; cc?: string[]; bcc?: string[]; subject?: string } = {}) {
+    draft.scheduleSave(draftPayload(overrides));
+  }
 
-  function addFiles(list: File[]) {
-    const oversized = list.filter(f => f.size > MAX_FILE_BYTES);
-    if (oversized.length > 0) { setAttachError(`「${oversized[0].name}」は10MBを超えています`); return; }
-    if (files.length + list.length > MAX_FILES) { setAttachError(`添付ファイルは${MAX_FILES}件までです`); return; }
+  // Tells collaborators on a shared draft that the attachment list changed. The
+  // list itself isn't in the Y.Doc — only this counter, which triggers a refetch.
+  function bumpAttachmentRev() {
+    if (!ydoc) return;
+    const meta = ydoc.getMap('meta');
+    const next = (Number(meta.get('attRev')) || 0) + 1;
+    attRevRef.current = next;
+    meta.set('attRev', next);
+  }
+
+  const ATTACH_ERRORS: Record<string, string> = {
+    file_too_large: `1ファイルあたり${Math.round(MAX_ATTACHMENT_BYTES / 1024 / 1024)}MB以内にしてください`,
+    too_many_files: `添付ファイルは${MAX_ATTACHMENTS}件までです`,
+    forbidden: 'この下書きに添付する権限がありません',
+    not_found: '下書きが見つかりません',
+  };
+
+  // Attachments are uploaded to the draft immediately rather than held in memory,
+  // so closing the composer never loses them.
+  async function addFiles(list: File[]) {
+    if (list.length === 0) return;
+    const oversized = list.filter(f => f.size > MAX_ATTACHMENT_BYTES);
+    if (oversized.length > 0) { setAttachError(`「${oversized[0].name}」は${Math.round(MAX_ATTACHMENT_BYTES / 1024 / 1024)}MBを超えています`); return; }
+    if (savedAtts.length + list.length > MAX_ATTACHMENTS) { setAttachError(`添付ファイルは${MAX_ATTACHMENTS}件までです`); return; }
     setAttachError('');
-    setFiles(prev => [...prev, ...list]);
+    setUploading(true);
+    try {
+      const id = await draft.ensureDraftId(draftPayload());
+      if (!id) { setAttachError('下書きを保存できなかったため添付できません'); return; }
+      const fd = new FormData();
+      list.forEach(f => fd.append('file', f));
+      const res = await fetch(`/api/drafts/${id}/attachments`, { method: 'POST', body: fd });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) { setAttachError(ATTACH_ERRORS[json.error] || '添付のアップロードに失敗しました'); return; }
+      setSavedAtts(json.attachments || []);
+      bumpAttachmentRev();
+    } catch {
+      setAttachError('添付のアップロードに失敗しました');
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  async function removeAttachment(attId: string) {
+    const id = draft.draftId;
+    if (!id) return;
+    setAttachError('');
+    try {
+      const res = await fetch(`/api/drafts/${id}/attachments/${attId}`, { method: 'DELETE' });
+      if (!res.ok) { setAttachError('添付の削除に失敗しました'); return; }
+      const json = await res.json().catch(() => ({}));
+      setSavedAtts(json.attachments || []);
+      bumpAttachmentRev();
+    } catch {
+      setAttachError('添付の削除に失敗しました');
+    }
   }
 
   const dragHandlers = {
     onDragOver: (e: React.DragEvent) => { e.preventDefault(); setIsDragging(true); },
     onDragLeave: (e: React.DragEvent) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setIsDragging(false); },
-    onDrop: (e: React.DragEvent) => { e.preventDefault(); setIsDragging(false); addFiles(Array.from(e.dataTransfer.files)); },
+    onDrop: (e: React.DragEvent) => { e.preventDefault(); setIsDragging(false); void addFiles(Array.from(e.dataTransfer.files)); },
   };
 
   function validate() {
     if (!toChips.length) return '宛先を入力してください';
     if (mode !== 'reply' && !subject.trim()) return '件名を入力してください';
     if (!selectedMailbox) return '送信元メールアカウントを選択してください';
-    if (files.length > MAX_FILES) return `添付ファイルは${MAX_FILES}件までです`;
-    if (files.some(f => f.size > MAX_FILE_BYTES)) return '1ファイルあたり10MB以内にしてください';
+    if (uploading) return '添付ファイルのアップロード完了をお待ちください';
+    if (savedAtts.length > MAX_ATTACHMENTS) return `添付ファイルは${MAX_ATTACHMENTS}件までです`;
     return null;
   }
 
@@ -436,7 +521,10 @@ export default function ComposeForm({
       html += `<p style="color:#6b7280;font-size:12px;margin-top:16px">${quote.header}</p><blockquote style="border-left:3px solid #d1d5db;margin:8px 0;padding:4px 12px;color:#6b7280">${quote.html}</blockquote>`;
     }
     const text = signature && sigVisible ? `${editorText}\n\n${signature}` : editorText;
-    return { mailboxId: selectedMailbox, to: toChips, cc: ccChips, bcc: bccChips, subject, html, text, files };
+    return {
+      mailboxId: selectedMailbox, to: toChips, cc: ccChips, bcc: bccChips, subject, html, text,
+      draftAttachmentIds: savedAtts.map(a => a.id),
+    };
   }
 
   async function executeSend() {
@@ -529,6 +617,7 @@ export default function ComposeForm({
       }
       if (d.subject !== undefined) setSubject(d.subject || '');
       if (d.mailbox_id) setSelectedMailbox(d.mailbox_id);
+      if (Array.isArray(d.attachments)) setSavedAtts(d.attachments);
       if (d.updated_at) draft.initServerTimestamp(d.updated_at);
       draft.dismissConflict();
     } catch { /* ignore */ }
@@ -793,19 +882,31 @@ export default function ComposeForm({
     </div>
   ) : null;
 
-  const attachmentsSection = (files.length > 0 || attachError) ? (
+  const attachmentsSection = (savedAtts.length > 0 || uploading || attachError) ? (
     <div className={`pb-2 ${px}`}>
-      {files.length > 0 && (
+      {(savedAtts.length > 0 || uploading) && (
         <div className="flex flex-wrap gap-2 mb-1">
-          {files.map((f, i) => (
-            <span key={i} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-gray-100 border border-gray-200 text-xs text-gray-700">
+          {savedAtts.map(a => (
+            <span key={a.id} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-gray-100 border border-gray-200 text-xs text-gray-700">
               <svg className="w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
               </svg>
-              {f.name}
-              <button type="button" onClick={() => { setFiles(prev => prev.filter((_, j) => j !== i)); setAttachError(''); }} className="text-gray-400 hover:text-red-500 ml-0.5">×</button>
+              <a
+                href={`/api/drafts/${draft.draftId}/attachments/${a.id}`}
+                onClick={e => e.stopPropagation()}
+                className="hover:underline"
+              >
+                {a.filename}
+              </a>
+              <button type="button" onClick={() => void removeAttachment(a.id)} className="text-gray-400 hover:text-red-500 ml-0.5">×</button>
             </span>
           ))}
+          {uploading && (
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-gray-50 border border-dashed border-gray-300 text-xs text-gray-500">
+              <svg className="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" /></svg>
+              アップロード中…
+            </span>
+          )}
         </div>
       )}
       {attachError && <p className="text-xs text-red-600">{attachError}</p>}
@@ -890,7 +991,7 @@ export default function ComposeForm({
       <span className={!isModal ? 'hidden md:inline' : 'hidden sm:inline'}>ファイル添付</span>
       <input type="file" multiple className="sr-only" onChange={e => {
         if (!e.target.files) return;
-        addFiles(Array.from(e.target.files));
+        void addFiles(Array.from(e.target.files));
         e.target.value = '';
       }} />
     </label>

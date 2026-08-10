@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db';
 import { getSession, requireAuth } from '@/lib/auth';
 import { encrypt } from '@/lib/crypto';
 import { logAudit } from '@/lib/audit';
+import { deleteStoredFiles } from '@/lib/attachment-storage';
 
 function canManage(role: string, ownerId: string | null, userId: string, mailboxType: string) {
   if (role === 'admin') return true;
@@ -107,6 +108,11 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
   const notifEventIds = threadIds.length > 0
     ? (await prisma.notification_events.findMany({ where: { thread_id: { in: threadIds } }, select: { id: true } })).map(n => n.id)
     : [];
+  // draft_attachments rows cascade with their draft, but the files on disk don't
+  const draftFiles = await prisma.draft_attachments.findMany({
+    where: { draft: { mailbox_id: id } },
+    select: { storage_key: true },
+  });
 
   // Delete in FK dependency order (children before parents)
   await prisma.$transaction(async (tx) => {
@@ -130,6 +136,8 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
     await tx.mailbox_credentials.deleteMany({ where: { mailbox_id: id } });
     await tx.mailboxes.delete({ where: { id } });
   }, { timeout: 30000 });
+
+  await deleteStoredFiles(draftFiles.map(f => f.storage_key));
 
   return NextResponse.json({ ok: true });
 }

@@ -526,6 +526,24 @@ model drafts {
   mailbox   mailboxes? @relation(fields: [mailbox_id], references: [id])
   thread    threads?   @relation(fields: [thread_id], references: [id])
   updatedBy users?     @relation("draft_updated_by", fields: [updated_by_id], references: [id])
+
+  attachments draft_attachments[]
+}
+
+// Files attached to a draft. Stored on disk under storage/attachments like every
+// other attachment; the row is what makes them survive closing the composer.
+model draft_attachments {
+  id           String   @id @default(cuid())
+  draft_id     String
+  filename     String
+  content_type String
+  size         Int
+  storage_key  String
+  created_at   DateTime @default(now())
+
+  draft drafts @relation(fields: [draft_id], references: [id], onDelete: Cascade)
+
+  @@index([draft_id])
 }
 
 model pending_bulk_actions {
