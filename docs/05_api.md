@@ -95,7 +95,6 @@
 | POST | `/api/push/test` | テスト通知送信 | 必要 | — |
 | GET | `/api/push/devices` | デバイス一覧 | 必要 | — |
 | DELETE | `/api/push/devices/[id]` | デバイス削除 | 必要 | — |
-| GET | `/api/dashboard` | ダッシュボードデータ | 必要 | — |
 | GET | `/api/admin/settings` | システム設定取得 | 必要 | ✅ |
 | PUT | `/api/admin/settings` | システム設定更新 | 必要 | ✅ |
 | POST | `/api/admin/settings/generate-vapid` | VAPID鍵生成 | 必要 | ✅ |
@@ -388,29 +387,6 @@
 **認証**: `Authorization: Bearer <CRON_SECRET>` が設定されている場合は検証。未設定の場合は全リクエストを許可。
 
 **動作**: 全アクティブメールボックスの同期を起動。
-
----
-
-### `GET /api/dashboard`
-
-**ファイル**: `src/app/api/dashboard/route.ts`
-
-**レスポンス**（コードから推定、詳細は要確認）:
-```json
-{
-  "assigned_count": 3,
-  "in_progress_count": 1,
-  "recent_threads": [...],
-  "mailbox_storage": [
-    {
-      "id": "...",
-      "name": "個人メール",
-      "cached_size_bytes": 102400,
-      "cached_at": "2026-04-12T00:00:00.000Z"
-    }
-  ]
-}
-```
 
 ---
 

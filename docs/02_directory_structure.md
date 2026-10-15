@@ -31,7 +31,7 @@ webmail-app/
 │   │   │   └── page.tsx           # パスワードリセット画面
 │   │   ├── (app)/                 # 認証済みユーザー向けルートグループ
 │   │   │   ├── layout.tsx         # 認証済みレイアウト（Navバー含む）
-│   │   │   ├── page.tsx           # ダッシュボード
+│   │   │   ├── page.tsx           # /threads へリダイレクト
 │   │   │   ├── threads/
 │   │   │   │   ├── page.tsx       # スレッド一覧・メール作成
 │   │   │   │   └── [id]/
@@ -59,7 +59,6 @@ webmail-app/
 │   │       ├── drafts/            # 下書きCRUD
 │   │       ├── contacts/          # コンタクト管理・Google連携
 │   │       ├── push/              # Push購読・デバイス管理・テスト
-│   │       ├── dashboard/         # ダッシュボードデータ
 │   │       ├── admin/             # 管理者専用（設定・ログ・エラー）
 │   │       └── cron/              # 同期トリガー（外部Cron用）
 │   ├── components/

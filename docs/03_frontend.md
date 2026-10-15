@@ -32,7 +32,7 @@ src/app/
 └── (app)/
     ├── layout.tsx          # 認証済みレイアウト（'use client'）
     │                         - <Nav /> を含む
-    ├── page.tsx            # ダッシュボード（'use client'）
+    ├── page.tsx            # /threads へのリダイレクト
     ├── threads/
     │   ├── page.tsx        # スレッド一覧 + メール作成モーダル（'use client'）
     │   └── [id]/page.tsx   # スレッド詳細（'use client'）
@@ -52,7 +52,6 @@ src/app/
 |---|---|---|---|---|
 | `/login` | ログイン | パスワード/パスキー認証 | `POST /api/auth/login`, `POST /api/passkeys/auth` | 不要 |
 | `/reset-password` | パスワードリセット | リセットトークン入力・新パスワード設定 | `POST /api/profile/password-reset-request`, `POST /api/profile/password-reset` | 不要 |
-| `/` | ダッシュボード | 担当スレッド統計・個人メール容量・最近のチームスレッド | `GET /api/dashboard` | 必要 |
 | `/threads` | スレッド一覧 | メール一覧・フィルタ・検索・複数選択・新規作成モーダル | `GET /api/threads`, `POST /api/messages/compose`, `GET /api/drafts` | 必要 |
 | `/threads/[id]` | スレッド詳細 | メール本文表示・返信・担当変更・ステータス変更・削除 | `GET /api/threads/[id]`, `POST /api/messages/[id]/reply`, `POST /api/threads/[id]/assign` | 必要 |
 | `/notifications` | 通知設定 | Push購読登録・デバイス管理 | `GET /api/push/devices`, `POST /api/push/subscribe`, `POST /api/push/test` | 必要 |

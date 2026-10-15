@@ -111,7 +111,6 @@ src/app/api/
 │   └── devices/
 │       ├── route.ts
 │       └── [id]/route.ts
-├── dashboard/route.ts
 ├── admin/
 │   ├── settings/
 │   │   ├── route.ts

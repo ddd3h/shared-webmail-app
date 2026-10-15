@@ -1,7 +1,6 @@
 import { prisma } from './db';
-import { computeMfi, computeAndStoreMfi } from '@/app/api/mfi/compute';
-import { MFI_ALERT_THRESHOLD } from './mfi';
-import { sendMfiBelowThresholdDm } from './mattermost-dm';
+import { findStaleUnreadThreads } from './stale-unread';
+import { sendStaleUnreadDm } from './mattermost-dm';
 
 export async function getActiveUsers() {
   const users = await prisma.users.findMany({
@@ -10,32 +9,18 @@ export async function getActiveUsers() {
   return users;
 }
 
-// Compute MFI for every user. Snapshot writes are rate-limited to one per
-// 4 hours inside computeAndStoreMfi (shouldCreateSnapshot), so this is safe
-// to call on a much shorter interval.
-export async function computeMfiForAllUsers() {
-  const users = await getActiveUsers().catch(() => [] as { id: string; email: string }[]);
-  const results = await Promise.allSettled(users.map(u => computeAndStoreMfi(u.id)));
-  results.forEach((r, i) => {
-    if (r.status === 'rejected') {
-      console.error(`[mfi] snapshot failed for ${users[i].email}:`, r.reason?.message || r.reason);
-    }
-  });
-}
-
-// MFI low-score DM alerts. Called once per weekday at noon (scheduled in
-// instrumentation.node.ts) — uses a fresh MFI computation, not the last
-// snapshot, so the judgement reflects the state at 12:00.
-export async function runMfiNoonAlerts() {
+// Weekly DM listing threads whose oldest unread message is 7+ days old.
+// Called on Monday mornings (scheduled in instrumentation.node.ts).
+export async function runStaleUnreadAlerts() {
   const users = await getActiveUsers().catch(() => [] as { id: string; email: string }[]);
   for (const u of users) {
     try {
-      const data = await computeMfi(u.id);
-      if (data.mfi < MFI_ALERT_THRESHOLD) {
-        await sendMfiBelowThresholdDm(u.id, u.email, data.mfi);
+      const threads = await findStaleUnreadThreads(u.id);
+      if (threads.length > 0) {
+        await sendStaleUnreadDm(u.id, u.email, threads);
       }
     } catch (e: any) {
-      console.error(`[mfi] noon alert failed for ${u.email}:`, e?.message || e);
+      console.error(`[stale-unread] alert failed for ${u.email}:`, e?.message || e);
     }
   }
 }

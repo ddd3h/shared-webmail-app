@@ -73,7 +73,6 @@
 | POST | `/api/push/test` | `src/app/api/push/test/route.ts` |
 | GET | `/api/push/devices` | `src/app/api/push/devices/route.ts` |
 | DELETE | `/api/push/devices/[id]` | `src/app/api/push/devices/[id]/route.ts` |
-| GET | `/api/dashboard` | `src/app/api/dashboard/route.ts` |
 | GET | `/api/admin/settings` | `src/app/api/admin/settings/route.ts` |
 | PUT | `/api/admin/settings` | `src/app/api/admin/settings/route.ts` |
 | POST | `/api/admin/settings/generate-vapid` | `src/app/api/admin/settings/generate-vapid/route.ts` |

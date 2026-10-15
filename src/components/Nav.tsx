@@ -5,7 +5,6 @@ import { useEffect, useRef, useState } from 'react';
 import { useAppBadge } from '@/hooks/useAppBadge';
 
 const desktopBaseItems = [
-  { href: '/', label: 'ダッシュボード' },
   { href: '/threads', label: 'メール' },
   { href: '/contacts', label: '連絡帳' },
   { href: '/notifications', label: '通知' },
@@ -126,12 +125,6 @@ export default function Nav() {
         style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 16px)' }}
       >
         <div className="flex">
-          <Link href="/" className={`flex-1 flex flex-col items-center justify-center py-3 gap-1 text-[10px] font-medium ${isActive('/') && pathname === '/' ? 'text-blue-600' : 'text-gray-500'}`}>
-            <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={isActive('/') && pathname === '/' ? 2.5 : 1.5} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
-            </svg>
-            ホーム
-          </Link>
           <Link href="/threads" className={`flex-1 flex flex-col items-center justify-center py-3 gap-1 text-[10px] font-medium ${isActive('/threads') ? 'text-blue-600' : 'text-gray-500'}`}>
             <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={isActive('/threads') ? 2.5 : 1.5} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
