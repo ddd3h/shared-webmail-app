@@ -39,6 +39,13 @@ enum NotificationPriority {
   low
 }
 
+// 役員 / 従業員 / 業務委託
+enum WorkerType {
+  executive
+  employee
+  contractor
+}
+
 enum AuthType {
   password
   oauth
@@ -84,6 +91,11 @@ model users {
   sessions                   sessions[]
   login_logs                 login_logs[]
   last_login_at              DateTime?
+  worker_type                WorkerType               @default(employee)
+  attendance_records         attendance_records[]
+  work_reports               work_reports[]
+  payslips                   payslips[]               @relation("payslip_user")
+  payslips_created           payslips[]               @relation("payslip_creator")
   scheduled_sends            scheduled_sends[]
   calendar_events_created    calendar_events[]        @relation("calendar_event_creator")
   calendar_events_owned      calendar_events[]        @relation("calendar_event_owner")
@@ -703,4 +715,73 @@ model calendar_events {
   @@unique([link_id, google_event_id])
   @@index([mailbox_id, start_at])
   @@index([owner_user_id])
+}
+
+// One row per employee per day (work_date is the Japan-local date). Times are UTC instants.
+model attendance_records {
+  id               String    @id @default(cuid())
+  user_id          String
+  work_date        DateTime  @db.Date
+  clock_in_at      DateTime?
+  clock_out_at     DateTime?
+  break_started_at DateTime?
+  break_minutes    Int       @default(0)
+  note             String?
+  edited_by_id     String?   // set when an admin corrected the record
+  created_at       DateTime  @default(now())
+  updated_at       DateTime  @updatedAt
+
+  user users @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@unique([user_id, work_date])
+}
+
+// Work report submitted by a contractor (業務報告書)
+model work_reports {
+  id          String   @id @default(cuid())
+  user_id     String
+  report_date DateTime @db.Date
+  title       String
+  content     String
+  hours       Decimal? @db.Decimal(5, 2)
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+
+  user users @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@index([user_id, report_date])
+}
+
+// Pay statement (給与・報酬・賞与の明細). Amounts are whole yen; net = earnings - deductions.
+model payslips {
+  id            String    @id @default(cuid())
+  user_id       String
+  pay_month     String    // 'YYYY-MM' the payment is for
+  title         String    @default("給与")
+  status        String    @default("planned") // 'planned' (支払予定) | 'paid' (支払済)
+  pay_date      DateTime? @db.Date
+  note          String?
+  created_by_id String?
+  created_at    DateTime  @default(now())
+  updated_at    DateTime  @updatedAt
+
+  user    users           @relation("payslip_user", fields: [user_id], references: [id], onDelete: Cascade)
+  creator users?          @relation("payslip_creator", fields: [created_by_id], references: [id], onDelete: SetNull)
+  items   payslip_items[]
+
+  @@index([user_id, pay_month])
+  @@index([pay_month])
+}
+
+model payslip_items {
+  id         String @id @default(cuid())
+  payslip_id String
+  kind       String // 'earning' | 'deduction'
+  label      String
+  amount     Int
+  sort       Int    @default(0)
+
+  payslip payslips @relation(fields: [payslip_id], references: [id], onDelete: Cascade)
+
+  @@index([payslip_id])
 }

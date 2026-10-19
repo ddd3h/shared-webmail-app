@@ -7,6 +7,7 @@ import { useAppBadge } from '@/hooks/useAppBadge';
 const desktopBaseItems = [
   { href: '/threads', label: 'メール' },
   { href: '/calendar', label: 'カレンダー' },
+  { href: '/work', label: '勤怠・給与' },
   { href: '/contacts', label: '連絡帳' },
   { href: '/notifications', label: '通知' },
   { href: '/scheduled', label: '予約送信' },
@@ -186,6 +187,15 @@ export default function Nav() {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 7V3m8 4V3M4 11h16M5 5h14a1 1 0 011 1v13a1 1 0 01-1 1H5a1 1 0 01-1-1V6a1 1 0 011-1z" />
                   </svg>
                   カレンダー
+                </Link>
+                <Link
+                  href="/work"
+                  className={`flex items-center gap-3 px-3 py-3 rounded-xl text-sm font-medium transition-colors ${isActive('/work') ? 'bg-blue-50 text-blue-700' : 'text-gray-700 hover:bg-gray-100'}`}
+                >
+                  <svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 7h6m-6 4h6m-6 4h4M5 3h14a1 1 0 011 1v16a1 1 0 01-1 1H5a1 1 0 01-1-1V4a1 1 0 011-1z" />
+                  </svg>
+                  勤怠・給与
                 </Link>
                 <Link
                   href="/scheduled"
