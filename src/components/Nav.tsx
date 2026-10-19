@@ -133,6 +133,18 @@ export default function Nav() {
             </svg>
             メール
           </Link>
+          <Link href="/calendar" className={`flex-1 flex flex-col items-center justify-center py-3 gap-1 text-[10px] font-medium ${isActive('/calendar') ? 'text-blue-600' : 'text-gray-500'}`}>
+            <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={isActive('/calendar') ? 2.5 : 1.5} d="M8 7V3m8 4V3M4 11h16M5 5h14a1 1 0 011 1v13a1 1 0 01-1 1H5a1 1 0 01-1-1V6a1 1 0 011-1z" />
+            </svg>
+            カレンダー
+          </Link>
+          <Link href="/contacts" className={`flex-1 flex flex-col items-center justify-center py-3 gap-1 text-[10px] font-medium ${isActive('/contacts') ? 'text-blue-600' : 'text-gray-500'}`}>
+            <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={isActive('/contacts') ? 2.5 : 1.5} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>
+            連絡先
+          </Link>
           <button
             onClick={openSheet}
             className={`flex-1 flex flex-col items-center justify-center py-3 gap-1 text-[10px] font-medium ${menuMounted ? 'text-blue-600' : 'text-gray-500'}`}
@@ -180,15 +192,6 @@ export default function Nav() {
                   通知
                 </Link>
                 <Link
-                  href="/calendar"
-                  className={`flex items-center gap-3 px-3 py-3 rounded-xl text-sm font-medium transition-colors ${isActive('/calendar') ? 'bg-blue-50 text-blue-700' : 'text-gray-700 hover:bg-gray-100'}`}
-                >
-                  <svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 7V3m8 4V3M4 11h16M5 5h14a1 1 0 011 1v13a1 1 0 01-1 1H5a1 1 0 01-1-1V6a1 1 0 011-1z" />
-                  </svg>
-                  カレンダー
-                </Link>
-                <Link
                   href="/work"
                   className={`flex items-center gap-3 px-3 py-3 rounded-xl text-sm font-medium transition-colors ${isActive('/work') ? 'bg-blue-50 text-blue-700' : 'text-gray-700 hover:bg-gray-100'}`}
                 >
@@ -205,15 +208,6 @@ export default function Nav() {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                   </svg>
                   予約送信
-                </Link>
-                <Link
-                  href="/contacts"
-                  className={`flex items-center gap-3 px-3 py-3 rounded-xl text-sm font-medium transition-colors ${isActive('/contacts') ? 'bg-blue-50 text-blue-700' : 'text-gray-700 hover:bg-gray-100'}`}
-                >
-                  <svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
-                  </svg>
-                  連絡帳
                 </Link>
                 <Link
                   href="/profile"
