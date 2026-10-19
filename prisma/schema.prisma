@@ -85,6 +85,8 @@ model users {
   login_logs                 login_logs[]
   last_login_at              DateTime?
   scheduled_sends            scheduled_sends[]
+  calendar_events_created    calendar_events[]        @relation("calendar_event_creator")
+  calendar_google_links      calendar_google_links[]
 }
 
 model mailboxes {
@@ -112,6 +114,8 @@ model mailboxes {
   sync_state  mailbox_sync_states?
   drafts      drafts[]
   scheduled_sends scheduled_sends[]
+  calendar_events calendar_events[]
+  calendar_google_links calendar_google_links[]
 }
 
 model mailbox_credentials {
@@ -642,4 +646,57 @@ model scheduled_send_attachments {
   created_at        DateTime @default(now())
 
   scheduled_send scheduled_sends @relation(fields: [scheduled_send_id], references: [id], onDelete: Cascade)
+}
+
+// Google Calendar linked to a mailbox's shared calendar (read-only import).
+// display_mode 'busy_only' hides titles/details: only `busy_label` is shown
+// and the real summary is never stored.
+model calendar_google_links {
+  id                 String    @id @default(cuid())
+  mailbox_id         String
+  linked_by_user_id  String
+  encrypted_token    String
+  google_calendar_id String?
+  name               String    @default("Googleカレンダー")
+  color              String    @default("#6366f1")
+  display_mode       String    @default("busy_only") // 'busy_only' | 'full'
+  busy_label         String    @default("予定あり")
+  last_synced_at     DateTime?
+  last_error         String?
+  created_at         DateTime  @default(now())
+  updated_at         DateTime  @updatedAt
+
+  mailbox   mailboxes         @relation(fields: [mailbox_id], references: [id], onDelete: Cascade)
+  linked_by users             @relation(fields: [linked_by_user_id], references: [id], onDelete: Cascade)
+  events    calendar_events[]
+
+  @@index([mailbox_id])
+}
+
+// Events of a mailbox's shared calendar. source 'local' = created in this app,
+// 'google' = imported copy of a Google event (title_override is the team's own
+// name for it and survives re-syncs).
+model calendar_events {
+  id              String    @id @default(cuid())
+  mailbox_id      String
+  source          String    @default("local") // 'local' | 'google'
+  link_id         String?
+  google_event_id String?
+  title           String?   // local title, or Google summary (null in busy_only mode)
+  title_override  String?
+  description     String?
+  location        String?
+  all_day         Boolean   @default(false)
+  start_at        DateTime
+  end_at          DateTime
+  created_by_id   String?
+  created_at      DateTime  @default(now())
+  updated_at      DateTime  @updatedAt
+
+  mailbox mailboxes              @relation(fields: [mailbox_id], references: [id], onDelete: Cascade)
+  link    calendar_google_links? @relation(fields: [link_id], references: [id], onDelete: Cascade)
+  creator users?                 @relation("calendar_event_creator", fields: [created_by_id], references: [id], onDelete: SetNull)
+
+  @@unique([link_id, google_event_id])
+  @@index([mailbox_id, start_at])
 }

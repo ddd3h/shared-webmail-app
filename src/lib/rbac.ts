@@ -30,3 +30,11 @@ export async function canAssignMailbox(userId: string, mailboxId: string) {
   const perm = await prisma.mailbox_permissions.findFirst({ where: { mailbox_id: mailboxId, user_id: userId, can_assign: true } });
   return !!perm;
 }
+
+// Shared calendar permissions piggyback on the mailbox permissions:
+//   view   = can_view   (see the calendar)
+//   edit   = can_reply  (create/edit/delete events, rename imported events)
+//   manage = can_assign (link/unlink Google calendars, change display settings)
+export const canViewCalendar = canViewMailbox;
+export const canEditCalendar = canReplyMailbox;
+export const canManageCalendar = canAssignMailbox;
