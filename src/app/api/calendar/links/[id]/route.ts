@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/db';
 import { getSession, requireAuth } from '@/lib/auth';
-import { canManageCalendar } from '@/lib/rbac';
+import { canManageCalendarLink } from '@/lib/rbac';
 import { logAudit } from '@/lib/audit';
 import { syncLink } from '@/lib/google-calendar';
 
@@ -21,7 +21,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   requireAuth(session);
   const link = await prisma.calendar_google_links.findUnique({ where: { id } });
   if (!link) return NextResponse.json({ error: 'not_found' }, { status: 404 });
-  if (!(await canManageCalendar(session.userId, link.mailbox_id))) {
+  if (!(await canManageCalendarLink(session.userId, link))) {
     return NextResponse.json({ error: 'forbidden' }, { status: 403 });
   }
   const parsed = schema.safeParse(await req.json().catch(() => ({})));
@@ -63,7 +63,7 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
   requireAuth(session);
   const link = await prisma.calendar_google_links.findUnique({ where: { id } });
   if (!link) return NextResponse.json({ error: 'not_found' }, { status: 404 });
-  if (!(await canManageCalendar(session.userId, link.mailbox_id))) {
+  if (!(await canManageCalendarLink(session.userId, link))) {
     return NextResponse.json({ error: 'forbidden' }, { status: 403 });
   }
   await prisma.calendar_google_links.delete({ where: { id } });

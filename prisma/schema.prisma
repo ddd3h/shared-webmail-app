@@ -86,6 +86,7 @@ model users {
   last_login_at              DateTime?
   scheduled_sends            scheduled_sends[]
   calendar_events_created    calendar_events[]        @relation("calendar_event_creator")
+  calendar_events_owned      calendar_events[]        @relation("calendar_event_owner")
   calendar_google_links      calendar_google_links[]
 }
 
@@ -690,13 +691,16 @@ model calendar_events {
   start_at        DateTime
   end_at          DateTime
   created_by_id   String?
+  owner_user_id   String?   // whose schedule this is; null = whole team
   created_at      DateTime  @default(now())
   updated_at      DateTime  @updatedAt
 
   mailbox mailboxes              @relation(fields: [mailbox_id], references: [id], onDelete: Cascade)
   link    calendar_google_links? @relation(fields: [link_id], references: [id], onDelete: Cascade)
   creator users?                 @relation("calendar_event_creator", fields: [created_by_id], references: [id], onDelete: SetNull)
+  owner   users?                 @relation("calendar_event_owner", fields: [owner_user_id], references: [id], onDelete: SetNull)
 
   @@unique([link_id, google_event_id])
   @@index([mailbox_id, start_at])
+  @@index([owner_user_id])
 }

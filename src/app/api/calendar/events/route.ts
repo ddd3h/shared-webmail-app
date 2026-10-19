@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/db';
 import { getSession, requireAuth } from '@/lib/auth';
-import { canViewCalendar, canEditCalendar, canManageCalendar } from '@/lib/rbac';
+import { canViewCalendar, canEditCalendar, canManageCalendar, listCalendarMembers } from '@/lib/rbac';
 import { displayTitle, canShowDetails } from '@/lib/calendar';
 import { syncStaleLinks } from '@/lib/google-calendar';
 
@@ -23,17 +23,19 @@ export async function GET(req: NextRequest) {
 
   await syncStaleLinks(mailboxId);
 
-  const [rows, canEdit, canManage] = await Promise.all([
+  const [rows, canEdit, canManage, people] = await Promise.all([
     prisma.calendar_events.findMany({
       where: { mailbox_id: mailboxId, start_at: { lt: to }, end_at: { gt: from } },
       include: {
         link: { select: { id: true, name: true, color: true, display_mode: true, busy_label: true } },
+        owner: { select: { id: true, name: true } },
         creator: { select: { id: true, name: true } },
       },
       orderBy: { start_at: 'asc' },
     }),
     canEditCalendar(session.userId, mailboxId),
     canManageCalendar(session.userId, mailboxId),
+    listCalendarMembers(mailboxId),
   ]);
 
   // Never send stored details of imported events unless the link shows them.
@@ -52,16 +54,19 @@ export async function GET(req: NextRequest) {
       end_at: e.end_at,
       color: e.link?.color ?? null,
       link_name: e.link?.name ?? null,
+      owner: e.owner ? { id: e.owner.id, name: e.owner.name } : null,
       created_by: e.creator?.name ?? null,
     };
   });
 
-  const links = canManage
+  // Managers see every link; editors see only the ones they linked themselves.
+  const links = canManage || canEdit
     ? await prisma.calendar_google_links.findMany({
-        where: { mailbox_id: mailboxId },
+        where: { mailbox_id: mailboxId, ...(canManage ? {} : { linked_by_user_id: session.userId }) },
         select: {
           id: true, name: true, color: true, display_mode: true, busy_label: true,
           google_calendar_id: true, last_synced_at: true, last_error: true,
+          linked_by_user_id: true,
           linked_by: { select: { name: true } },
         },
         orderBy: { created_at: 'asc' },
@@ -71,6 +76,8 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({
     items,
     permissions: { can_edit: canEdit, can_manage: canManage },
+    people,
+    me: session.userId,
     links,
     google_configured: !!process.env.GOOGLE_CLIENT_ID,
   });
@@ -81,6 +88,7 @@ const createSchema = z.object({
   title: z.string().trim().min(1).max(200),
   description: z.string().max(5000).optional(),
   location: z.string().max(200).optional(),
+  owner_user_id: z.string().nullable().optional(),
   all_day: z.boolean().default(false),
   start_at: z.coerce.date(),
   end_at: z.coerce.date(),
@@ -96,9 +104,13 @@ export async function POST(req: NextRequest) {
   if (!(await canEditCalendar(session.userId, mailboxId))) {
     return NextResponse.json({ error: 'forbidden' }, { status: 403 });
   }
+  if (data.owner_user_id && !(await listCalendarMembers(mailboxId)).some(m => m.id === data.owner_user_id)) {
+    return NextResponse.json({ error: 'invalid_owner' }, { status: 400 });
+  }
   const created = await prisma.calendar_events.create({
     data: {
       ...data,
+      owner_user_id: data.owner_user_id || null,
       description: data.description || null,
       location: data.location || null,
       mailbox_id: mailboxId,

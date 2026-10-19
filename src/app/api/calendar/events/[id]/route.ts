@@ -2,12 +2,13 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/db';
 import { getSession, requireAuth } from '@/lib/auth';
-import { canEditCalendar } from '@/lib/rbac';
+import { canEditCalendar, listCalendarMembers } from '@/lib/rbac';
 
 const localSchema = z.object({
   title: z.string().trim().min(1).max(200).optional(),
   description: z.string().max(5000).nullable().optional(),
   location: z.string().max(200).nullable().optional(),
+  owner_user_id: z.string().nullable().optional(),
   all_day: z.boolean().optional(),
   start_at: z.coerce.date().optional(),
   end_at: z.coerce.date().optional(),
@@ -48,10 +49,14 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const start = d.start_at ?? ev.start_at;
   const end = d.end_at ?? ev.end_at;
   if (end < start) return NextResponse.json({ error: 'invalid_body' }, { status: 400 });
+  if (d.owner_user_id && !(await listCalendarMembers(ev.mailbox_id)).some(m => m.id === d.owner_user_id)) {
+    return NextResponse.json({ error: 'invalid_owner' }, { status: 400 });
+  }
   await prisma.calendar_events.update({
     where: { id },
     data: {
       ...d,
+      owner_user_id: d.owner_user_id === undefined ? undefined : d.owner_user_id || null,
       description: d.description === undefined ? undefined : d.description || null,
       location: d.location === undefined ? undefined : d.location || null,
     },

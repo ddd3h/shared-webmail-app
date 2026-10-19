@@ -14,11 +14,12 @@ vi.mock('@/lib/rbac', () => ({
   canViewCalendar: vi.fn(),
   canEditCalendar: vi.fn(),
   canManageCalendar: vi.fn(),
+  listCalendarMembers: vi.fn(),
 }));
 vi.mock('@/lib/google-calendar', () => ({ syncStaleLinks: vi.fn() }));
 
 import { prisma } from '@/lib/db';
-import { canViewCalendar, canEditCalendar, canManageCalendar } from '@/lib/rbac';
+import { canViewCalendar, canEditCalendar, canManageCalendar, listCalendarMembers } from '@/lib/rbac';
 import { GET, POST } from '@/app/api/calendar/events/route';
 
 const get = (qs: string) => GET(new Request(`http://x/api/calendar/events?${qs}`) as any);
@@ -36,8 +37,10 @@ describe('GET /api/calendar/events', () => {
     (canViewCalendar as any).mockResolvedValue(true);
     (canEditCalendar as any).mockResolvedValue(false);
     (canManageCalendar as any).mockResolvedValue(false);
+    (listCalendarMembers as any).mockResolvedValue([{ id: 'u1', name: '田中' }]);
+    (prisma.calendar_google_links.findMany as any).mockResolvedValue([]);
     const link = { id: 'l1', name: 'G', color: '#000000', display_mode: 'busy_only', busy_label: '予定あり' };
-    const base = { source: 'google', description: 'leak', location: 'leak', all_day: false, start_at: new Date(), end_at: new Date(), creator: null, link };
+    const base = { source: 'google', description: 'leak', location: 'leak', all_day: false, start_at: new Date(), end_at: new Date(), creator: null, owner: { id: 'u1', name: '田中' }, link };
     (prisma.calendar_events.findMany as any).mockResolvedValue([
       { ...base, id: 'e1', title: 'leak-title', title_override: null },
       { ...base, id: 'e2', title: 'leak-title', title_override: '社内MTG' },
@@ -46,6 +49,8 @@ describe('GET /api/calendar/events', () => {
     expect(body.items.map((i: any) => i.title)).toEqual(['予定あり', '社内MTG']);
     expect(JSON.stringify(body)).not.toContain('leak');
     expect(body.links).toEqual([]);
+    expect(body.people).toEqual([{ id: 'u1', name: '田中' }]);
+    expect(body.items[0].owner).toEqual({ id: 'u1', name: '田中' });
   });
 });
 
@@ -60,6 +65,19 @@ describe('POST /api/calendar/events', () => {
   });
   it('終了が開始より前なら400', async () => {
     expect((await post({ ...valid, end_at: '2026-10-19T00:00:00Z' })).status).toBe(400);
+  });
+  it('閲覧できないメンバーを「誰の予定」に指定すると400', async () => {
+    (canEditCalendar as any).mockResolvedValue(true);
+    (listCalendarMembers as any).mockResolvedValue([{ id: 'u1', name: '田中' }]);
+    expect((await post({ ...valid, owner_user_id: 'stranger' })).status).toBe(400);
+    expect(prisma.calendar_events.create).not.toHaveBeenCalled();
+  });
+  it('メンバーを「誰の予定」に指定して作成できる', async () => {
+    (canEditCalendar as any).mockResolvedValue(true);
+    (listCalendarMembers as any).mockResolvedValue([{ id: 'u1', name: '田中' }]);
+    (prisma.calendar_events.create as any).mockResolvedValue({ id: 'e1' });
+    expect((await post({ ...valid, owner_user_id: 'u1' })).status).toBe(201);
+    expect((prisma.calendar_events.create as any).mock.calls[0][0].data.owner_user_id).toBe('u1');
   });
   it('権限があれば作成できる', async () => {
     (canEditCalendar as any).mockResolvedValue(true);

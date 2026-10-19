@@ -1,7 +1,7 @@
 import { randomBytes } from 'crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import { getSession, requireAuth } from '@/lib/auth';
-import { canManageCalendar } from '@/lib/rbac';
+import { canEditCalendar } from '@/lib/rbac';
 import { GOOGLE_CALENDAR_SCOPE, calendarRedirectUri } from '@/lib/google-calendar';
 
 const OAUTH_STATE_COOKIE = 'gcal_oauth_state';
@@ -13,7 +13,7 @@ export async function GET(req: NextRequest) {
   const mailboxId = new URL(req.url).searchParams.get('mailboxId') || '';
   const clientId = process.env.GOOGLE_CLIENT_ID;
   if (!clientId) return NextResponse.json({ error: 'google_not_configured' }, { status: 503 });
-  if (!mailboxId || !(await canManageCalendar(session.userId, mailboxId))) {
+  if (!mailboxId || !(await canEditCalendar(session.userId, mailboxId))) {
     return NextResponse.json({ error: 'forbidden' }, { status: 403 });
   }
 

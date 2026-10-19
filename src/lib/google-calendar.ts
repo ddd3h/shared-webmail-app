@@ -103,8 +103,8 @@ export async function syncLink(linkId: string): Promise<{ upserted: number; remo
     for (const r of rows) {
       await prisma.calendar_events.upsert({
         where: { link_id_google_event_id: { link_id: link.id, google_event_id: r.google_event_id } },
-        create: { ...r, mailbox_id: link.mailbox_id, source: 'google', link_id: link.id },
-        update: r,
+        create: { ...r, mailbox_id: link.mailbox_id, source: 'google', link_id: link.id, owner_user_id: link.linked_by_user_id },
+        update: { ...r, owner_user_id: link.linked_by_user_id },
       });
       upserted++;
     }

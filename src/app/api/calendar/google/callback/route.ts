@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { prisma } from '@/lib/db';
-import { canManageCalendar } from '@/lib/rbac';
+import { canEditCalendar } from '@/lib/rbac';
 import { logAudit } from '@/lib/audit';
 import { calendarRedirectUri, sealToken } from '@/lib/google-calendar';
 
@@ -23,7 +23,7 @@ export async function GET(req: NextRequest) {
     const cookieNonce = req.cookies.get('gcal_oauth_state')?.value;
     if (!nonce || !mailboxId || nonce !== cookieNonce) return back('google_error=invalid_state');
     if (url.searchParams.get('error') || !code) return back(`mailbox=${mailboxId}&google_error=access_denied`);
-    if (!(await canManageCalendar(session.userId, mailboxId))) return back('google_error=forbidden');
+    if (!(await canEditCalendar(session.userId, mailboxId))) return back('google_error=forbidden');
 
     const clientId = process.env.GOOGLE_CLIENT_ID;
     const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
