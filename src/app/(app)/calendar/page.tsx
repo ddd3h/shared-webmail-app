@@ -51,6 +51,8 @@ function CalendarView() {
   const [mailboxId, setMailboxId] = useState(sp.get('mailbox') || '');
   const [cursor, setCursor] = useState(() => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1); });
   const [selected, setSelected] = useState(() => new Date());
+  // "Today" differs between server (UTC) and browser, so only render dates after mount.
+  const [ready, setReady] = useState(false);
   const [events, setEvents] = useState<CalEvent[]>([]);
   const [links, setLinks] = useState<Link[]>([]);
   const [perm, setPerm] = useState({ can_edit: false, can_manage: false });
@@ -66,6 +68,10 @@ function CalendarView() {
   }
 
   useEffect(() => {
+    const n = new Date();
+    setCursor(new Date(n.getFullYear(), n.getMonth(), 1));
+    setSelected(n);
+    setReady(true);
     const err = sp.get('google_error');
     if (err) flash('error', `Google連携に失敗しました (${err})`);
     fetch('/api/mailboxes?mine=1').then(r => r.json()).then(d => {
@@ -80,7 +86,7 @@ function CalendarView() {
   const days = useMemo(() => Array.from({ length: 42 }, (_, i) => new Date(gridStart.getFullYear(), gridStart.getMonth(), gridStart.getDate() + i)), [gridStart]);
 
   const load = useCallback(async () => {
-    if (!mailboxId) return;
+    if (!mailboxId || !ready) return;
     setLoading(true);
     try {
       const from = new Date(gridStart.getTime() - 86400_000).toISOString();
@@ -91,7 +97,7 @@ function CalendarView() {
         setEvents(d.items); setLinks(d.links); setPerm(d.permissions); setGoogleConfigured(d.google_configured);
       }
     } finally { setLoading(false); }
-  }, [mailboxId, gridStart]);
+  }, [mailboxId, gridStart, ready]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -172,6 +178,7 @@ function CalendarView() {
       {msg && <div className={`text-sm rounded-lg px-3 py-2 ${msg.type === 'success' ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-600'}`}>{msg.text}</div>}
       {!mailboxId && !loading && <p className="text-sm text-gray-500">閲覧できるメールアカウントがありません。</p>}
 
+      {ready && <>
       <div className="flex items-center gap-2">
         <button onClick={() => setCursor(new Date(cursor.getFullYear(), cursor.getMonth() - 1, 1))} className="px-3 py-1.5 rounded-lg border border-gray-300 text-sm" aria-label="前の月">‹</button>
         <div className="text-base font-semibold text-gray-900 min-w-[7rem] text-center">{cursor.getFullYear()}年{cursor.getMonth() + 1}月</div>
@@ -192,8 +199,8 @@ function CalendarView() {
               const isSel = ymd(d) === ymd(selected);
               return (
                 <button key={d.toISOString()} onClick={() => setSelected(d)}
-                  className={`min-h-[4.5rem] md:min-h-[6rem] border-t border-l border-gray-100 p-1 text-left align-top ${inMonth ? 'bg-white' : 'bg-gray-50/70'} ${isSel ? 'ring-2 ring-inset ring-blue-500' : ''}`}>
-                  <div className={`text-xs mb-0.5 ${ymd(d) === today ? 'inline-flex h-5 w-5 items-center justify-center rounded-full bg-blue-600 text-white' : inMonth ? 'text-gray-700' : 'text-gray-400'}`}>{d.getDate()}</div>
+                  className={`flex flex-col items-stretch justify-start min-h-[4.5rem] md:min-h-[6rem] border-t border-l border-gray-100 p-1 text-left align-top ${inMonth ? 'bg-white' : 'bg-gray-50/70'} ${isSel ? 'ring-2 ring-inset ring-blue-500' : ''}`}>
+                  <div className={`text-xs mb-0.5 ${ymd(d) === today ? 'flex h-5 w-5 items-center justify-center rounded-full bg-blue-600 text-white' : inMonth ? 'text-gray-700' : 'text-gray-400'}`}>{d.getDate()}</div>
                   <div className="space-y-0.5">
                     {list.slice(0, 3).map(e => (
                       <div key={e.id} className="truncate rounded px-1 text-[10px] md:text-[11px] leading-4 text-white" style={{ background: e.color || LOCAL_COLOR }}>{e.title}</div>
@@ -225,6 +232,7 @@ function CalendarView() {
           </ul>
         </aside>
       </div>
+      </>}
 
       {draft && (
         <Modal onClose={() => setDraft(null)} title={draft.source === 'google' ? 'Googleから取り込んだ予定' : draft.id ? '予定を編集' : '予定を追加'}>
