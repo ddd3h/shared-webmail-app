@@ -68,7 +68,7 @@ async function resolveMmUserId(
 
 // Neutralise mail-controlled text before embedding it in a Mattermost post:
 // no @mentions / channel pings, no markdown links or formatting, single line.
-function mmText(s: string, max = 80): string {
+export function mmText(s: string, max = 80): string {
   const flat = s.replace(/[\r\n\t]+/g, ' ').trim();
   const cut = flat.length > max ? flat.slice(0, max) + '…' : flat;
   return cut
@@ -178,4 +178,48 @@ export async function sendBulkDeleteApprovalDm(
   });
 
   return true;
+}
+
+// Generic DM to one of our users (looked up by email, like the other senders).
+// Never throws: a Mattermost outage or an unknown user must not break the action that
+// triggered the notification. Returns whether a message was posted.
+export async function sendDirectMessage(
+  userId: string,
+  email: string,
+  message: string,
+  notificationType: string
+): Promise<boolean> {
+  const { baseUrl, token } = await getConfig();
+  if (!baseUrl || !token) return false;
+
+  let mmUserId: string | null = null;
+  try {
+    mmUserId = await resolveMmUserId(userId, email, baseUrl, token);
+    if (!mmUserId) return false;
+
+    const botId = await getBotUserId(baseUrl, token);
+    const channel = await mmFetch(baseUrl, token, '/channels/direct', {
+      method: 'POST',
+      body: JSON.stringify([botId, mmUserId]),
+    });
+    await mmFetch(baseUrl, token, '/posts', {
+      method: 'POST',
+      body: JSON.stringify({ channel_id: channel.id, message }),
+    });
+    await prisma.mattermost_notifications.create({
+      data: { user_id: userId, notification_type: notificationType, target_mattermost_id: mmUserId, status: 'success' },
+    });
+    return true;
+  } catch (e: any) {
+    console.error(`[mattermost] ${notificationType} DM failed:`, e?.message || e);
+    if (mmUserId) {
+      await prisma.mattermost_notifications.create({
+        data: {
+          user_id: userId, notification_type: notificationType, target_mattermost_id: mmUserId,
+          status: 'failed', error_message: String(e?.message || e).slice(0, 500),
+        },
+      }).catch(() => {});
+    }
+    return false;
+  }
 }

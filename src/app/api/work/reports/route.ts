@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { prisma } from '@/lib/db';
 import { getSession, requireAuth } from '@/lib/auth';
 import { getActor, isAdmin } from '@/lib/work-auth';
+import { notifyWorkReportSubmitted } from '@/lib/work-notify';
 import { isValidDateString, isValidMonth, jstDateString, monthRange, toDbDate } from '@/lib/work';
 
 const serialize = (r: any) => ({
@@ -62,5 +63,6 @@ export async function POST(req: NextRequest) {
   const row = await prisma.work_reports.create({
     data: { user_id: actor.id, report_date: toDbDate(d.report_date), title: d.title, content: d.content, hours: d.hours ?? null },
   });
+  void notifyWorkReportSubmitted(row.id);
   return NextResponse.json({ id: row.id }, { status: 201 });
 }

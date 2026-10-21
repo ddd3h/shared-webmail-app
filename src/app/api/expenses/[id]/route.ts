@@ -5,6 +5,7 @@ import { getSession, requireAuth } from '@/lib/auth';
 import { getActor, isAdmin } from '@/lib/work-auth';
 import { deleteStoredFiles } from '@/lib/attachment-storage';
 import { isValidDateString, toDbDate } from '@/lib/work';
+import { notifyExpenseSubmitted } from '@/lib/work-notify';
 import { EXPENSE_CATEGORIES, MAX_AMOUNT, isEditable } from '@/lib/expense';
 
 const schema = z.object({
@@ -37,6 +38,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       status: 'pending', reviewed_by_id: null, reviewed_at: null, review_comment: null,
     },
   });
+  if (claim.status === 'rejected') void notifyExpenseSubmitted(id, true);
   return NextResponse.json({ ok: true });
 }
 

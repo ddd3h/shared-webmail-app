@@ -4,6 +4,7 @@ import { prisma } from '@/lib/db';
 import { getSession, requireAuth } from '@/lib/auth';
 import { logAudit } from '@/lib/audit';
 import { getActor, isAdmin } from '@/lib/work-auth';
+import { notifyExpenseReviewed } from '@/lib/work-notify';
 
 const schema = z.object({
   action: z.enum(['approve', 'reject']),
@@ -43,5 +44,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     actorUserId: actor.id, actionType: `expense_${action}`, targetType: 'expense_claims', targetId: id,
     metadata: { user_id: claim.user_id, amount: claim.amount },
   });
+  void notifyExpenseReviewed(id, action);
   return NextResponse.json({ ok: true });
 }

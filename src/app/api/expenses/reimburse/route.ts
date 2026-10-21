@@ -4,6 +4,7 @@ import { prisma } from '@/lib/db';
 import { getSession, requireAuth } from '@/lib/auth';
 import { logAudit } from '@/lib/audit';
 import { getActor, isAdmin } from '@/lib/work-auth';
+import { notifyExpenseReimbursed } from '@/lib/work-notify';
 import { isValidDateString, jstDateString, toDbDate } from '@/lib/work';
 
 const schema = z.object({
@@ -27,10 +28,11 @@ export async function POST(req: NextRequest) {
     where: { id: { in: ids }, status: 'approved', payment_method: 'personal' },
     select: { id: true, user_id: true, amount: true },
   });
+  const date = paid_date ?? jstDateString(new Date());
   const res = await prisma.expense_claims.updateMany({
     where: { id: { in: claims.map(c => c.id) }, status: 'approved' },
     data: {
-      status: 'paid', reimbursed_at: toDbDate(paid_date ?? jstDateString(new Date())),
+      status: 'paid', reimbursed_at: toDbDate(date),
       reimbursed_by_id: actor.id, reimburse_note: note || null,
     },
   });
@@ -38,5 +40,6 @@ export async function POST(req: NextRequest) {
     actorUserId: actor.id, actionType: 'expense_reimburse', targetType: 'expense_claims',
     metadata: { ids: claims.map(c => c.id), total: claims.reduce((s, c) => s + c.amount, 0), users: [...new Set(claims.map(c => c.user_id))] },
   });
+  if (res.count > 0) void notifyExpenseReimbursed(claims.map(c => c.id), date, note);
   return NextResponse.json({ reimbursed: res.count, skipped: ids.length - res.count });
 }

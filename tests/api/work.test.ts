@@ -13,6 +13,10 @@ vi.mock('@/lib/auth', () => ({
   requireAuth: vi.fn(),
 }));
 vi.mock('@/lib/audit', () => ({ logAudit: vi.fn() }));
+vi.mock('@/lib/work-notify', () => ({
+  notifyExpenseSubmitted: vi.fn(), notifyExpenseReviewed: vi.fn(), notifyExpenseReimbursed: vi.fn(),
+  notifyWorkReportSubmitted: vi.fn(), notifyPayslip: vi.fn(), notifyAttendanceEdited: vi.fn(),
+}));
 vi.mock('@/lib/work-auth', () => ({
   getActor: vi.fn(),
   isAdmin: (a: any) => a.role === 'admin',

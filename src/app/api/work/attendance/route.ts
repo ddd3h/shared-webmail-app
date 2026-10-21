@@ -4,6 +4,7 @@ import { prisma } from '@/lib/db';
 import { getSession, requireAuth } from '@/lib/auth';
 import { logAudit } from '@/lib/audit';
 import { getActor, getWorkSettings, isAdmin } from '@/lib/work-auth';
+import { notifyAttendanceEdited } from '@/lib/work-notify';
 import {
   allowedPunches, isValidDateString, isValidMonth, jstDateString, monthRange, summarizeMonth, toDbDate, workedMinutes,
 } from '@/lib/work';
@@ -107,6 +108,7 @@ export async function PUT(req: NextRequest) {
     actorUserId: actor.id, actionType: 'attendance_edit', targetType: 'attendance_records', targetId: row.id,
     metadata: { user_id: d.userId, work_date: d.work_date },
   });
+  if (d.userId !== actor.id) void notifyAttendanceEdited(d.userId, d.work_date);
   return NextResponse.json({ id: row.id });
 }
 

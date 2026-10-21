@@ -4,6 +4,7 @@ import { prisma } from '@/lib/db';
 import { getSession, requireAuth } from '@/lib/auth';
 import { logAudit } from '@/lib/audit';
 import { getActor, isAdmin } from '@/lib/work-auth';
+import { notifyPayslip } from '@/lib/work-notify';
 import { isValidDateString, isValidMonth, jstDateString, payslipTotals, toDbDate } from '@/lib/work';
 
 type Row = Awaited<ReturnType<typeof load>>[number];
@@ -98,5 +99,6 @@ export async function POST(req: NextRequest) {
     actorUserId: actor.id, actionType: 'payslip_create', targetType: 'payslips', targetId: row.id,
     metadata: { user_id: d.userId, pay_month: d.pay_month, net: payslipTotals(d.items).net },
   });
+  void notifyPayslip(row.id, 'created');
   return NextResponse.json({ id: row.id }, { status: 201 });
 }

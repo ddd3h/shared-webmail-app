@@ -4,6 +4,7 @@ import { prisma } from '@/lib/db';
 import { getSession, requireAuth } from '@/lib/auth';
 import { logAudit } from '@/lib/audit';
 import { getActor, isAdmin } from '@/lib/work-auth';
+import { notifyPayslip } from '@/lib/work-notify';
 import { isValidDateString, isValidMonth, payslipTotals, toDbDate } from '@/lib/work';
 
 const schema = z.object({
@@ -52,6 +53,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     actorUserId: actor.id, actionType: 'payslip_update', targetType: 'payslips', targetId: id,
     metadata: { user_id: existing.user_id, pay_month: d.pay_month, net: payslipTotals(d.items).net },
   });
+  if (existing.status !== 'paid' && d.status === 'paid') void notifyPayslip(id, 'paid');
   return NextResponse.json({ ok: true });
 }
 

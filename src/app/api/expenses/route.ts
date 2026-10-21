@@ -6,6 +6,7 @@ import { getActor, isAdmin } from '@/lib/work-auth';
 import { saveUploadedFiles, deleteStoredFiles } from '@/lib/attachment-storage';
 import { MAX_ATTACHMENT_BYTES } from '@/lib/attachment-limits';
 import { isValidDateString, isValidMonth, monthRange, toDbDate } from '@/lib/work';
+import { notifyExpenseSubmitted } from '@/lib/work-notify';
 import { EXPENSE_CATEGORIES, MAX_AMOUNT, MAX_RECEIPTS, isReceiptType, summarize } from '@/lib/expense';
 
 const include = {
@@ -113,6 +114,7 @@ export async function POST(req: NextRequest) {
         receipts: { create: saved },
       },
     });
+    void notifyExpenseSubmitted(row.id);
     return NextResponse.json({ id: row.id }, { status: 201 });
   } catch (e) {
     await deleteStoredFiles(saved.map(s => s.storage_key));
