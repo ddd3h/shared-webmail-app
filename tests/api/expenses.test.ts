@@ -1,0 +1,120 @@
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
+vi.mock('@/lib/db', () => ({
+  prisma: {
+    expense_claims: { findUnique: vi.fn(), findMany: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
+    users: { count: vi.fn() },
+  },
+}));
+vi.mock('@/lib/auth', () => ({ getSession: vi.fn(async () => ({ userId: 'u1' })), requireAuth: vi.fn() }));
+vi.mock('@/lib/audit', () => ({ logAudit: vi.fn() }));
+vi.mock('@/lib/attachment-storage', () => ({ saveUploadedFiles: vi.fn(async () => []), deleteStoredFiles: vi.fn() }));
+vi.mock('@/lib/work-auth', () => ({ getActor: vi.fn(), isAdmin: (a: any) => a.role === 'admin' }));
+
+import { prisma } from '@/lib/db';
+import { getActor } from '@/lib/work-auth';
+import { GET as list } from '@/app/api/expenses/route';
+import { PATCH as edit } from '@/app/api/expenses/[id]/route';
+import { POST as review } from '@/app/api/expenses/[id]/review/route';
+import { POST as reimburse } from '@/app/api/expenses/reimburse/route';
+
+const actor = (role = 'user') => ({ id: 'u1', name: '田中', role, worker_type: 'employee' });
+const json = (body: object) => new Request('http://x', { method: 'POST', body: JSON.stringify(body) }) as any;
+const ctx = { params: Promise.resolve({ id: 'c1' }) };
+const claim = (o: object = {}) => ({ id: 'c1', user_id: 'u2', status: 'pending', payment_method: 'personal', amount: 1200, ...o });
+
+beforeEach(() => vi.resetAllMocks());
+
+describe('一覧', () => {
+  it('一般ユーザーは全員分(scope=all)を見られない', async () => {
+    (getActor as any).mockResolvedValue(actor());
+    expect((await list(new Request('http://x/api/expenses?scope=all') as any)).status).toBe(403);
+  });
+  it('一般ユーザーの一覧は自分の申請に限定される', async () => {
+    (getActor as any).mockResolvedValue(actor());
+    (prisma.expense_claims.findMany as any).mockResolvedValue([]);
+    await list(new Request('http://x/api/expenses?userId=u9') as any);
+    for (const c of (prisma.expense_claims.findMany as any).mock.calls) expect(c[0].where.user_id).toBe('u1');
+  });
+});
+
+describe('編集', () => {
+  const body = { expense_date: '2026-10-20', category: '交通費', title: '電車代', amount: 480, payment_method: 'personal' };
+  const patch = () => edit(new Request('http://x', { method: 'PATCH', body: JSON.stringify(body) }) as any, ctx);
+  it('他人の申請は編集できない', async () => {
+    (prisma.expense_claims.findUnique as any).mockResolvedValue(claim({ user_id: 'u2' }));
+    expect((await patch()).status).toBe(403);
+  });
+  it('承認済みは編集できない', async () => {
+    (prisma.expense_claims.findUnique as any).mockResolvedValue(claim({ user_id: 'u1', status: 'approved' }));
+    expect((await patch()).status).toBe(409);
+  });
+  it('却下された申請を編集すると承認待ちに戻る', async () => {
+    (prisma.expense_claims.findUnique as any).mockResolvedValue(claim({ user_id: 'u1', status: 'rejected' }));
+    expect((await patch()).status).toBe(200);
+    expect((prisma.expense_claims.update as any).mock.calls[0][0].data).toMatchObject({ status: 'pending', reviewed_by_id: null, review_comment: null });
+  });
+  it('存在しない区分は400', async () => {
+    (prisma.expense_claims.findUnique as any).mockResolvedValue(claim({ user_id: 'u1' }));
+    const res = await edit(new Request('http://x', { method: 'PATCH', body: JSON.stringify({ ...body, category: '遊興費' }) }) as any, ctx);
+    expect(res.status).toBe(400);
+  });
+});
+
+describe('承認', () => {
+  it('管理者以外は承認できない', async () => {
+    (getActor as any).mockResolvedValue(actor());
+    expect((await review(json({ action: 'approve' }), ctx)).status).toBe(403);
+  });
+  it('却下にはコメントが必要', async () => {
+    (getActor as any).mockResolvedValue(actor('admin'));
+    expect((await review(json({ action: 'reject' }), ctx)).status).toBe(400);
+  });
+  it('承認待ちでなければ409', async () => {
+    (getActor as any).mockResolvedValue(actor('admin'));
+    (prisma.expense_claims.findUnique as any).mockResolvedValue(claim({ status: 'approved' }));
+    expect((await review(json({ action: 'approve' }), ctx)).status).toBe(409);
+  });
+  it('管理者が複数いるとき自分の申請は承認できない', async () => {
+    (getActor as any).mockResolvedValue(actor('admin'));
+    (prisma.expense_claims.findUnique as any).mockResolvedValue(claim({ user_id: 'u1' }));
+    (prisma.users.count as any).mockResolvedValue(2);
+    expect((await review(json({ action: 'approve' }), ctx)).status).toBe(403);
+    expect(prisma.expense_claims.updateMany).not.toHaveBeenCalled();
+  });
+  it('管理者が1人だけなら自分の申請も承認できる', async () => {
+    (getActor as any).mockResolvedValue(actor('admin'));
+    (prisma.expense_claims.findUnique as any).mockResolvedValue(claim({ user_id: 'u1' }));
+    (prisma.users.count as any).mockResolvedValue(1);
+    (prisma.expense_claims.updateMany as any).mockResolvedValue({ count: 1 });
+    expect((await review(json({ action: 'approve' }), ctx)).status).toBe(200);
+  });
+  it('他人の申請を承認できる', async () => {
+    (getActor as any).mockResolvedValue(actor('admin'));
+    (prisma.expense_claims.findUnique as any).mockResolvedValue(claim());
+    (prisma.users.count as any).mockResolvedValue(2);
+    (prisma.expense_claims.updateMany as any).mockResolvedValue({ count: 1 });
+    expect((await review(json({ action: 'approve' }), ctx)).status).toBe(200);
+    expect((prisma.expense_claims.updateMany as any).mock.calls[0][0].data.status).toBe('approved');
+  });
+});
+
+describe('立替金の返金', () => {
+  it('管理者以外は返金処理できない', async () => {
+    (getActor as any).mockResolvedValue(actor());
+    expect((await reimburse(json({ ids: ['c1'] }))).status).toBe(403);
+  });
+  it('承認済みの立替だけを返金済にし、それ以外はスキップとして返す', async () => {
+    (getActor as any).mockResolvedValue(actor('admin'));
+    (prisma.expense_claims.findMany as any).mockResolvedValue([{ id: 'c1', user_id: 'u2', amount: 1200 }]);
+    (prisma.expense_claims.updateMany as any).mockResolvedValue({ count: 1 });
+    const res = await reimburse(json({ ids: ['c1', 'c2'], paid_date: '2026-10-25' }));
+    expect(await res.json()).toEqual({ reimbursed: 1, skipped: 1 });
+    expect((prisma.expense_claims.findMany as any).mock.calls[0][0].where).toMatchObject({ status: 'approved', payment_method: 'personal' });
+    expect((prisma.expense_claims.updateMany as any).mock.calls[0][0].data).toMatchObject({ status: 'paid', reimbursed_by_id: 'u1' });
+  });
+  it('ids が空なら400', async () => {
+    (getActor as any).mockResolvedValue(actor('admin'));
+    expect((await reimburse(json({ ids: [] }))).status).toBe(400);
+  });
+});

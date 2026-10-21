@@ -98,6 +98,12 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
     select: { storage_key: true },
   });
 
+  // Same for expense receipts (the claims cascade with the user)
+  const receiptFiles = await prisma.expense_receipts.findMany({
+    where: { claim: { user_id: id } },
+    select: { storage_key: true },
+  });
+
   // Nullify relations before delete to avoid FK constraint errors
   await prisma.$transaction([
     prisma.threads.updateMany({ where: { assigned_user_id: id }, data: { assigned_user_id: null } }),
@@ -110,7 +116,7 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
     prisma.users.delete({ where: { id } }),
   ]);
 
-  await deleteStoredFiles(draftFiles.map(f => f.storage_key));
+  await deleteStoredFiles([...draftFiles, ...receiptFiles].map(f => f.storage_key));
 
   return NextResponse.json({ ok: true });
 }

@@ -8,6 +8,7 @@ const desktopBaseItems = [
   { href: '/threads', label: 'メール' },
   { href: '/calendar', label: 'カレンダー' },
   { href: '/work', label: '勤怠・給与' },
+  { href: '/expenses', label: '経費' },
   { href: '/contacts', label: '連絡帳' },
   { href: '/notifications', label: '通知' },
   { href: '/scheduled', label: '予約送信' },
@@ -94,14 +95,14 @@ export default function Nav() {
               <div className="h-7 w-7 rounded-lg bg-blue-600 flex items-center justify-center flex-shrink-0">
                 <span className="text-white text-xs font-bold">M</span>
               </div>
-              <span className="font-semibold text-gray-900 text-sm hidden sm:block">共有メールワークスペース</span>
+              <span className="font-semibold text-gray-900 text-sm hidden xl:block">共有メールワークスペース</span>
             </div>
             <nav className="hidden md:flex items-center gap-1">
               {desktopItems.map((item) => (
                 <Link
                   key={item.href}
                   href={item.href}
-                  className={`rounded-lg px-3 py-2 text-sm font-medium ${
+                  className={`rounded-lg px-2.5 lg:px-3 py-2 text-sm font-medium whitespace-nowrap ${
                     isActive(item.href)
                       ? 'bg-blue-50 text-blue-700'
                       : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
@@ -113,7 +114,7 @@ export default function Nav() {
             </nav>
             <button
               onClick={handleLogout}
-              className="hidden md:block text-xs text-gray-500 hover:text-gray-700 px-3 py-1.5 rounded-lg hover:bg-gray-100 transition-colors"
+              className="hidden md:block text-xs text-gray-500 hover:text-gray-700 px-2 lg:px-3 py-1.5 whitespace-nowrap rounded-lg hover:bg-gray-100 transition-colors"
             >
               ログアウト
             </button>
@@ -199,6 +200,15 @@ export default function Nav() {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 7h6m-6 4h6m-6 4h4M5 3h14a1 1 0 011 1v16a1 1 0 01-1 1H5a1 1 0 01-1-1V4a1 1 0 011-1z" />
                   </svg>
                   勤怠・給与
+                </Link>
+                <Link
+                  href="/expenses"
+                  className={`flex items-center gap-3 px-3 py-3 rounded-xl text-sm font-medium transition-colors ${isActive('/expenses') ? 'bg-blue-50 text-blue-700' : 'text-gray-700 hover:bg-gray-100'}`}
+                >
+                  <svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
+                  </svg>
+                  経費
                 </Link>
                 <Link
                   href="/scheduled"

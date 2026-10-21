@@ -58,7 +58,7 @@ export default function PayrollPanel({ manage = false, members = [], noun = '給
   return (
     <div className="space-y-4">
       {summary && (
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div className="grid grid-cols-3 gap-2 sm:gap-3">
           <Stat label={`${monthLabel(summary.month)}の支払予定額`} value={yen(summary.planned_total)} sub={manage ? '全員の未払い分の合計（手取り）' : 'まだ支払われていない金額（手取り）'} />
           <Stat label={`${monthLabel(summary.month)}の支払済`} value={yen(summary.paid_total)} />
           <Stat label="今月の合計" value={yen(summary.planned_total + summary.paid_total)} sub={`${summary.count}件`} />

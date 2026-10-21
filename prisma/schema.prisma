@@ -96,6 +96,9 @@ model users {
   work_reports               work_reports[]
   payslips                   payslips[]               @relation("payslip_user")
   payslips_created           payslips[]               @relation("payslip_creator")
+  expense_claims             expense_claims[]         @relation("expense_claimant")
+  expense_reviewed           expense_claims[]         @relation("expense_reviewer")
+  expense_reimbursed         expense_claims[]         @relation("expense_reimburser")
   scheduled_sends            scheduled_sends[]
   calendar_events_created    calendar_events[]        @relation("calendar_event_creator")
   calendar_events_owned      calendar_events[]        @relation("calendar_event_owner")
@@ -784,4 +787,49 @@ model payslip_items {
   payslip payslips @relation(fields: [payslip_id], references: [id], onDelete: Cascade)
 
   @@index([payslip_id])
+}
+
+// Expense claim (経費申請). payment_method 'personal' = the claimant paid out of pocket
+// (立替) and is owed a reimbursement once approved; 'company' = paid by the company.
+// status: pending -> approved | rejected; approved personal claims -> paid (返金済).
+model expense_claims {
+  id               String    @id @default(cuid())
+  user_id          String
+  expense_date     DateTime  @db.Date
+  category         String
+  title            String
+  amount           Int
+  payment_method   String    @default("personal")
+  description      String?
+  status           String    @default("pending")
+  reviewed_by_id   String?
+  reviewed_at      DateTime?
+  review_comment   String?
+  reimbursed_at    DateTime? @db.Date
+  reimbursed_by_id String?
+  reimburse_note   String?
+  created_at       DateTime  @default(now())
+  updated_at       DateTime  @updatedAt
+
+  user         users             @relation("expense_claimant", fields: [user_id], references: [id], onDelete: Cascade)
+  reviewer     users?            @relation("expense_reviewer", fields: [reviewed_by_id], references: [id], onDelete: SetNull)
+  reimburser   users?            @relation("expense_reimburser", fields: [reimbursed_by_id], references: [id], onDelete: SetNull)
+  receipts     expense_receipts[]
+
+  @@index([user_id, expense_date])
+  @@index([status])
+}
+
+model expense_receipts {
+  id           String   @id @default(cuid())
+  claim_id     String
+  filename     String
+  content_type String
+  size         Int
+  storage_key  String
+  created_at   DateTime @default(now())
+
+  claim expense_claims @relation(fields: [claim_id], references: [id], onDelete: Cascade)
+
+  @@index([claim_id])
 }

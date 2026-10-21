@@ -53,10 +53,10 @@ export function MonthNav({ month, onChange }: { month: string; onChange: (m: str
 
 export function Stat({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
-    <div className="rounded-xl border border-gray-200 bg-white p-3">
-      <div className="text-xs text-gray-500">{label}</div>
-      <div className="text-xl font-bold text-gray-900 mt-0.5 tabular-nums">{value}</div>
-      {sub && <div className="text-[11px] text-gray-400 mt-0.5">{sub}</div>}
+    <div className="rounded-xl border border-gray-200 bg-white p-2.5 sm:p-3">
+      <div className="text-[11px] sm:text-xs text-gray-500 leading-tight">{label}</div>
+      <div className="text-base sm:text-xl font-bold text-gray-900 mt-0.5 tabular-nums">{value}</div>
+      {sub && <div className="hidden sm:block text-[11px] text-gray-400 mt-0.5">{sub}</div>}
     </div>
   );
 }
