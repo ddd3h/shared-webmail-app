@@ -1,10 +1,10 @@
 'use client';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Modal, Notice, Stat, api, btn, btnPrimary, inp, yen } from '@/components/work/ui';
 import { CATEGORIES, ClaimDetail, ClaimHeader, type Claim, type Summary } from './shared';
 
 type Form = { id?: string; expense_date: string; category: string; title: string; amount: string; payment_method: 'personal' | 'company'; description: string };
-const FILTERS = [{ k: '', l: 'すべて' }, { k: 'pending', l: '承認待ち' }, { k: 'to_reimburse', l: '返金待ち' }, { k: 'paid', l: '返金済' }, { k: 'rejected', l: '却下' }];
+const FILTERS = [{ k: '', l: 'すべて' }, { k: 'pending', l: '承認待ち' }, { k: 'owed', l: '返金待ち' }, { k: 'paid', l: '返金済' }, { k: 'rejected', l: '却下' }];
 const MAX_FILES = 5;
 
 export default function MyExpenses() {
@@ -17,8 +17,11 @@ export default function MyExpenses() {
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
+  const seq = useRef(0);
   const load = useCallback(async () => {
+    const mine = ++seq.current;
     const res = await fetch(`/api/expenses${filter ? `?status=${filter}` : ''}`);
+    if (mine !== seq.current) return; // ignore a stale response
     if (res.ok) { const d = await res.json(); setItems(d.items); setSummary(d.summary); }
   }, [filter]);
   useEffect(() => { load(); }, [load]);
@@ -75,7 +78,7 @@ export default function MyExpenses() {
       {summary && (
         <div className="grid grid-cols-3 gap-2 sm:gap-3">
           <Stat label="承認待ち" value={yen(summary.pending.amount)} sub={`${summary.pending.count}件`} />
-          <Stat label="返金待ちの立替金" value={yen(summary.to_reimburse.amount)} sub={`${summary.to_reimburse.count}件・承認済で、まだ返金されていない分`} />
+          <Stat label="返金待ちの立替金" value={yen(summary.to_reimburse.amount + summary.in_payslip.amount)} sub={summary.in_payslip.count > 0 ? `うち給与明細に合算済 ${yen(summary.in_payslip.amount)}` : `${summary.to_reimburse.count}件・承認済で、まだ返金されていない分`} />
           <Stat label="返金済みの合計" value={yen(summary.paid.amount)} sub={`${summary.paid.count}件`} />
         </div>
       )}

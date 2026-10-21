@@ -24,7 +24,7 @@ export function isReceiptType(t: string) {
   return RECEIPT_TYPES.includes(t);
 }
 
-type Claim = { status: string; payment_method: string; amount: number };
+type Claim = { status: string; payment_method: string; amount: number; payslip_id?: string | null };
 
 // An approved out-of-pocket claim that has not been paid back yet.
 export function isReimbursable(c: Pick<Claim, 'status' | 'payment_method'>) {
@@ -43,7 +43,20 @@ export function summarize(claims: Claim[]) {
   };
   return {
     pending: sum(c => c.status === 'pending'),
-    to_reimburse: sum(isReimbursable),
+    // approved out-of-pocket claims nobody has dealt with yet
+    to_reimburse: sum(c => isReimbursable(c) && !c.payslip_id),
+    // merged into a pay statement that has not been paid yet
+    in_payslip: sum(c => isReimbursable(c) && !!c.payslip_id),
     paid: sum(c => c.status === 'paid'),
   };
 }
+
+// Which of a person's pay statements for the month receives the reimbursement:
+// an unpaid statement titled 給与 if there is one, otherwise the oldest unpaid one.
+export function pickPayslip<T extends { title: string; status: string }>(candidates: T[]): T | undefined {
+  const open = candidates.filter(p => p.status === 'planned');
+  return open.find(p => p.title === '給与') ?? open[0];
+}
+
+export const EXPENSE_ITEM_KEY = 'expense_reimbursement';
+export const EXPENSE_ITEM_LABEL = '立替金精算';

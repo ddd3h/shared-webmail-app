@@ -12,7 +12,7 @@ type Row = Awaited<ReturnType<typeof load>>[number];
 function load(where: object) {
   return prisma.payslips.findMany({
     where,
-    include: { items: { orderBy: { sort: 'asc' } }, user: { select: { id: true, name: true, worker_type: true } } },
+    include: { items: { orderBy: { sort: 'asc' } }, expense_claims: { select: { id: true, title: true, amount: true, expense_date: true }, orderBy: { expense_date: 'asc' } }, user: { select: { id: true, name: true, worker_type: true } } },
     orderBy: [{ pay_month: 'desc' }, { created_at: 'desc' }],
     take: 500,
   });
@@ -27,7 +27,9 @@ function serializePayslip(p: Row) {
     status: p.status,
     pay_date: p.pay_date ? p.pay_date.toISOString().slice(0, 10) : null,
     note: p.note,
-    items: p.items.map(i => ({ id: i.id, kind: i.kind, label: i.label, amount: i.amount })),
+    items: p.items.map(i => ({ id: i.id, kind: i.kind, label: i.label, amount: i.amount, system: !!i.system_key })),
+    // expense claims merged into this statement (shown as the 立替金精算 line)
+    claims: p.expense_claims.map(c => ({ id: c.id, title: c.title, amount: c.amount, expense_date: c.expense_date.toISOString().slice(0, 10) })),
     ...payslipTotals(p.items),
   };
 }

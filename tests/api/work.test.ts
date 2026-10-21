@@ -15,7 +15,7 @@ vi.mock('@/lib/auth', () => ({
 vi.mock('@/lib/audit', () => ({ logAudit: vi.fn() }));
 vi.mock('@/lib/work-notify', () => ({
   notifyExpenseSubmitted: vi.fn(), notifyExpenseReviewed: vi.fn(), notifyExpenseReimbursed: vi.fn(),
-  notifyWorkReportSubmitted: vi.fn(), notifyPayslip: vi.fn(), notifyAttendanceEdited: vi.fn(),
+  notifyWorkReportSubmitted: vi.fn(), notifyPayslip: vi.fn(), notifyAttendanceEdited: vi.fn(), notifyExpenseAddedToPayslip: vi.fn(),
 }));
 vi.mock('@/lib/work-auth', () => ({
   getActor: vi.fn(),
@@ -107,7 +107,7 @@ describe('給与明細', () => {
     (getActor as any).mockResolvedValue(actor('employee'));
     const row = {
       id: 'p1', user: { id: 'u1', name: '田中', worker_type: 'employee' }, pay_month: '2026-10', title: '給与',
-      status: 'planned', pay_date: null, note: null, created_at: new Date(),
+      status: 'planned', pay_date: null, note: null, created_at: new Date(), expense_claims: [],
       items: [{ id: 'i1', kind: 'earning', label: '基本給', amount: 300000 }, { id: 'i2', kind: 'deduction', label: '社会保険', amount: 45000 }],
     };
     (prisma.payslips.findMany as any).mockResolvedValue([row]);

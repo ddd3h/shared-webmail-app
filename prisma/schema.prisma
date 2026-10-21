@@ -771,6 +771,7 @@ model payslips {
   user    users           @relation("payslip_user", fields: [user_id], references: [id], onDelete: Cascade)
   creator users?          @relation("payslip_creator", fields: [created_by_id], references: [id], onDelete: SetNull)
   items   payslip_items[]
+  expense_claims expense_claims[]
 
   @@index([user_id, pay_month])
   @@index([pay_month])
@@ -783,6 +784,7 @@ model payslip_items {
   label      String
   amount     Int
   sort       Int    @default(0)
+  system_key String? // set on rows the app maintains itself (e.g. 'expense_reimbursement')
 
   payslip payslips @relation(fields: [payslip_id], references: [id], onDelete: Cascade)
 
@@ -808,16 +810,19 @@ model expense_claims {
   reimbursed_at    DateTime? @db.Date
   reimbursed_by_id String?
   reimburse_note   String?
+  payslip_id       String?   // set when the reimbursement was merged into a pay statement
   created_at       DateTime  @default(now())
   updated_at       DateTime  @updatedAt
 
   user         users             @relation("expense_claimant", fields: [user_id], references: [id], onDelete: Cascade)
   reviewer     users?            @relation("expense_reviewer", fields: [reviewed_by_id], references: [id], onDelete: SetNull)
   reimburser   users?            @relation("expense_reimburser", fields: [reimbursed_by_id], references: [id], onDelete: SetNull)
+  payslip      payslips?         @relation(fields: [payslip_id], references: [id], onDelete: SetNull)
   receipts     expense_receipts[]
 
   @@index([user_id, expense_date])
   @@index([status])
+  @@index([payslip_id])
 }
 
 model expense_receipts {

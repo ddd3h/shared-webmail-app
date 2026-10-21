@@ -99,3 +99,21 @@ export function notifyAttendanceEdited(targetUserId: string, workDate: string) {
     await sendDirectMessage(u.id, u.email, `🕘 **勤怠が修正されました**\n\n${workDate} の記録を管理者が修正しました。\n\n確認: ${appUrl()}/work`, 'attendance_edited');
   });
 }
+
+// Reimbursement merged into the pay statement of `payMonth` -> one DM per claimant
+export function notifyExpenseAddedToPayslip(claimIds: string[], payMonth: string) {
+  return safely('expense_in_payslip', async () => {
+    const claims = await prisma.expense_claims.findMany({
+      where: { id: { in: claimIds } },
+      select: { amount: true, user: { select: { id: true, email: true } } },
+    });
+    const byUser = new Map<string, { email: string; count: number; total: number }>();
+    for (const c of claims) {
+      const e = byUser.get(c.user.id) ?? { email: c.user.email, count: 0, total: 0 };
+      e.count++; e.total += c.amount; byUser.set(c.user.id, e);
+    }
+    const [y, m] = payMonth.split('-');
+    await Promise.all([...byUser.entries()].map(([id, e]) => sendDirectMessage(id, e.email,
+      `💴 **立替金を${y}年${Number(m)}月分の給与明細に合算しました**\n\n${e.count}件 ・ 合計 **${yen(e.total)}**\n支払日に給与と一緒に支払われます。\n\n明細の確認: ${appUrl()}/work`, 'expense_in_payslip')));
+  });
+}

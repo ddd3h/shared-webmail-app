@@ -2,13 +2,14 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Modal, Notice, Stat, btn, btnPrimary, currentMonth, inp, yen, api, TYPE_LABEL, type WorkerType } from './ui';
 
-type Item = { id?: string; kind: 'earning' | 'deduction'; label: string; amount: number };
+type Item = { id?: string; kind: 'earning' | 'deduction'; label: string; amount: number; system?: boolean };
+type LinkedClaim = { id: string; title: string; amount: number; expense_date: string };
 type Slip = {
   id: string; user: { id: string; name: string; worker_type: WorkerType }; pay_month: string; title: string; status: 'planned' | 'paid';
-  pay_date: string | null; note: string | null; items: Item[]; earnings: number; deductions: number; net: number;
+  pay_date: string | null; note: string | null; items: Item[]; claims: LinkedClaim[]; earnings: number; deductions: number; net: number;
 };
 type Summary = { month: string; planned_total: number; paid_total: number; count: number };
-type Draft = { id?: string; userId: string; pay_month: string; title: string; status: 'planned' | 'paid'; pay_date: string; note: string; items: { kind: 'earning' | 'deduction'; label: string; amount: string }[] };
+type Draft = { id?: string; userId: string; pay_month: string; title: string; status: 'planned' | 'paid'; pay_date: string; note: string; items: { kind: 'earning' | 'deduction'; label: string; amount: string }[]; system: { label: string; amount: number } | null };
 
 const monthLabel = (m: string) => `${m.slice(0, 4)}年${Number(m.slice(5))}月`;
 const StatusBadge = ({ s }: { s: string }) => (
@@ -35,8 +36,9 @@ export default function PayrollPanel({ manage = false, members = [], noun = '給
   const blank = (): Draft => ({
     userId: filter || members[0]?.id || '', pay_month: currentMonth(), title: noun, status: 'planned', pay_date: '', note: '',
     items: [{ kind: 'earning', label: '基本給', amount: '' }, { kind: 'deduction', label: '社会保険料', amount: '' }, { kind: 'deduction', label: '所得税', amount: '' }],
+    system: null,
   });
-  const draftNet = draft ? draft.items.reduce((s, i) => s + (i.kind === 'earning' ? 1 : -1) * (Number(i.amount) || 0), 0) : 0;
+  const draftNet = draft ? draft.items.reduce((s, i) => s + (i.kind === 'earning' ? 1 : -1) * (Number(i.amount) || 0), 0) + (draft.system?.amount ?? 0) : 0;
 
   async function save() {
     if (!draft) return;
@@ -52,7 +54,8 @@ export default function PayrollPanel({ manage = false, members = [], noun = '給
   }
   function editDraft(p: Slip): Draft {
     return { id: p.id, userId: p.user.id, pay_month: p.pay_month, title: p.title, status: p.status, pay_date: p.pay_date || '', note: p.note || '',
-      items: p.items.map(i => ({ kind: i.kind, label: i.label, amount: String(i.amount) })) };
+      items: p.items.filter(i => !i.system).map(i => ({ kind: i.kind, label: i.label, amount: String(i.amount) })),
+      system: (() => { const x = p.items.find(i => i.system); return x ? { label: x.label, amount: x.amount } : null; })() };
   }
 
   return (
@@ -91,11 +94,17 @@ export default function PayrollPanel({ manage = false, members = [], noun = '給
                   <div key={kind}>
                     <div className="text-xs font-semibold text-gray-500 mb-1">{kind === 'earning' ? '支給' : '控除'}</div>
                     {p.items.filter(i => i.kind === kind).map((i, idx) => (
-                      <div key={idx} className="flex justify-between py-0.5"><span>{i.label}</span><span className="tabular-nums">{kind === 'deduction' ? '−' : ''}{yen(i.amount)}</span></div>
+                      <div key={idx} className="flex justify-between py-0.5"><span>{i.label}{i.system && <span className="ml-2 rounded bg-violet-50 px-1.5 py-0.5 text-[10px] text-violet-700">経費申請から自動連動</span>}</span><span className="tabular-nums">{kind === 'deduction' ? '−' : ''}{yen(i.amount)}</span></div>
                     ))}
                     <div className="flex justify-between border-t border-gray-100 mt-1 pt-1 font-medium"><span>{kind === 'earning' ? '支給合計' : '控除合計'}</span><span className="tabular-nums">{yen(kind === 'earning' ? p.earnings : p.deductions)}</span></div>
                   </div>
                 ))}
+                {p.claims.length > 0 && (
+                  <div className="rounded-lg border border-violet-100 bg-violet-50/50 px-3 py-2 text-xs text-gray-600">
+                    <div className="font-semibold text-violet-700 mb-1">立替金精算の内訳</div>
+                    {p.claims.map(c => <div key={c.id} className="flex justify-between"><span>{c.expense_date.slice(5).replace('-', '/')} {c.title}</span><span className="tabular-nums">{yen(c.amount)}</span></div>)}
+                  </div>
+                )}
                 <div className="flex justify-between rounded-lg bg-gray-50 px-3 py-2 font-bold"><span>差引支給額（手取り）</span><span className="tabular-nums">{yen(p.net)}</span></div>
                 <div className="text-xs text-gray-500">{p.pay_date ? `支払日: ${p.pay_date}` : '支払日: 未定'}{p.note ? ` ・ ${p.note}` : ''}</div>
                 {manage && <div className="flex gap-3 text-xs"><button className="text-blue-600 hover:underline" onClick={() => setDraft(editDraft(p))}>編集</button><button className="text-red-600 hover:underline" onClick={() => remove(p.id)}>削除</button></div>}
@@ -121,6 +130,7 @@ export default function PayrollPanel({ manage = false, members = [], noun = '給
                 <select className={inp} value={draft.status} onChange={e => setDraft({ ...draft, status: e.target.value as 'planned' | 'paid' })}><option value="planned">支払予定</option><option value="paid">支払済</option></select></div>
               <div><label className="text-xs text-gray-600">支払日</label><input type="date" className={inp} value={draft.pay_date} onChange={e => setDraft({ ...draft, pay_date: e.target.value })} /></div>
             </div>
+            {draft.system && draft.status === 'paid' && <p className="text-xs text-violet-700 bg-violet-50 rounded-lg px-3 py-2">支払済にすると、この明細に合算された立替金も返金済になります。</p>}
             <div>
               <div className="text-xs font-semibold text-gray-600 mb-1">明細項目（金額は円・0以上の整数）</div>
               <div className="space-y-2">
@@ -133,6 +143,9 @@ export default function PayrollPanel({ manage = false, members = [], noun = '給
                   </div>
                 ))}
               </div>
+              {draft.system && (
+                <div className="mt-2 flex items-center justify-between rounded-lg bg-violet-50 px-3 py-2 text-sm"><span>{draft.system.label}<span className="ml-2 rounded bg-white px-1.5 py-0.5 text-[10px] text-violet-700">自動連動・編集不可</span></span><span className="tabular-nums">{yen(draft.system.amount)}</span></div>
+              )}
               <button className="mt-2 text-xs text-blue-600 hover:underline" onClick={() => setDraft({ ...draft, items: [...draft.items, { kind: 'earning', label: '', amount: '' }] })}>＋ 項目を追加</button>
             </div>
             <div className="flex justify-between rounded-lg bg-gray-50 px-3 py-2 font-bold"><span>差引支給額（手取り）</span><span className="tabular-nums">{yen(draftNet)}</span></div>

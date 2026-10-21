@@ -6,8 +6,10 @@ export type Claim = {
   id: string; user: { id: string; name: string }; expense_date: string; category: string; title: string; amount: number;
   payment_method: 'personal' | 'company'; description: string | null; status: 'pending' | 'approved' | 'rejected' | 'paid';
   reviewer: string | null; review_comment: string | null; reimbursed_at: string | null; reimburse_note: string | null; receipts: Receipt[];
+  payslip: { id: string; pay_month: string; title: string; status: string } | null;
 };
-export type Summary = { pending: { count: number; amount: number }; to_reimburse: { count: number; amount: number }; paid: { count: number; amount: number } };
+type Sum = { count: number; amount: number };
+export type Summary = { pending: Sum; to_reimburse: Sum; in_payslip: Sum; paid: Sum };
 
 export const CATEGORIES = ['交通費', '出張・宿泊費', '交際費', '会議費', '消耗品費', '通信費', '書籍・研修費', 'その他'];
 export const STATUS_LABEL = { pending: '承認待ち', approved: '承認済', rejected: '却下', paid: '返金済' } as const;
@@ -18,8 +20,10 @@ const STATUS_STYLE = {
 
 export function StatusBadge({ c }: { c: Claim }) {
   // An approved company-paid claim has nothing left to do, so say so instead of "承認済".
-  const label = c.status === 'approved' && c.payment_method === 'personal' ? '返金待ち' : STATUS_LABEL[c.status];
-  return <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium whitespace-nowrap ${STATUS_STYLE[c.status]}`}>{label}</span>;
+  const owed = c.status === 'approved' && c.payment_method === 'personal';
+  const label = owed ? (c.payslip ? '給与に合算済' : '返金待ち') : STATUS_LABEL[c.status];
+  const style = owed && c.payslip ? 'bg-violet-100 text-violet-700' : STATUS_STYLE[c.status];
+  return <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium whitespace-nowrap ${style}`}>{label}</span>;
 }
 
 export function PaymentBadge({ m }: { m: Claim['payment_method'] }) {
@@ -48,6 +52,9 @@ export function ClaimDetail({ c }: { c: Claim }) {
         <p className={`rounded-lg px-3 py-2 text-xs ${c.status === 'rejected' ? 'bg-red-50 text-red-700' : 'bg-gray-50 text-gray-600'}`}>
           {c.reviewer ?? '管理者'} のコメント: {c.review_comment}
         </p>
+      )}
+      {c.status === 'approved' && c.payslip && (
+        <p className="text-xs text-violet-700">{Number(c.payslip.pay_month.slice(5))}月分の{c.payslip.title}に合算されています。明細が支払済になると、返金済になります。</p>
       )}
       {c.status === 'paid' && <p className="text-xs text-emerald-700">{c.reimbursed_at} に返金済み{c.reimburse_note ? `（${c.reimburse_note}）` : ''}</p>}
     </div>

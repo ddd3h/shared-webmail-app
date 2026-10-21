@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isEditable, isReceiptType, isReimbursable, summarize } from '@/lib/expense';
+import { isEditable, isReceiptType, isReimbursable, pickPayslip, summarize } from '@/lib/expense';
 
 describe('isReimbursable', () => {
   it('承認済みの立替だけが返金対象', () => {
@@ -38,7 +38,28 @@ describe('summarize', () => {
     expect(s).toEqual({
       pending: { count: 1, amount: 1000 },
       to_reimburse: { count: 2, amount: 3000 },
+      in_payslip: { count: 0, amount: 0 },
       paid: { count: 1, amount: 700 },
     });
+  });
+  it('給与明細に合算済みの分は返金待ちと分けて数える', () => {
+    const s = summarize([
+      { status: 'approved', payment_method: 'personal', amount: 2000, payslip_id: null },
+      { status: 'approved', payment_method: 'personal', amount: 3000, payslip_id: 'p1' },
+    ]);
+    expect(s.to_reimburse).toEqual({ count: 1, amount: 2000 });
+    expect(s.in_payslip).toEqual({ count: 1, amount: 3000 });
+  });
+});
+
+describe('pickPayslip', () => {
+  it('支払予定の「給与」を優先し、なければ最初の支払予定', () => {
+    const bonus = { title: '賞与', status: 'planned' }, pay = { title: '給与', status: 'planned' }, done = { title: '給与', status: 'paid' };
+    expect(pickPayslip([bonus, pay])).toBe(pay);
+    expect(pickPayslip([bonus])).toBe(bonus);
+  });
+  it('支払済の明細は選ばない', () => {
+    expect(pickPayslip([{ title: '給与', status: 'paid' }])).toBeUndefined();
+    expect(pickPayslip([])).toBeUndefined();
   });
 });

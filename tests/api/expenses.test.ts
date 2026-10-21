@@ -10,7 +10,7 @@ vi.mock('@/lib/auth', () => ({ getSession: vi.fn(async () => ({ userId: 'u1' }))
 vi.mock('@/lib/audit', () => ({ logAudit: vi.fn() }));
 vi.mock('@/lib/work-notify', () => ({
   notifyExpenseSubmitted: vi.fn(), notifyExpenseReviewed: vi.fn(), notifyExpenseReimbursed: vi.fn(),
-  notifyWorkReportSubmitted: vi.fn(), notifyPayslip: vi.fn(), notifyAttendanceEdited: vi.fn(),
+  notifyWorkReportSubmitted: vi.fn(), notifyPayslip: vi.fn(), notifyAttendanceEdited: vi.fn(), notifyExpenseAddedToPayslip: vi.fn(),
 }));
 vi.mock('@/lib/attachment-storage', () => ({ saveUploadedFiles: vi.fn(async () => []), deleteStoredFiles: vi.fn() }));
 vi.mock('@/lib/work-auth', () => ({ getActor: vi.fn(), isAdmin: (a: any) => a.role === 'admin' }));
@@ -117,8 +117,8 @@ describe('立替金の返金', () => {
     (prisma.expense_claims.findMany as any).mockResolvedValue([{ id: 'c1', user_id: 'u2', amount: 1200 }]);
     (prisma.expense_claims.updateMany as any).mockResolvedValue({ count: 1 });
     const res = await reimburse(json({ ids: ['c1', 'c2'], paid_date: '2026-10-25' }));
-    expect(await res.json()).toEqual({ reimbursed: 1, skipped: 1 });
-    expect((prisma.expense_claims.findMany as any).mock.calls[0][0].where).toMatchObject({ status: 'approved', payment_method: 'personal' });
+    expect(await res.json()).toEqual({ reimbursed: 1, attached: 0, skipped: 1 });
+    expect((prisma.expense_claims.findMany as any).mock.calls[0][0].where).toMatchObject({ status: 'approved', payment_method: 'personal', payslip_id: null });
     expect((prisma.expense_claims.updateMany as any).mock.calls[0][0].data).toMatchObject({ status: 'paid', reimbursed_by_id: 'u1' });
     expect(notifyExpenseReimbursed).toHaveBeenCalledWith(['c1'], '2026-10-25', undefined);
   });

@@ -12,6 +12,7 @@ import { EXPENSE_CATEGORIES, MAX_AMOUNT, MAX_RECEIPTS, isReceiptType, summarize 
 const include = {
   user: { select: { id: true, name: true } },
   reviewer: { select: { name: true } },
+  payslip: { select: { id: true, pay_month: true, title: true, status: true } },
   receipts: { select: { id: true, filename: true, content_type: true, size: true }, orderBy: { created_at: 'asc' as const } },
 };
 
@@ -31,6 +32,7 @@ function serialize(c: any) {
     review_comment: c.review_comment,
     reimbursed_at: c.reimbursed_at ? c.reimbursed_at.toISOString().slice(0, 10) : null,
     reimburse_note: c.reimburse_note,
+    payslip: c.payslip ?? null,
     receipts: c.receipts,
     created_at: c.created_at,
   };
@@ -51,26 +53,29 @@ export async function GET(req: NextRequest) {
   const month = sp.get('month');
   if (month && !isValidMonth(month)) return NextResponse.json({ error: 'invalid_query' }, { status: 400 });
   const status = sp.get('status');
-  if (status && !['pending', 'approved', 'rejected', 'paid', 'to_reimburse'].includes(status)) {
+  if (status && !['pending', 'approved', 'rejected', 'paid', 'to_reimburse', 'in_payslip', 'owed'].includes(status)) {
     return NextResponse.json({ error: 'invalid_query' }, { status: 400 });
   }
 
   const scope = all ? (sp.get('userId') ? { user_id: sp.get('userId')! } : {}) : { user_id: actor.id };
   const filter: any = { ...scope };
   if (month) { const { start, end } = monthRange(month); filter.expense_date = { gte: start, lt: end }; }
-  if (status === 'to_reimburse') { filter.status = 'approved'; filter.payment_method = 'personal'; }
+  // to_reimburse: nothing done yet / in_payslip: merged into an unpaid statement / owed: both
+  if (status === 'to_reimburse') { filter.status = 'approved'; filter.payment_method = 'personal'; filter.payslip_id = null; }
+  else if (status === 'in_payslip') { filter.status = 'approved'; filter.payment_method = 'personal'; filter.payslip_id = { not: null }; }
+  else if (status === 'owed') { filter.status = 'approved'; filter.payment_method = 'personal'; }
   else if (status) filter.status = status;
 
   const [rows, scoped] = await Promise.all([
     prisma.expense_claims.findMany({ where: filter, include, orderBy: [{ expense_date: 'desc' }, { created_at: 'desc' }], take: 500 }),
-    prisma.expense_claims.findMany({ where: scope, select: { status: true, payment_method: true, amount: true, user_id: true, user: { select: { name: true } } } }),
+    prisma.expense_claims.findMany({ where: scope, select: { status: true, payment_method: true, amount: true, payslip_id: true, user_id: true, user: { select: { name: true } } } }),
   ]);
 
   let byUser: { user_id: string; name: string; count: number; amount: number }[] | undefined;
   if (all) {
     const map = new Map<string, { user_id: string; name: string; count: number; amount: number }>();
     for (const c of scoped) {
-      if (c.status !== 'approved' || c.payment_method !== 'personal') continue;
+      if (c.status !== 'approved' || c.payment_method !== 'personal' || c.payslip_id) continue;
       const e = map.get(c.user_id) ?? { user_id: c.user_id, name: c.user.name, count: 0, amount: 0 };
       e.count++; e.amount += c.amount; map.set(c.user_id, e);
     }

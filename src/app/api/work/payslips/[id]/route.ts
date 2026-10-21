@@ -4,8 +4,9 @@ import { prisma } from '@/lib/db';
 import { getSession, requireAuth } from '@/lib/auth';
 import { logAudit } from '@/lib/audit';
 import { getActor, isAdmin } from '@/lib/work-auth';
-import { notifyPayslip } from '@/lib/work-notify';
-import { isValidDateString, isValidMonth, payslipTotals, toDbDate } from '@/lib/work';
+import { notifyExpenseReimbursed, notifyPayslip } from '@/lib/work-notify';
+import { settleClaimsOfPayslip, syncExpenseItem } from '@/lib/expense-payslip';
+import { isValidDateString, isValidMonth, jstDateString, payslipTotals, toDbDate } from '@/lib/work';
 
 const schema = z.object({
   pay_month: z.string().refine(isValidMonth),
@@ -17,7 +18,7 @@ const schema = z.object({
     kind: z.enum(['earning', 'deduction']),
     label: z.string().trim().min(1).max(100),
     amount: z.number().int().min(0).max(1_000_000_000),
-  })).min(1).max(50),
+  })).max(50),
 });
 
 async function adminOnly() {
@@ -38,17 +39,30 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   const existing = await prisma.payslips.findUnique({ where: { id } });
   if (!existing) return NextResponse.json({ error: 'not_found' }, { status: 404 });
 
-  await prisma.$transaction([
-    prisma.payslip_items.deleteMany({ where: { payslip_id: id } }),
-    prisma.payslips.update({
+  // Items sent by the client never include the system 立替金精算 line; it is rebuilt from the attached claims.
+  const attachedCount = await prisma.expense_claims.count({ where: { payslip_id: id } });
+  if (d.items.length === 0 && attachedCount === 0) return NextResponse.json({ error: 'invalid_body' }, { status: 400 });
+
+  // Marking a statement paid without a date records today as the payment date.
+  const payDate = d.pay_date || (existing.status !== 'paid' && d.status === 'paid' ? jstDateString(new Date()) : null);
+
+  const settled = await prisma.$transaction(async tx => {
+    await tx.payslip_items.deleteMany({ where: { payslip_id: id } });
+    const updated = await tx.payslips.update({
       where: { id },
       data: {
         pay_month: d.pay_month, title: d.title, status: d.status,
-        pay_date: d.pay_date ? toDbDate(d.pay_date) : null, note: d.note || null,
+        pay_date: payDate ? toDbDate(payDate) : null, note: d.note || null,
         items: { create: d.items.map((i, idx) => ({ ...i, sort: idx })) },
       },
-    }),
-  ]);
+    });
+    await syncExpenseItem(tx, id);
+    // Paying the statement pays back the expenses merged into it.
+    return existing.status !== 'paid' && d.status === 'paid'
+      ? settleClaimsOfPayslip(tx, updated, actor.id)
+      : { ids: [] as string[], date: '' };
+  });
+  if (settled.ids.length > 0) void notifyExpenseReimbursed(settled.ids, settled.date, '給与明細に合算');
   await logAudit({
     actorUserId: actor.id, actionType: 'payslip_update', targetType: 'payslips', targetId: id,
     metadata: { user_id: existing.user_id, pay_month: d.pay_month, net: payslipTotals(d.items).net },
