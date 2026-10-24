@@ -7,12 +7,14 @@ import { saveUploadedFiles, deleteStoredFiles } from '@/lib/attachment-storage';
 import { MAX_ATTACHMENT_BYTES } from '@/lib/attachment-limits';
 import { isValidDateString, isValidMonth, monthRange, toDbDate } from '@/lib/work';
 import { notifyExpenseSubmitted } from '@/lib/work-notify';
+import { checkTripLink } from '@/lib/trip-server';
 import { EXPENSE_CATEGORIES, MAX_AMOUNT, MAX_RECEIPTS, isReceiptType, summarize } from '@/lib/expense';
 
 const include = {
   user: { select: { id: true, name: true } },
   reviewer: { select: { name: true } },
   payslip: { select: { id: true, pay_month: true, title: true, status: true } },
+  trip: { select: { id: true, destination: true, start_date: true, end_date: true } },
   receipts: { select: { id: true, filename: true, content_type: true, size: true }, orderBy: { created_at: 'asc' as const } },
 };
 
@@ -33,6 +35,7 @@ function serialize(c: any) {
     reimbursed_at: c.reimbursed_at ? c.reimbursed_at.toISOString().slice(0, 10) : null,
     reimburse_note: c.reimburse_note,
     payslip: c.payslip ?? null,
+    trip: c.trip ? { id: c.trip.id, destination: c.trip.destination, start_date: c.trip.start_date.toISOString().slice(0, 10), end_date: c.trip.end_date.toISOString().slice(0, 10) } : null,
     receipts: c.receipts,
     created_at: c.created_at,
   };
@@ -91,6 +94,7 @@ const fieldsSchema = z.object({
   amount: z.coerce.number().int().min(1).max(MAX_AMOUNT),
   payment_method: z.enum(['personal', 'company']),
   description: z.string().trim().max(2000).optional(),
+  trip_id: z.string().min(1).optional(),
 });
 
 // POST /api/expenses - submit a claim (multipart: fields + `file` receipts)
@@ -102,7 +106,7 @@ export async function POST(req: NextRequest) {
 
   let fd: FormData;
   try { fd = await req.formData(); } catch { return NextResponse.json({ error: 'file_too_large' }, { status: 413 }); }
-  const parsed = fieldsSchema.safeParse(Object.fromEntries(['expense_date', 'category', 'title', 'amount', 'payment_method', 'description'].map(k => [k, fd.get(k) ?? undefined])));
+  const parsed = fieldsSchema.safeParse(Object.fromEntries(['expense_date', 'category', 'title', 'amount', 'payment_method', 'description', 'trip_id'].map(k => [k, fd.get(k) || undefined])));
   if (!parsed.success) return NextResponse.json({ error: 'invalid_body' }, { status: 400 });
   const files = fd.getAll('file').filter(f => f instanceof File && (f as File).size > 0) as File[];
   if (files.length > MAX_RECEIPTS) return NextResponse.json({ error: 'too_many_files' }, { status: 400 });
@@ -110,12 +114,13 @@ export async function POST(req: NextRequest) {
   if (files.some(f => !isReceiptType(f.type))) return NextResponse.json({ error: 'invalid_file_type' }, { status: 400 });
 
   const d = parsed.data;
+  if (d.trip_id && !(await checkTripLink(actor.id, d.trip_id))) return NextResponse.json({ error: 'invalid_trip' }, { status: 400 });
   const saved = await saveUploadedFiles(files);
   try {
     const row = await prisma.expense_claims.create({
       data: {
         user_id: actor.id, expense_date: toDbDate(d.expense_date), category: d.category, title: d.title,
-        amount: d.amount, payment_method: d.payment_method, description: d.description || null,
+        amount: d.amount, payment_method: d.payment_method, description: d.description || null, trip_id: d.trip_id ?? null,
         receipts: { create: saved },
       },
     });

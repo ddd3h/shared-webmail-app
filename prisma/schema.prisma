@@ -99,6 +99,8 @@ model users {
   expense_claims             expense_claims[]         @relation("expense_claimant")
   expense_reviewed           expense_claims[]         @relation("expense_reviewer")
   expense_reimbursed         expense_claims[]         @relation("expense_reimburser")
+  business_trips             business_trips[]         @relation("trip_applicant")
+  trips_reviewed             business_trips[]         @relation("trip_reviewer")
   scheduled_sends            scheduled_sends[]
   calendar_events_created    calendar_events[]        @relation("calendar_event_creator")
   calendar_events_owned      calendar_events[]        @relation("calendar_event_owner")
@@ -811,6 +813,7 @@ model expense_claims {
   reimbursed_by_id String?
   reimburse_note   String?
   payslip_id       String?   // set when the reimbursement was merged into a pay statement
+  trip_id          String?   // the approved business trip this expense belongs to
   created_at       DateTime  @default(now())
   updated_at       DateTime  @updatedAt
 
@@ -818,11 +821,13 @@ model expense_claims {
   reviewer     users?            @relation("expense_reviewer", fields: [reviewed_by_id], references: [id], onDelete: SetNull)
   reimburser   users?            @relation("expense_reimburser", fields: [reimbursed_by_id], references: [id], onDelete: SetNull)
   payslip      payslips?         @relation(fields: [payslip_id], references: [id], onDelete: SetNull)
+  trip         business_trips?   @relation(fields: [trip_id], references: [id], onDelete: SetNull)
   receipts     expense_receipts[]
 
   @@index([user_id, expense_date])
   @@index([status])
   @@index([payslip_id])
+  @@index([trip_id])
 }
 
 model expense_receipts {
@@ -837,4 +842,66 @@ model expense_receipts {
   claim expense_claims @relation(fields: [claim_id], references: [id], onDelete: Cascade)
 
   @@index([claim_id])
+}
+
+// Business trip request (出張申請): "I will be at <destination> from <start> to <end>".
+// status: pending -> approved | rejected; approved -> cancelled. Allowances are snapshotted in
+// trip_allowance_lines so later rate changes never alter an existing request.
+model business_trips {
+  id             String    @id @default(cuid())
+  user_id        String
+  destination    String
+  purpose        String
+  start_date     DateTime  @db.Date
+  end_date       DateTime  @db.Date
+  status         String    @default("pending")
+  reviewed_by_id String?
+  reviewed_at    DateTime?
+  review_comment String?
+  cancelled_at   DateTime?
+  created_at     DateTime  @default(now())
+  updated_at     DateTime  @updatedAt
+
+  user           users                  @relation("trip_applicant", fields: [user_id], references: [id], onDelete: Cascade)
+  reviewer       users?                 @relation("trip_reviewer", fields: [reviewed_by_id], references: [id], onDelete: SetNull)
+  allowances     trip_allowance_lines[]
+  expense_claims expense_claims[]
+
+  @@index([user_id, start_date])
+  @@index([status])
+}
+
+// Rate master edited by admins. kind 'daily' = 日当 (pick one per trip), 'addon' = 業務内容による加算金 (pick any).
+// unit: per_day (× days), per_night (× nights), per_trip (flat).
+model trip_allowance_types {
+  id          String   @id @default(cuid())
+  name        String
+  kind        String
+  unit        String
+  amount      Int
+  description String?
+  is_active   Boolean  @default(true)
+  sort        Int      @default(0)
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+
+  lines trip_allowance_lines[]
+}
+
+model trip_allowance_lines {
+  id       String  @id @default(cuid())
+  trip_id  String
+  type_id  String?
+  name     String
+  kind     String
+  unit     String
+  rate     Int
+  quantity Int
+  amount   Int
+  sort     Int     @default(0)
+
+  trip business_trips         @relation(fields: [trip_id], references: [id], onDelete: Cascade)
+  type trip_allowance_types?  @relation(fields: [type_id], references: [id], onDelete: SetNull)
+
+  @@index([trip_id])
 }

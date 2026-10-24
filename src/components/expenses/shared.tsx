@@ -7,6 +7,7 @@ export type Claim = {
   payment_method: 'personal' | 'company'; description: string | null; status: 'pending' | 'approved' | 'rejected' | 'paid';
   reviewer: string | null; review_comment: string | null; reimbursed_at: string | null; reimburse_note: string | null; receipts: Receipt[];
   payslip: { id: string; pay_month: string; title: string; status: string } | null;
+  trip: { id: string; destination: string; start_date: string; end_date: string } | null;
 };
 type Sum = { count: number; amount: number };
 export type Summary = { pending: Sum; to_reimburse: Sum; in_payslip: Sum; paid: Sum };
@@ -46,6 +47,7 @@ export function ReceiptLinks({ receipts }: { receipts: Receipt[] }) {
 export function ClaimDetail({ c }: { c: Claim }) {
   return (
     <div className="space-y-2 text-sm">
+      {c.trip && <p className="text-xs text-sky-700">出張: {c.trip.destination}（{c.trip.start_date.slice(5).replace('-', '/')}〜{c.trip.end_date.slice(5).replace('-', '/')}）</p>}
       {c.description && <p className="whitespace-pre-wrap break-words text-gray-700">{c.description}</p>}
       <ReceiptLinks receipts={c.receipts} />
       {c.review_comment && (
@@ -68,6 +70,7 @@ export function ClaimHeader({ c, showUser }: { c: Claim; showUser?: boolean }) {
         <div className="flex flex-wrap items-center gap-1.5 text-xs text-gray-500">
           <span>{dateLabel(c.expense_date)}</span><span>{c.category}</span>{showUser && <span className="rounded bg-gray-100 px-1.5 py-0.5 text-gray-700">{c.user.name}</span>}
           <PaymentBadge m={c.payment_method} />
+          {c.trip && <span className="rounded bg-sky-50 px-1.5 py-0.5 text-[11px] text-sky-700">✈ {c.trip.destination}</span>}
         </div>
         <div className="mt-0.5 text-sm font-medium text-gray-900 break-words">{c.title}</div>
       </div>

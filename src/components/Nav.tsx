@@ -9,6 +9,7 @@ const desktopBaseItems = [
   { href: '/calendar', label: 'カレンダー' },
   { href: '/work', label: '勤怠・給与' },
   { href: '/expenses', label: '経費' },
+  { href: '/trips', label: '出張' },
   { href: '/contacts', label: '連絡帳' },
   { href: '/notifications', label: '通知' },
   { href: '/scheduled', label: '予約送信' },
@@ -209,6 +210,15 @@ export default function Nav() {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
                   </svg>
                   経費
+                </Link>
+                <Link
+                  href="/trips"
+                  className={`flex items-center gap-3 px-3 py-3 rounded-xl text-sm font-medium transition-colors ${isActive('/trips') ? 'bg-blue-50 text-blue-700' : 'text-gray-700 hover:bg-gray-100'}`}
+                >
+                  <svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                  </svg>
+                  出張
                 </Link>
                 <Link
                   href="/scheduled"

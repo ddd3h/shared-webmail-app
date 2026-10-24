@@ -117,3 +117,31 @@ export function notifyExpenseAddedToPayslip(claimIds: string[], payMonth: string
       `💴 **立替金を${y}年${Number(m)}月分の給与明細に合算しました**\n\n${e.count}件 ・ 合計 **${yen(e.total)}**\n支払日に給与と一緒に支払われます。\n\n明細の確認: ${appUrl()}/work`, 'expense_in_payslip')));
   });
 }
+
+const fmtDate = (d: Date) => `${d.getUTCMonth() + 1}/${d.getUTCDate()}`;
+
+// A trip request (or a resubmission) -> every admin except the applicant
+export function notifyTripSubmitted(tripId: string, resubmitted = false) {
+  return safely('trip_submitted', async () => {
+    const t = await prisma.business_trips.findUnique({ where: { id: tripId }, include: { user: { select: { id: true, name: true } } } });
+    if (!t) return;
+    const msg =
+      `✈️ **出張申請が${resubmitted ? '再申請されました' : '届きました'}**\n\n` +
+      `**${mmText(t.user.name, 40)}** さん ・ ${mmText(t.destination, 60)} ・ ${fmtDate(t.start_date)}〜${fmtDate(t.end_date)}\n` +
+      `業務内容: ${mmText(t.purpose, 120)}\n\n承認・却下: ${appUrl()}/trips`;
+    await dmAll(await adminsExcept(t.user_id), msg, 'trip_submitted');
+  });
+}
+
+// Approved / rejected -> the applicant
+export function notifyTripReviewed(tripId: string, action: 'approve' | 'reject') {
+  return safely('trip_reviewed', async () => {
+    const t = await prisma.business_trips.findUnique({ where: { id: tripId }, include: { user: { select: { id: true, email: true } } } });
+    if (!t) return;
+    const what = `${mmText(t.destination, 60)}（${fmtDate(t.start_date)}〜${fmtDate(t.end_date)}）`;
+    const msg = action === 'approve'
+      ? `✅ **出張申請が承認されました**\n\n${what}\n出張中の経費は、経費申請でこの出張を選んで申請してください。\n\n${appUrl()}/trips`
+      : `❌ **出張申請が却下されました**\n\n${what}\n理由: ${mmText(t.review_comment || '(なし)', 300)}\n\n修正して再申請: ${appUrl()}/trips`;
+    await sendDirectMessage(t.user.id, t.user.email, msg, action === 'approve' ? 'trip_approved' : 'trip_rejected');
+  });
+}

@@ -3,11 +3,12 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Modal, Notice, Stat, api, btn, btnPrimary, inp, yen } from '@/components/work/ui';
 import { CATEGORIES, ClaimDetail, ClaimHeader, type Claim, type Summary } from './shared';
 
-type Form = { id?: string; expense_date: string; category: string; title: string; amount: string; payment_method: 'personal' | 'company'; description: string };
+type Trip = { id: string; destination: string; start_date: string; end_date: string };
+type Form = { id?: string; trip_id: string; expense_date: string; category: string; title: string; amount: string; payment_method: 'personal' | 'company'; description: string };
 const FILTERS = [{ k: '', l: 'すべて' }, { k: 'pending', l: '承認待ち' }, { k: 'owed', l: '返金待ち' }, { k: 'paid', l: '返金済' }, { k: 'rejected', l: '却下' }];
 const MAX_FILES = 5;
 
-export default function MyExpenses() {
+export default function MyExpenses({ initialTripId }: { initialTripId?: string }) {
   const [items, setItems] = useState<Claim[]>([]);
   const [summary, setSummary] = useState<Summary | null>(null);
   const [filter, setFilter] = useState('');
@@ -15,6 +16,7 @@ export default function MyExpenses() {
   const [form, setForm] = useState<Form | null>(null);
   const [files, setFiles] = useState<File[]>([]);
   const [saving, setSaving] = useState(false);
+  const [trips, setTrips] = useState<Trip[] | null>(null);
   const [msg, setMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   const seq = useRef(0);
@@ -25,10 +27,20 @@ export default function MyExpenses() {
     if (res.ok) { const d = await res.json(); setItems(d.items); setSummary(d.summary); }
   }, [filter]);
   useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    fetch('/api/trips?status=approved').then(r => r.json()).then(d => setTrips((d.items || []).map((t: any) => ({ id: t.id, destination: t.destination, start_date: t.start_date, end_date: t.end_date })))).catch(() => setTrips([]));
+  }, []);
+  // arriving from a trip's "この出張の経費を申請" link: open the form with that trip selected
+  const prefilled = useRef(false);
+  useEffect(() => {
+    if (!initialTripId || prefilled.current || trips === null) return;
+    prefilled.current = true;
+    if (trips.some(t => t.id === initialTripId)) { setForm({ ...blank(), trip_id: initialTripId }); setFiles([]); }
+  }, [initialTripId, trips]); // eslint-disable-line react-hooks/exhaustive-deps
   function flash(type: 'success' | 'error', text: string) { setMsg({ type, text }); setTimeout(() => setMsg(null), 5000); }
 
   const today = () => new Date(Date.now() + 9 * 3600_000).toISOString().slice(0, 10);
-  const blank = (): Form => ({ expense_date: today(), category: CATEGORIES[0], title: '', amount: '', payment_method: 'personal', description: '' });
+  const blank = (): Form => ({ trip_id: '', expense_date: today(), category: CATEGORIES[0], title: '', amount: '', payment_method: 'personal', description: '' });
   const editing = form?.id ? items.find(i => i.id === form.id) : undefined;
 
   async function save() {
@@ -39,7 +51,7 @@ export default function MyExpenses() {
       if (id) {
         const res = await api(`/api/expenses/${id}`, 'PATCH', {
           expense_date: form.expense_date, category: form.category, title: form.title, amount: Number(form.amount),
-          payment_method: form.payment_method, description: form.description || null,
+          payment_method: form.payment_method, description: form.description || null, trip_id: form.trip_id || null,
         });
         if (!res.ok) throw new Error();
         if (files.length) {
@@ -50,6 +62,7 @@ export default function MyExpenses() {
       } else {
         const fd = new FormData();
         (['expense_date', 'category', 'title', 'amount', 'payment_method', 'description'] as const).forEach(k => fd.append(k, form[k]));
+        if (form.trip_id) fd.append('trip_id', form.trip_id);
         files.forEach(f => fd.append('file', f));
         const res = await fetch('/api/expenses', { method: 'POST', body: fd });
         if (!res.ok) {
@@ -101,7 +114,7 @@ export default function MyExpenses() {
                 <ClaimDetail c={c} />
                 {(c.status === 'pending' || c.status === 'rejected') && (
                   <div className="flex gap-3 text-xs">
-                    <button className="text-blue-600 hover:underline" onClick={() => { setFiles([]); setForm({ id: c.id, expense_date: c.expense_date, category: c.category, title: c.title, amount: String(c.amount), payment_method: c.payment_method, description: c.description || '' }); }}>
+                    <button className="text-blue-600 hover:underline" onClick={() => { setFiles([]); setForm({ id: c.id, trip_id: c.trip?.id ?? '', expense_date: c.expense_date, category: c.category, title: c.title, amount: String(c.amount), payment_method: c.payment_method, description: c.description || '' }); }}>
                       {c.status === 'rejected' ? '修正して再申請' : '編集'}
                     </button>
                     <button className="text-red-600 hover:underline" onClick={() => withdraw(c.id)}>取り下げ</button>
@@ -121,6 +134,23 @@ export default function MyExpenses() {
               <div><label className="text-xs text-gray-600">勘定科目</label>
                 <select className={inp} value={form.category} onChange={e => setForm({ ...form, category: e.target.value })}>{CATEGORIES.map(c => <option key={c}>{c}</option>)}</select></div>
             </div>
+            {(() => {
+              // a cancelled trip the claim is already linked to must stay visible as an option
+              const options = [...(trips ?? [])];
+              if (editing?.trip && !options.some(t => t.id === editing.trip!.id)) options.push(editing.trip);
+              if (options.length === 0) return null;
+              const sel = options.find(t => t.id === form.trip_id);
+              const outside = sel && (form.expense_date < sel.start_date || form.expense_date > sel.end_date);
+              return (
+                <div><label className="text-xs text-gray-600">出張に紐付ける（任意）</label>
+                  <select className={inp} value={form.trip_id} onChange={e => setForm({ ...form, trip_id: e.target.value })}>
+                    <option value="">紐付けない</option>
+                    {options.map(t => <option key={t.id} value={t.id}>✈ {t.destination}（{t.start_date.slice(5).replace('-', '/')}〜{t.end_date.slice(5).replace('-', '/')}）</option>)}
+                  </select>
+                  {outside && <p className="mt-1 text-xs text-amber-700">利用日が出張期間外です（事前に購入した切符などの場合はそのままで構いません）。</p>}
+                </div>
+              );
+            })()}
             <div><label className="text-xs text-gray-600">件名・用途</label><input className={inp} placeholder="例: A社訪問の交通費（川越→新宿）" value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} /></div>
             <div className="grid grid-cols-2 gap-2">
               <div><label className="text-xs text-gray-600">金額（円）</label><input type="number" min={1} className={`${inp} text-right`} value={form.amount} onChange={e => setForm({ ...form, amount: e.target.value })} /></div>

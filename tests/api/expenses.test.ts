@@ -13,10 +13,12 @@ vi.mock('@/lib/work-notify', () => ({
   notifyWorkReportSubmitted: vi.fn(), notifyPayslip: vi.fn(), notifyAttendanceEdited: vi.fn(), notifyExpenseAddedToPayslip: vi.fn(),
 }));
 vi.mock('@/lib/attachment-storage', () => ({ saveUploadedFiles: vi.fn(async () => []), deleteStoredFiles: vi.fn() }));
+vi.mock('@/lib/trip-server', () => ({ checkTripLink: vi.fn() }));
 vi.mock('@/lib/work-auth', () => ({ getActor: vi.fn(), isAdmin: (a: any) => a.role === 'admin' }));
 
 import { prisma } from '@/lib/db';
 import { getActor } from '@/lib/work-auth';
+import { checkTripLink } from '@/lib/trip-server';
 import { GET as list } from '@/app/api/expenses/route';
 import { PATCH as edit } from '@/app/api/expenses/[id]/route';
 import { POST as review } from '@/app/api/expenses/[id]/review/route';
@@ -59,6 +61,26 @@ describe('編集', () => {
     expect((await patch()).status).toBe(200);
     expect((prisma.expense_claims.update as any).mock.calls[0][0].data).toMatchObject({ status: 'pending', reviewed_by_id: null, review_comment: null });
     expect(notifyExpenseSubmitted).toHaveBeenCalledWith('c1', true);
+  });
+  it('他人の出張や未承認の出張には紐付けられない', async () => {
+    (prisma.expense_claims.findUnique as any).mockResolvedValue(claim({ user_id: 'u1' }));
+    (checkTripLink as any).mockResolvedValue(false);
+    const res = await edit(new Request('http://x', { method: 'PATCH', body: JSON.stringify({ ...body, trip_id: 't9' }) }) as any, ctx);
+    expect(res.status).toBe(400);
+    expect(prisma.expense_claims.update).not.toHaveBeenCalled();
+  });
+  it('承認済みの自分の出張には紐付けられる。nullで外せる', async () => {
+    (prisma.expense_claims.findUnique as any).mockResolvedValue(claim({ user_id: 'u1' }));
+    (checkTripLink as any).mockResolvedValue(true);
+    await edit(new Request('http://x', { method: 'PATCH', body: JSON.stringify({ ...body, trip_id: 't1' }) }) as any, ctx);
+    expect((prisma.expense_claims.update as any).mock.calls[0][0].data.trip_id).toBe('t1');
+    await edit(new Request('http://x', { method: 'PATCH', body: JSON.stringify({ ...body, trip_id: null }) }) as any, ctx);
+    expect((prisma.expense_claims.update as any).mock.calls[1][0].data.trip_id).toBeNull();
+  });
+  it('trip_idを送らなければ紐付けは変わらない', async () => {
+    (prisma.expense_claims.findUnique as any).mockResolvedValue(claim({ user_id: 'u1' }));
+    await edit(new Request('http://x', { method: 'PATCH', body: JSON.stringify(body) }) as any, ctx);
+    expect((prisma.expense_claims.update as any).mock.calls[0][0].data).not.toHaveProperty('trip_id');
   });
   it('存在しない区分は400', async () => {
     (prisma.expense_claims.findUnique as any).mockResolvedValue(claim({ user_id: 'u1' }));
