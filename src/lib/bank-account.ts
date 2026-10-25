@@ -17,7 +17,7 @@ export const bankAccountSchema = z.object({
 
 type Row = {
   user_id: string; bank_name: string; bank_code: string; branch_name: string; branch_code: string; account_type: string;
-  account_number_enc: string; account_last4: string; account_holder: string; verified_at: Date | null;
+  account_number_enc: string; account_last4: string; account_holder: string; verified_at: Date | null; updated_at: Date;
 };
 
 // `full` = include the account number (the owner and finance staff only).
@@ -27,6 +27,8 @@ export async function serializeBankAccount(r: Row | null, full: boolean) {
     user_id: r.user_id, bank_name: r.bank_name, bank_code: r.bank_code, branch_name: r.branch_name, branch_code: r.branch_code,
     account_type: r.account_type as AccountType, account_masked: maskAccount(r.account_last4), account_holder: r.account_holder,
     verified: !!r.verified_at, verified_at: r.verified_at,
+    // identifies this exact version of the account: finance must confirm the version they looked at (see verify route)
+    revision: r.updated_at.toISOString(),
   };
   if (!full) return base;
   let account_number = '';

@@ -34,7 +34,8 @@ export async function attachClaimsToPayslips(
   const touched: { user_id: string; payslip_id: string; created: boolean }[] = [];
   for (const [userId, ids] of byUser) {
     const candidates = await tx.payslips.findMany({
-      where: { user_id: userId, pay_month: payMonth, status: 'planned' },
+      // a statement already inside a 全銀 file is closed: adding a line would change an amount the file doesn't contain
+      where: { user_id: userId, pay_month: payMonth, status: 'planned', batch_id: null },
       orderBy: { created_at: 'asc' },
       select: { id: true, title: true, status: true },
     });

@@ -7,6 +7,10 @@ type Account = {
   bank_name: string; bank_code: string; branch_name: string; branch_code: string; account_type: AccountType;
   account_number: string; account_holder: string; verified: boolean;
 };
+const HOLDER_HELP = '口座名義は、全銀の振込データに使えるカナ・英数字で入力してください（例: ヤマダ タロウ）。「全銀」の文字種は全角カタカナ・英大文字・数字です';
+const FORMAT_HELP = '入力を確認してください。銀行コードは4桁、支店コードは3桁、口座番号は4〜7桁の数字です';
+const errorText = (fields: string[]) => (fields.includes('account_holder') ? HOLDER_HELP : FORMAT_HELP);
+
 const blank = { bank_name: '', bank_code: '', branch_name: '', branch_code: '', account_type: 'ordinary' as AccountType, account_number: '', account_holder: '' };
 
 // My own receiving account. Salary and reimbursements are sent here by finance staff, so it has to be one that can go into a 全銀 file.
@@ -35,10 +39,7 @@ export default function BankAccountPanel() {
         setMsg({ type: 'success', text: b.account.verified ? '変更はありません' : '保存しました。経理担当が内容を確認すると、振込の対象になります' });
       } else {
         const e = await res.json().catch(() => ({}));
-        const f: string[] = e.fields ?? [];
-        setMsg({ type: 'error', text: f.includes('account_holder')
-          ? '口座名義は、全銀の振込データに使えるカナ・英数字で入力してください（例: ヤマダ タロウ）。「全銀」の文字種は全角カタカナ・英大文字・数字です'
-          : '入力を確認してください。銀行コードは4桁、支店コードは3桁、口座番号は4〜7桁の数字です' });
+        setMsg({ type: 'error', text: errorText(e.fields ?? []) });
       }
     } finally { setSaving(false); }
   }

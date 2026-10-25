@@ -21,6 +21,10 @@ const schema = z.object({
   })).max(50),
 });
 
+// A statement inside a 全銀 file that has not been recorded yet must not change: the file already says how much to pay.
+const lockedByTransfer = (p: { status: string; batch_id: string | null }) => p.status === 'planned' && !!p.batch_id;
+const LOCKED = { error: 'in_transfer_batch', message: '全銀データに含まれているため変更できません。先にデータを取り消してください' };
+
 async function adminOnly() {
   const session = await getSession();
   requireAuth(session);
@@ -38,6 +42,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   const d = parsed.data;
   const existing = await prisma.payslips.findUnique({ where: { id } });
   if (!existing) return NextResponse.json({ error: 'not_found' }, { status: 404 });
+  if (lockedByTransfer(existing)) return NextResponse.json(LOCKED, { status: 409 });
 
   // Items sent by the client never include the system 立替金精算 line; it is rebuilt from the attached claims.
   const attachedCount = await prisma.expense_claims.count({ where: { payslip_id: id } });
@@ -78,6 +83,7 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
   if (!actor) return NextResponse.json({ error: 'forbidden' }, { status: 403 });
   const existing = await prisma.payslips.findUnique({ where: { id } });
   if (!existing) return NextResponse.json({ error: 'not_found' }, { status: 404 });
+  if (lockedByTransfer(existing)) return NextResponse.json(LOCKED, { status: 409 });
   await prisma.payslips.delete({ where: { id } });
   await logAudit({
     actorUserId: actor.id, actionType: 'payslip_delete', targetType: 'payslips', targetId: id,

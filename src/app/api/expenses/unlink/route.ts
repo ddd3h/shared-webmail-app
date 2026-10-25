@@ -18,7 +18,7 @@ export async function POST(req: NextRequest) {
   if (!parsed.success) return NextResponse.json({ error: 'invalid_body' }, { status: 400 });
 
   const claims = await prisma.expense_claims.findMany({
-    where: { id: { in: parsed.data.ids }, status: 'approved', payslip: { is: { status: 'planned' } } },
+    where: { id: { in: parsed.data.ids }, status: 'approved', payslip: { is: { status: 'planned', batch_id: null } } },
     select: { id: true, payslip_id: true },
   });
   const payslipIds = [...new Set(claims.map(c => c.payslip_id!))];

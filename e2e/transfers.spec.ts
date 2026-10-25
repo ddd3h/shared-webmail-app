@@ -2,7 +2,7 @@ import { test, expect } from './fixtures';
 import { AUTH, USERS } from './helpers/constants';
 import { db } from './helpers/db';
 import { jstDate, resetTransfers } from './helpers/seed';
-import { makeClaim, makePayment, makePayslip, makeVendor } from './helpers/factories';
+import { makeClaim, makePayment, makePayslip, makeVendor, verifyBankAccount } from './helpers/factories';
 import { field } from './helpers/ui';
 import type { APIRequestContext } from '@playwright/test';
 
@@ -21,7 +21,7 @@ async function readyAccount(as: (r: any) => Promise<APIRequestContext>, role: 's
   const me = await as(role);
   expect((await me.put('/api/bank-accounts/me', { data: { ...ACCOUNT, ...over } })).status()).toBe(200);
   const keiri = await as('keiri');
-  expect((await keiri.post(`/api/bank-accounts/${USERS[role].id}/verify`)).status()).toBe(200);
+  expect((await verifyBankAccount(keiri, USERS[role].id)).status()).toBe(200);
 }
 function lines(buf: Buffer) { return buf.toString('latin1').split('\r\n').filter(Boolean); }
 
@@ -119,18 +119,18 @@ test.describe('受取口座', () => {
   test('一般ユーザーは自分の口座を確認済にできない', async ({ as }) => {
     const sato = await as('sato');
     await sato.put('/api/bank-accounts/me', { data: ACCOUNT });
-    expect((await sato.post(`/api/bank-accounts/${USERS.sato.id}/verify`)).status()).toBe(403);
+    expect((await sato.post(`/api/bank-accounts/${USERS.sato.id}/verify`, { data: { revision: 'x' } })).status()).toBe(403);
   });
 
   test('経理担当は自分の口座を自分では確認済にできないが、他の人の確認はできる', async ({ as }) => {
     const keiri = await as('keiri');
     await keiri.put('/api/bank-accounts/me', { data: ACCOUNT });
-    expect((await keiri.post(`/api/bank-accounts/${USERS.keiri.id}/verify`)).status()).toBe(403);
-    expect((await (await as('admin')).post(`/api/bank-accounts/${USERS.keiri.id}/verify`)).status()).toBe(200);
+    expect((await verifyBankAccount(keiri, USERS.keiri.id)).status()).toBe(403);
+    expect((await verifyBankAccount(await as('admin'), USERS.keiri.id)).status()).toBe(200);
   });
 
   test('口座のない人の確認は404', async ({ as }) => {
-    expect((await (await as('keiri')).post(`/api/bank-accounts/${USERS.tanaka.id}/verify`)).status()).toBe(404);
+    expect((await (await as('keiri')).post(`/api/bank-accounts/${USERS.tanaka.id}/verify`, { data: { revision: 'x' } })).status()).toBe(404);
   });
 
   test('登録・変更・確認が監査ログに残る', async ({ as }) => {
@@ -387,6 +387,122 @@ test.describe('支払い済みの記録・取り消し', () => {
     await keiri.post(`/api/transfers/batches/${made.id}/mark-paid`, { data: {} });
     const actions = (await db.audit_logs.findMany({ where: { target_id: made.id } })).map(a => a.action_type);
     expect(actions).toEqual(expect.arrayContaining(['transfer_batch_create', 'transfer_batch_download', 'transfer_batch_paid']));
+  });
+});
+
+test.describe('整合性・安全策', () => {
+  const month = () => jstDate(0).slice(0, 7);
+
+  test('口座を見てから確認するまでの間に本人が変更したら、確認は失敗する（差し替え対策）', async ({ as }) => {
+    const sato = await as('sato');
+    await sato.put('/api/bank-accounts/me', { data: ACCOUNT });
+    const keiri = await as('keiri');
+    const seen = (await (await keiri.get('/api/bank-accounts')).json()).items.find((i: any) => i.user.id === USERS.sato.id).account.revision;
+    await sato.put('/api/bank-accounts/me', { data: { ...ACCOUNT, account_number: '7654321' } }); // swapped after finance looked
+    const res = await keiri.post(`/api/bank-accounts/${USERS.sato.id}/verify`, { data: { revision: seen } });
+    expect(res.status()).toBe(409);
+    expect((await res.json()).error).toBe('changed');
+    expect((await db.user_bank_accounts.findUnique({ where: { user_id: USERS.sato.id } }))!.verified_at).toBeNull();
+    expect((await verifyBankAccount(keiri, USERS.sato.id)).status()).toBe(200); // looking again works
+  });
+
+  test('確認に revision がない・壊れていると400/409で、確認済にならない', async ({ as }) => {
+    await (await as('sato')).put('/api/bank-accounts/me', { data: ACCOUNT });
+    const keiri = await as('keiri');
+    expect((await keiri.post(`/api/bank-accounts/${USERS.sato.id}/verify`, { data: {} })).status()).toBe(400);
+    expect((await keiri.post(`/api/bank-accounts/${USERS.sato.id}/verify`, { data: { revision: 'not-a-date' } })).status()).toBe(409);
+    expect((await db.user_bank_accounts.findUnique({ where: { user_id: USERS.sato.id } }))!.verified_at).toBeNull();
+  });
+
+  test('口座一覧（口座番号つき）を開いたことが監査ログに残る', async ({ as }) => {
+    const before = await db.audit_logs.count({ where: { action_type: 'bank_account_list_view' } });
+    await (await as('keiri')).get('/api/bank-accounts');
+    expect(await db.audit_logs.count({ where: { action_type: 'bank_account_list_view' } })).toBe(before + 1);
+  });
+
+  async function batchedSlip(as: any) {
+    await configure(await as('admin'));
+    await readyAccount(as);
+    const slip = await makePayslip({ role: 'sato', month: month() });
+    const made = await (await (await as('keiri')).post('/api/transfers/batches', { data: { kind: 'payroll', ids: [slip.id], transfer_date: tomorrow() } })).json();
+    return { slip, batchId: made.id as string };
+  }
+  const putBody = (slip: { title: string }, over: object = {}) => ({ pay_month: month(), title: slip.title, status: 'planned', items: [{ kind: 'earning', label: '基本給', amount: 999999 }], ...over });
+
+  test('全銀データに入った明細は、金額の変更・支払済への変更・削除ができない（ファイルとずれるため）', async ({ as }) => {
+    const { slip } = await batchedSlip(as);
+    const admin = await as('admin');
+    for (const over of [{}, { status: 'paid' }]) {
+      const res = await admin.put(`/api/work/payslips/${slip.id}`, { data: putBody(slip, over) });
+      expect(res.status()).toBe(409);
+      expect((await res.json()).error).toBe('in_transfer_batch');
+    }
+    expect((await admin.delete(`/api/work/payslips/${slip.id}`)).status()).toBe(409);
+    expect((await db.payslips.findUnique({ where: { id: slip.id }, include: { items: true } }))!.items[0].amount).toBe(300000);
+  });
+
+  test('データを取り消すと、その明細は再び編集できる', async ({ as }) => {
+    const { slip, batchId } = await batchedSlip(as);
+    await (await as('keiri')).delete(`/api/transfers/batches/${batchId}`);
+    expect((await (await as('admin')).put(`/api/work/payslips/${slip.id}`, { data: putBody(slip) })).status()).toBe(200);
+  });
+
+  test('振込済になった後の明細は、これまで通り編集できる', async ({ as }) => {
+    const { slip, batchId } = await batchedSlip(as);
+    await (await as('keiri')).post(`/api/transfers/batches/${batchId}/mark-paid`, { data: {} });
+    expect((await (await as('admin')).put(`/api/work/payslips/${slip.id}`, { data: putBody(slip, { status: 'paid', pay_date: jstDate(0) }) })).status()).toBe(200);
+  });
+
+  test('全銀データに入った明細には、後から承認した立替金が合算されない（別の「立替金精算」明細ができる）', async ({ as }) => {
+    const { slip } = await batchedSlip(as);
+    const claim = await makeClaim({ role: 'sato', status: 'approved', amount: 4800 });
+    const res = await (await as('admin')).post('/api/expenses/reimburse', { data: { ids: [claim.id], mode: 'payslip', pay_month: month() } });
+    expect(res.status()).toBe(200);
+    const moved = await db.expense_claims.findUnique({ where: { id: claim.id } });
+    expect(moved!.payslip_id).not.toBe(slip.id);
+    expect((await db.payslips.findUnique({ where: { id: slip.id }, include: { items: true } }))!.items.map(i => i.amount)).toEqual([300000]);
+  });
+
+  test('全銀データに入った明細から、経費を外すこともできない', async ({ as }) => {
+    await configure(await as('admin'));
+    await readyAccount(as);
+    const slip = await makePayslip({ role: 'sato', month: month() });
+    const claim = await makeClaim({ role: 'sato', status: 'approved', amount: 4800, payslipId: slip.id });
+    await (await as('keiri')).post('/api/transfers/batches', { data: { kind: 'payroll', ids: [slip.id], transfer_date: tomorrow() } });
+    const res = await (await as('admin')).post('/api/expenses/unlink', { data: { ids: [claim.id] } });
+    expect((await res.json()).detached).toBe(0);
+    expect((await db.expense_claims.findUnique({ where: { id: claim.id } }))!.payslip_id).toBe(slip.id);
+  });
+
+  test('同時に同じ明細で全銀データを作っても、1つだけ作られる', async ({ as }) => {
+    await configure(await as('admin'));
+    await readyAccount(as);
+    const slip = await makePayslip({});
+    const data = { kind: 'payroll', ids: [slip.id], transfer_date: tomorrow() };
+    const [a, b] = await Promise.all([(await as('keiri')).post('/api/transfers/batches', { data }), (await as('admin')).post('/api/transfers/batches', { data })]);
+    expect([a.status(), b.status()].filter(c => c === 201)).toHaveLength(1);
+    expect(await db.transfer_batches.count()).toBe(1);
+  });
+
+  test('ファイルは作成時の内容のまま。作成後に口座を変更しても、ダウンロードの中身は変わらない', async ({ as }) => {
+    await configure(await as('admin'));
+    await readyAccount(as);
+    const slip = await makePayslip({});
+    const keiri = await as('keiri');
+    const made = await (await keiri.post('/api/transfers/batches', { data: { kind: 'payroll', ids: [slip.id], transfer_date: tomorrow() } })).json();
+    const first = await (await keiri.get(`/api/transfers/batches/${made.id}/download`)).body();
+    await (await as('sato')).put('/api/bank-accounts/me', { data: { ...ACCOUNT, account_number: '7654321' } });
+    expect(Buffer.compare(first, await (await keiri.get(`/api/transfers/batches/${made.id}/download`)).body())).toBe(0);
+  });
+
+  test('口座が変更された（確認済が外れた）明細は、新しいデータに含められない', async ({ as }) => {
+    await configure(await as('admin'));
+    await readyAccount(as);
+    const slip = await makePayslip({});
+    await (await as('sato')).put('/api/bank-accounts/me', { data: { ...ACCOUNT, account_number: '7654321' } });
+    const res = await (await as('keiri')).post('/api/transfers/batches', { data: { kind: 'payroll', ids: [slip.id], transfer_date: tomorrow() } });
+    expect(res.status()).toBe(422);
+    expect((await res.json()).problems[0].reason).toContain('未確認');
   });
 });
 

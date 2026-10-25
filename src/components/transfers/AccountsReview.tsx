@@ -6,8 +6,17 @@ import { ACCOUNT_TYPE_LABEL, type AccountType } from '@/lib/payment';
 
 type Item = {
   user: { id: string; name: string; worker_type: WorkerType };
-  account: null | { bank_name: string; bank_code: string; branch_name: string; branch_code: string; account_type: AccountType; account_number: string; account_holder: string; verified: boolean };
+  account: null | { bank_name: string; bank_code: string; branch_name: string; branch_code: string; account_type: AccountType; account_number: string; account_holder: string; verified: boolean; revision: string };
 };
+
+const VERIFY_ERRORS: Record<string, string> = {
+  self_verify: '自分の口座は、他の経理担当・管理者が確認してください',
+  changed: '確認している間に口座が変更されました。内容を見直してからもう一度押してください',
+};
+async function verifyError(res: Response) {
+  const e = await res.json().catch(() => ({}));
+  return VERIFY_ERRORS[e.error] ?? '確認できませんでした';
+}
 
 // Finance staff check each person's receiving account (against a bank book or similar) before it can be used in a file.
 export default function AccountsReview({ meId }: { meId: string }) {
@@ -16,13 +25,11 @@ export default function AccountsReview({ meId }: { meId: string }) {
   const load = useCallback(async () => { const r = await fetch('/api/bank-accounts'); if (r.ok) setItems((await r.json()).items); }, []);
   useEffect(() => { load(); }, [load]);
 
-  async function verify(id: string) {
-    const res = await api(`/api/bank-accounts/${id}/verify`, 'POST');
+  // `revision` is the version of the account on screen: if the owner changed it meanwhile, the server refuses
+  async function verify(id: string, revision: string) {
+    const res = await api(`/api/bank-accounts/${id}/verify`, 'POST', { revision });
     if (res.ok) setMsg({ type: 'success', text: '確認済にしました' });
-    else {
-      const e = await res.json().catch(() => ({}));
-      setMsg({ type: 'error', text: e.error === 'self_verify' ? '自分の口座は、他の経理担当・管理者が確認してください' : '確認できませんでした' });
-    }
+    else setMsg({ type: 'error', text: await verifyError(res) });
     load();
   }
 
@@ -44,7 +51,7 @@ export default function AccountsReview({ meId }: { meId: string }) {
             </div>
             {a && (a.verified
               ? <span className="rounded bg-emerald-50 px-1.5 py-0.5 text-[11px] text-emerald-700">確認済</span>
-              : <button className={btnPrimary} onClick={() => verify(user.id)}>確認済にする</button>)}
+              : <button className={btnPrimary} onClick={() => verify(user.id, a.revision)}>確認済にする</button>)}
             {!a && <span className="rounded bg-amber-50 px-1.5 py-0.5 text-[11px] text-amber-700">未登録</span>}
           </div>
         ))}

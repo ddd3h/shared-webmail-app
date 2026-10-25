@@ -106,3 +106,11 @@ export async function makePayment(o: {
     },
   });
 }
+
+// ---- receiving accounts ----
+// Finance confirms the exact version of an account they looked at, so the helper reads the current revision first.
+export async function verifyBankAccount(finance: APIRequestContext, userId: string) {
+  const list = (await (await finance.get('/api/bank-accounts')).json()).items as { user: { id: string }; account: { revision: string } | null }[];
+  const revision = list.find(i => i.user.id === userId)?.account?.revision ?? 'none';
+  return finance.post(`/api/bank-accounts/${userId}/verify`, { data: { revision } });
+}

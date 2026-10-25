@@ -3,13 +3,13 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 const store = new Map<string, string>();
 vi.mock('@/lib/db', () => {
   const tx: any = {
-    transfer_batches: { create: vi.fn() },
-    payment_requests: { updateMany: vi.fn() },
-    payslips: { updateMany: vi.fn(), update: vi.fn() },
+    transfer_batches: { create: vi.fn(), updateMany: vi.fn() },
+    payment_requests: { updateMany: vi.fn(), findMany: vi.fn() },
+    payslips: { updateMany: vi.fn(), update: vi.fn(), findMany: vi.fn() },
   };
   return {
     prisma: {
-      user_bank_accounts: { findUnique: vi.fn(), upsert: vi.fn(), update: vi.fn() },
+      user_bank_accounts: { findUnique: vi.fn(), upsert: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
       users: { findMany: vi.fn(), count: vi.fn() },
       payslips: { findMany: vi.fn(), updateMany: vi.fn() },
       payment_requests: { findMany: vi.fn(), updateMany: vi.fn() },
@@ -58,7 +58,7 @@ const tomorrow = () => new Date(Date.now() + 9 * 3600_000 + 86400_000).toISOStri
 const ACCOUNT = { bank_name: 'みずほ銀行', bank_code: '0001', branch_name: '新宿支店', branch_code: '234', account_type: 'ordinary', account_number: '1234567', account_holder: 'サトウ タロウ' };
 const SETTINGS = { client_code: '1234567890', client_name: 'カ）サンプル', bank_code: '0001', bank_name: 'みずほ銀行', branch_code: '123', branch_name: '本店', account_type: 'ordinary', account_number: '7654321' };
 const acctRow = (o: object = {}) => ({
-  id: 'a1', user_id: 'u2', ...ACCOUNT, account_number_enc: 'enc:1234567', account_last4: '4567', verified_at: new Date(), ...o,
+  id: 'a1', user_id: 'u2', ...ACCOUNT, account_number_enc: 'enc:1234567', account_last4: '4567', verified_at: new Date(), updated_at: new Date('2026-10-01T00:00:00.000Z'), ...o,
 });
 
 beforeEach(() => {
@@ -71,7 +71,7 @@ beforeEach(() => {
 describe('受取口座（本人）', () => {
   it('登録すると暗号化して保存し、確認は未済・監査ログと通知を出す', async () => {
     db.user_bank_accounts.findUnique.mockResolvedValue(null);
-    db.user_bank_accounts.upsert.mockImplementation(async (a: any) => ({ ...a.create, id: 'a1' }));
+    db.user_bank_accounts.upsert.mockImplementation(async (a: any) => ({ ...a.create, id: 'a1', updated_at: new Date() }));
     const res = await putMine(json(ACCOUNT, 'PUT'));
     expect(res.status).toBe(200);
     const data = db.user_bank_accounts.upsert.mock.calls[0][0].create;
@@ -112,7 +112,7 @@ describe('受取口座（本人）', () => {
 
   it('銀行名・支店名は漢字のままでよい', async () => {
     db.user_bank_accounts.findUnique.mockResolvedValue(null);
-    db.user_bank_accounts.upsert.mockImplementation(async (a: any) => ({ ...a.create, id: 'a1' }));
+    db.user_bank_accounts.upsert.mockImplementation(async (a: any) => ({ ...a.create, id: 'a1', updated_at: new Date() }));
     expect((await putMine(json(ACCOUNT, 'PUT'))).status).toBe(200);
   });
 
@@ -135,31 +135,57 @@ describe('受取口座の一覧・確認（経理担当）', () => {
     expect(body.items[0].account.account_number).toBe('1234567');
     expect(body.items[1].account).toBeNull();
   });
-  it('確認すると確認者・日時を記録し、本人に通知する', async () => {
+  const REV = '2026-10-01T00:00:00.000Z';
+  const verifyCall = (userId = 'u2', body: object = { revision: REV }) => verify(json(body), { params: Promise.resolve({ userId }) });
+
+  it('確認すると確認者・日時を記録し、本人に通知する。見た時点の revision を条件にする', async () => {
     db.user_bank_accounts.findUnique.mockResolvedValue(acctRow());
-    const res = await verify(json({}), { params: Promise.resolve({ userId: 'u2' }) });
-    expect(res.status).toBe(200);
-    expect(db.user_bank_accounts.update.mock.calls[0][0].data).toMatchObject({ verified_by_id: 'u1' });
+    db.user_bank_accounts.updateMany.mockResolvedValue({ count: 1 });
+    expect((await verifyCall()).status).toBe(200);
+    const call = db.user_bank_accounts.updateMany.mock.calls[0][0];
+    expect(call.where).toEqual({ user_id: 'u2', updated_at: new Date(REV) });
+    expect(call.data).toMatchObject({ verified_by_id: 'u1' });
     expect(notifyBankAccountVerified).toHaveBeenCalledWith('u2');
+  });
+  it('見てから確認するまでに本人が変更していたら409で、確認済にならない（通知もしない）', async () => {
+    db.user_bank_accounts.findUnique.mockResolvedValue(acctRow());
+    db.user_bank_accounts.updateMany.mockResolvedValue({ count: 0 });
+    const res = await verifyCall();
+    expect(res.status).toBe(409);
+    expect((await res.json()).error).toBe('changed');
+    expect(notifyBankAccountVerified).not.toHaveBeenCalled();
+  });
+  it('revision がない・日付でないときは400/409', async () => {
+    expect((await verifyCall('u2', {})).status).toBe(400);
+    db.user_bank_accounts.findUnique.mockResolvedValue(acctRow());
+    db.user_bank_accounts.updateMany.mockResolvedValue({ count: 0 });
+    expect((await verifyCall('u2', { revision: 'x' })).status).toBe(409);
+    expect(db.user_bank_accounts.updateMany.mock.calls[0][0].where.updated_at).toEqual(new Date(0));
   });
   it('一般ユーザーは確認できない', async () => {
     (getActor as any).mockResolvedValue(actor());
-    expect((await verify(json({}), { params: Promise.resolve({ userId: 'u2' }) })).status).toBe(403);
+    expect((await verifyCall()).status).toBe(403);
   });
   it('他に確認できる人がいれば、自分の口座は自分で確認できない', async () => {
     db.user_bank_accounts.findUnique.mockResolvedValue(acctRow({ user_id: 'u1' }));
     db.users.count.mockResolvedValue(1);
-    expect((await verify(json({}), { params: Promise.resolve({ userId: 'u1' }) })).status).toBe(403);
-    expect(db.user_bank_accounts.update).not.toHaveBeenCalled();
+    expect((await verifyCall('u1')).status).toBe(403);
+    expect(db.user_bank_accounts.updateMany).not.toHaveBeenCalled();
   });
   it('確認できる人が自分しかいなければ、自分の口座も確認できる', async () => {
     db.user_bank_accounts.findUnique.mockResolvedValue(acctRow({ user_id: 'u1' }));
     db.users.count.mockResolvedValue(0);
-    expect((await verify(json({}), { params: Promise.resolve({ userId: 'u1' }) })).status).toBe(200);
+    db.user_bank_accounts.updateMany.mockResolvedValue({ count: 1 });
+    expect((await verifyCall('u1')).status).toBe(200);
   });
   it('口座がなければ404', async () => {
     db.user_bank_accounts.findUnique.mockResolvedValue(null);
-    expect((await verify(json({}), { params: Promise.resolve({ userId: 'u9' }) })).status).toBe(404);
+    expect((await verifyCall('u9')).status).toBe(404);
+  });
+  it('一覧を開くと監査ログに残る', async () => {
+    db.users.findMany.mockResolvedValue([]);
+    await listAccounts();
+    expect(logAudit).toHaveBeenCalledWith(expect.objectContaining({ actionType: 'bank_account_list_view' }));
   });
 });
 
@@ -226,6 +252,7 @@ describe('全銀データの作成', () => {
     await configure();
     db.payslips.findMany.mockResolvedValue([slip()]);
     db.__tx.transfer_batches.create.mockImplementation(async (a: any) => ({ id: 'b1', ...a.data }));
+    db.__tx.payslips.updateMany.mockResolvedValue({ count: 1 });
     const res = await createBatch(json({ kind: 'payroll', ids: ['s1'], transfer_date: tomorrow() }));
     expect(res.status).toBe(201);
     const body = await res.json();
@@ -235,7 +262,8 @@ describe('全銀データの作成', () => {
     const bytes = Buffer.from(saved.content_b64, 'base64');
     expect(bytes.length).toBe(122 * 4); // header, data, trailer, end
     expect(bytes.toString('latin1').split('\r\n')[1].slice(80, 90)).toBe('0000255000');
-    expect(db.__tx.payslips.updateMany).toHaveBeenCalledWith({ where: { id: { in: ['s1'] } }, data: { batch_id: 'b1' } });
+    // only items that are still free are claimed (the guard against two people creating at once)
+    expect(db.__tx.payslips.updateMany).toHaveBeenCalledWith({ where: { id: { in: ['s1'] }, status: 'planned', batch_id: null }, data: { batch_id: 'b1' } });
     expect(logAudit).toHaveBeenCalledWith(expect.objectContaining({ actionType: 'transfer_batch_create' }));
   });
 
@@ -262,13 +290,28 @@ describe('全銀データの作成', () => {
     await configure();
     db.payslips.findMany.mockResolvedValue([slip({ batch_id: 'old' })]);
     db.__tx.transfer_batches.create.mockImplementation(async (a: any) => ({ id: 'b2', ...a.data }));
+    db.__tx.payslips.updateMany.mockResolvedValue({ count: 1 });
     expect((await createBatch(json({ kind: 'payroll', ids: ['s1'], transfer_date: tomorrow(), force: true }))).status).toBe(201);
+    expect(db.__tx.payslips.updateMany.mock.calls[0][0].where).toEqual({ id: { in: ['s1'] }, status: 'planned' });
+  });
+
+  it('作る直前に他の人が同じ明細を取った（更新件数が足りない）ときは409で、何も残さない', async () => {
+    await configure();
+    db.payslips.findMany.mockResolvedValue([slip()]);
+    db.__tx.transfer_batches.create.mockImplementation(async (a: any) => ({ id: 'b1', ...a.data }));
+    db.__tx.payslips.updateMany.mockResolvedValue({ count: 0 });
+    (logAudit as any).mockClear();
+    const res = await createBatch(json({ kind: 'payroll', ids: ['s1'], transfer_date: tomorrow() }));
+    expect(res.status).toBe(409);
+    expect((await res.json()).error).toBe('items_changed');
+    expect(logAudit).not.toHaveBeenCalled();
   });
 
   it('同じIDは1件に数える', async () => {
     await configure();
     db.payslips.findMany.mockResolvedValue([slip()]);
     db.__tx.transfer_batches.create.mockImplementation(async (a: any) => ({ id: 'b1', ...a.data }));
+    db.__tx.payslips.updateMany.mockResolvedValue({ count: 1 });
     expect((await (await createBatch(json({ kind: 'payroll', ids: ['s1', 's1'], transfer_date: tomorrow() }))).json()).count).toBe(1);
   });
 
@@ -282,6 +325,8 @@ describe('全銀データの作成', () => {
     await configure();
     db.payslips.findMany.mockResolvedValue([slip()]);
     db.__tx.transfer_batches.create.mockImplementation(async (a: any) => ({ id: 'b1', ...a.data }));
+    db.__tx.payslips.updateMany.mockResolvedValue({ count: 1 });
+    db.__tx.payment_requests.updateMany.mockResolvedValue({ count: 1 });
     await createBatch(json({ kind: 'payroll', ids: ['s1'], category: '12', transfer_date: tomorrow() }));
     expect(db.__tx.transfer_batches.create.mock.calls[0][0].data.category_code).toBe('12');
     db.payment_requests.findMany.mockResolvedValue([{
@@ -293,7 +338,7 @@ describe('全銀データの作成', () => {
     const res = await createBatch(json({ kind: 'payment', ids: ['p1'], category: '11', transfer_date: tomorrow() }));
     expect(res.status).toBe(201);
     expect(db.__tx.transfer_batches.create.mock.calls[0][0].data.category_code).toBe('21');
-    expect(db.__tx.payment_requests.updateMany).toHaveBeenCalledWith({ where: { id: { in: ['p1'] } }, data: { batch_id: 'b3' } });
+    expect(db.__tx.payment_requests.updateMany).toHaveBeenCalledWith({ where: { id: { in: ['p1'] }, status: 'approved', batch_id: null }, data: { batch_id: 'b3' } });
   });
 
   it('支払: 口座未確認・未承認・名義が使えない文字の申請を問題として返す', async () => {
@@ -321,35 +366,44 @@ describe('ダウンロード・記録・取り消し', () => {
     expect((await download(new Request('http://x') as any, ctx())).status).toBe(403);
   });
 
-  it('給与の記録: 明細を支払済にし、合算した経費も精算して通知する', async () => {
+  it('給与の記録: 明細を支払済にし、合算した経費も精算して通知する（すべて1つのトランザクション内）', async () => {
     db.transfer_batches.findUnique.mockResolvedValue(batch());
-    db.transfer_batches.updateMany.mockResolvedValue({ count: 1 });
-    db.payslips.findMany.mockResolvedValue([{ id: 's1' }]);
+    db.__tx.transfer_batches.updateMany.mockResolvedValue({ count: 1 });
+    db.__tx.payslips.findMany.mockResolvedValue([{ id: 's1' }]);
     db.__tx.payslips.update.mockResolvedValue({ id: 's1', pay_date: null });
     const res = await markPaid(json({ paid_date: '2026-10-31' }), ctx());
     expect(res.status).toBe(200);
     expect((await res.json()).paid).toBe(1);
+    expect(db.$transaction).toHaveBeenCalledTimes(1);
     expect(db.__tx.payslips.update.mock.calls[0][0].data.status).toBe('paid');
     expect(notifyPayslip).toHaveBeenCalledWith('s1', 'paid');
     expect(notifyExpenseReimbursed).toHaveBeenCalledWith(['c1'], '2026-10-31', '給与明細に合算');
   });
 
+  it('途中で失敗したら、バッチを記録済みにしたまま残さずエラーを返す（再実行できる）', async () => {
+    db.transfer_batches.findUnique.mockResolvedValue(batch());
+    db.$transaction.mockRejectedValue(new Error('db down'));
+    await expect(markPaid(json({}), ctx())).rejects.toThrow('db down');
+    expect(notifyPayslip).not.toHaveBeenCalled();
+    expect(logAudit).not.toHaveBeenCalled();
+  });
+
   it('支払の記録: 申請を振込済にする', async () => {
     db.transfer_batches.findUnique.mockResolvedValue(batch({ kind: 'payment' }));
-    db.transfer_batches.updateMany.mockResolvedValue({ count: 1 });
-    db.payment_requests.findMany.mockResolvedValue([{ id: 'p1' }, { id: 'p2' }]);
+    db.__tx.transfer_batches.updateMany.mockResolvedValue({ count: 1 });
+    db.__tx.payment_requests.findMany.mockResolvedValue([{ id: 'p1' }, { id: 'p2' }]);
     const res = await markPaid(json({}), ctx());
     expect((await res.json()).paid).toBe(2);
-    expect(db.payment_requests.updateMany.mock.calls[0][0].data.status).toBe('paid');
+    expect(db.__tx.payment_requests.updateMany.mock.calls[0][0].data.status).toBe('paid');
   });
 
   it('すでに記録済み・同時の2回目は409で何もしない', async () => {
     db.transfer_batches.findUnique.mockResolvedValue(batch({ paid_at: new Date() }));
     expect((await markPaid(json({}), ctx())).status).toBe(409);
     db.transfer_batches.findUnique.mockResolvedValue(batch());
-    db.transfer_batches.updateMany.mockResolvedValue({ count: 0 }); // somebody else claimed it first
+    db.__tx.transfer_batches.updateMany.mockResolvedValue({ count: 0 }); // somebody else claimed it first
     expect((await markPaid(json({}), ctx())).status).toBe(409);
-    expect(db.payslips.findMany).not.toHaveBeenCalled();
+    expect(db.__tx.payslips.findMany).not.toHaveBeenCalled();
   });
 
   it('不正な日付は400、存在しない・一般ユーザーは404/403', async () => {

@@ -1,16 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
-import { getSession, requireAuth } from '@/lib/auth';
-import { getActor, isFinance } from '@/lib/work-auth';
+import { financeActor, forbidden } from '@/lib/finance-guard';
 import { isValidMonth, jstDateString, payslipTotals } from '@/lib/work';
 
 // GET /api/transfers/payroll?month=YYYY-MM - the month's pay statements with the state of each person's receiving account
 // (finance staff only). This is the list a 給与振込 file is made from.
 export async function GET(req: NextRequest) {
-  const session = await getSession();
-  requireAuth(session);
-  const actor = await getActor(session.userId);
-  if (!actor || !isFinance(actor)) return NextResponse.json({ error: 'forbidden' }, { status: 403 });
+  if (!(await financeActor())) return forbidden();
   const month = new URL(req.url).searchParams.get('month') || jstDateString(new Date()).slice(0, 7);
   if (!isValidMonth(month)) return NextResponse.json({ error: 'invalid_query' }, { status: 400 });
   const rows = await prisma.payslips.findMany({

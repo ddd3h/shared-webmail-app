@@ -7,6 +7,33 @@ import CreateBatchModal from './CreateBatchModal';
 type Line = { id: string; who: string; title: string; amount: number; batched: boolean; blocker: string | null; sub: string };
 type Flash = { type: 'success' | 'error'; text: string } | null;
 
+// ---- data: one function per source, each returns the same Line shape ----
+
+async function fetchPaymentLines(): Promise<Line[]> {
+  const res = await fetch('/api/payments?scope=all&status=approved');
+  if (!res.ok) return [];
+  return (await res.json()).items.map((r: any): Line => ({
+    id: r.id, who: r.vendor.name, title: r.title, amount: r.transfer_amount, batched: !!r.batch_id,
+    blocker: r.vendor.verified ? null : '口座未確認', sub: `期日 ${dateLabel(r.due_date)} ・ 申請者 ${r.user.name}`,
+  }));
+}
+
+/** Why a statement can't go into a file yet, or null when it can. */
+function payslipBlocker(p: any): string | null {
+  if (!p.account.registered) return '受取口座が未登録';
+  if (!p.account.verified) return '受取口座が未確認';
+  return p.net <= 0 ? '支給額が0円以下' : null;
+}
+
+async function fetchPayrollLines(month: string): Promise<Line[]> {
+  const res = await fetch(`/api/transfers/payroll?month=${month}`);
+  if (!res.ok) return [];
+  return (await res.json()).items.filter((p: any) => p.status === 'planned').map((p: any): Line => ({
+    id: p.id, who: p.user.name, title: p.title, amount: p.net, batched: !!p.batch_id, blocker: payslipBlocker(p),
+    sub: p.account.registered ? `${p.account.bank_name} ${p.account.branch_name} ****${p.account.last4}` : '口座なし',
+  }));
+}
+
 // Shared list for the two ways of making a file: approved payment requests, or the month's pay statements.
 export default function TransferList({ kind, onCreated }: { kind: 'payment' | 'payroll'; onCreated: (id: string, fileName: string) => void }) {
   const [month, setMonth] = useState(currentMonth());
@@ -16,24 +43,7 @@ export default function TransferList({ kind, onCreated }: { kind: 'payment' | 'p
   const [msg, setMsg] = useState<Flash>(null);
 
   const load = useCallback(async () => {
-    if (kind === 'payment') {
-      const res = await fetch('/api/payments?scope=all&status=approved');
-      if (!res.ok) { setLines([]); return; }
-      const d = await res.json();
-      setLines(d.items.map((r: any): Line => ({
-        id: r.id, who: r.vendor.name, title: r.title, amount: r.transfer_amount, batched: !!r.batch_id,
-        blocker: r.vendor.verified ? null : '口座未確認', sub: `期日 ${dateLabel(r.due_date)} ・ 申請者 ${r.user.name}`,
-      })));
-    } else {
-      const res = await fetch(`/api/transfers/payroll?month=${month}`);
-      if (!res.ok) { setLines([]); return; }
-      const d = await res.json();
-      setLines(d.items.filter((p: any) => p.status === 'planned').map((p: any): Line => ({
-        id: p.id, who: p.user.name, title: p.title, amount: p.net, batched: !!p.batch_id,
-        blocker: !p.account.registered ? '受取口座が未登録' : !p.account.verified ? '受取口座が未確認' : p.net <= 0 ? '支給額が0円以下' : null,
-        sub: p.account.registered ? `${p.account.bank_name} ${p.account.branch_name} ****${p.account.last4}` : '口座なし',
-      })));
-    }
+    setLines(kind === 'payment' ? await fetchPaymentLines() : await fetchPayrollLines(month));
     setSelected(new Set());
   }, [kind, month]);
   useEffect(() => { setLines(null); load(); }, [load]);

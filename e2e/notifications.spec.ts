@@ -2,7 +2,7 @@ import { test, expect } from './fixtures';
 import { USERS } from './helpers/constants';
 import { db } from './helpers/db';
 import { jstDate, resetTransfers, clearNotifications } from './helpers/seed';
-import { makeClaim, makePayment, makePayslip, makeVendor, postClaim } from './helpers/factories';
+import { makeClaim, makePayment, makePayslip, makeVendor, postClaim, verifyBankAccount } from './helpers/factories';
 import { mm } from './helpers/mattermost-mock';
 
 // The mock Mattermost lives in the global-setup process; DMs are addressed by "mm-<local part of the email>".
@@ -69,7 +69,7 @@ test.describe('Mattermost通知', () => {
     for (const p of posts) { expect(p.message).not.toContain('1234567'); expect(p.message).not.toContain('サトウ'); }
 
     await mm.reset();
-    await (await as('keiri')).post(`/api/bank-accounts/${USERS.sato.id}/verify`);
+    await verifyBankAccount(await as('keiri'), USERS.sato.id);
     const verified = await mm.waitFor(p => p.message.includes('受取口座が確認されました'));
     expect(recipients(verified)).toEqual([to('sato')]);
   });
@@ -92,7 +92,7 @@ test.describe('Mattermost通知', () => {
   test('給与の全銀データを振込済にすると、本人に支払済の通知が届く（金額・口座は載らない）', async ({ as }) => {
     await (await as('admin')).put('/api/zengin/settings', { data: { client_code: '1234567890', client_name: 'カ）サンプル', bank_code: '0001', bank_name: 'みずほ', branch_code: '123', branch_name: '本店', account_type: 'ordinary', account_number: '7654321' } });
     await (await as('sato')).put('/api/bank-accounts/me', { data: ACCOUNT });
-    await (await as('keiri')).post(`/api/bank-accounts/${USERS.sato.id}/verify`);
+    await verifyBankAccount(await as('keiri'), USERS.sato.id);
     const slip = await makePayslip({ role: 'sato', title: '10月分給与' });
     const claim = await makeClaim({ role: 'sato', status: 'approved', amount: 4800, payslipId: slip.id, title: '合算される経費' });
     const keiri = await as('keiri');
