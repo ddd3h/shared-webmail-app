@@ -66,3 +66,8 @@ security.md
 training-data.json
 training-data.json.gz
 model.json
+
+# Playwright
+e2e/.auth/
+playwright-report/
+test-results/
