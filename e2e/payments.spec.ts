@@ -149,13 +149,14 @@ test.describe('振込申請', () => {
     expect((await (await as('sato')).delete(`/api/payments/${approved.id}`)).status()).toBe(409);
   });
 
-  test('一般ユーザーは自分の申請だけが見え、scope=all は自分の分に限られる', async ({ as }) => {
+  test('一般ユーザーは自分の申請だけが見え、scope=all（全員分）は使えない。経理担当は全員分を見られる', async ({ as }) => {
     const v = await makeVendor();
     await makePayment({ role: 'sato', vendorId: v.id, title: '佐藤の申請' });
     await makePayment({ role: 'tanaka', vendorId: v.id, title: '田中の申請' });
-    const text = JSON.stringify(await (await (await as('sato')).get('/api/payments?scope=all')).json());
+    const text = JSON.stringify(await (await (await as('sato')).get('/api/payments')).json());
     expect(text).toContain('佐藤の申請');
     expect(text).not.toContain('田中の申請');
+    expect((await (await as('sato')).get('/api/payments?scope=all')).status()).toBe(403);
     const keiri = JSON.stringify(await (await (await as('keiri')).get('/api/payments?scope=all')).json());
     expect(keiri).toContain('田中の申請');
   });
@@ -243,9 +244,11 @@ test.describe('振込済の記録とCSV', () => {
 
   test('CSV: 承認済・確認済の分だけ、振込額と口座番号を含む。一般ユーザーは403', async ({ as }) => {
     const v = await makeVendor({ accountNumber: '3141592', name: '=cmd|calc' });
-    await makePayment({ vendorId: v.id, status: 'approved', amount: 110000, deduction_amount: 11000, title: '=HYPERLINK("x")' });
+    await makePayment({ vendorId: v.id, status: 'approved', amount: 110000, deduction: 11000, title: '=HYPERLINK("x")' });
     await makePayment({ vendorId: v.id, status: 'pending', title: '承認前' });
     expect((await (await as('sato')).get('/api/payments/export')).status()).toBe(403);
+    const logged = () => db.audit_logs.count({ where: { action_type: 'payment_export' } });
+    const before = await logged();
     const res = await (await as('keiri')).get('/api/payments/export');
     expect(res.headers()['content-type']).toContain('text/csv');
     const csv = await res.text();
@@ -254,7 +257,7 @@ test.describe('振込済の記録とCSV', () => {
     expect(csv).not.toContain('承認前');
     // formula injection: nothing may start with = + - @
     for (const line of csv.split(/\r?\n/).slice(1)) for (const cell of line.split(',')) expect(cell.replace(/^"/, '')).not.toMatch(/^[=+@]/);
-    expect(await db.audit_logs.count({ where: { action_type: 'payment_export' } })).toBe(1);
+    expect(await logged()).toBe(before + 1);
   });
 });
 

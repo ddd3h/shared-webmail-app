@@ -79,7 +79,7 @@ test.describe('区分の設定（管理者）', () => {
   test('ユーザー一覧は管理者だけが取得できる', async ({ as }) => {
     expect((await (await as('sato')).get('/api/work/users')).status()).toBe(403);
     const items = (await (await (await as('admin')).get('/api/work/users')).json()).items;
-    expect(items).toHaveLength(6);
+    expect(items).toHaveLength(Object.keys(USERS).length);
     expect(items[0]).not.toHaveProperty('password_hash');
   });
 });

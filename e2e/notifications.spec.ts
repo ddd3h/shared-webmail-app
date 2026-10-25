@@ -34,8 +34,8 @@ test.describe('Mattermost通知', () => {
     const c1 = await makeClaim({ role: 'sato', title: '承認される経費' });
     const c2 = await makeClaim({ role: 'sato', title: '却下される経費' });
     const admin = await as('admin');
-    expect((await admin.patch(`/api/expenses/${c1.id}`, { data: { action: 'approve' } })).status()).toBe(200);
-    expect((await admin.patch(`/api/expenses/${c2.id}`, { data: { action: 'reject', comment: '領収書が不鮮明です' } })).status()).toBe(200);
+    expect((await admin.post(`/api/expenses/${c1.id}/review`, { data: { action: 'approve' } })).status()).toBe(200);
+    expect((await admin.post(`/api/expenses/${c2.id}/review`, { data: { action: 'reject', comment: '領収書が不鮮明です' } })).status()).toBe(200);
     const ok = await mm.waitFor(p => p.message.includes('承認される経費'));
     const ng = await mm.waitFor(p => p.message.includes('却下される経費'));
     expect(recipients(ok)).toEqual([to('sato')]);
@@ -99,8 +99,8 @@ test.describe('Mattermost通知', () => {
     const made = await (await keiri.post('/api/transfers/batches', { data: { kind: 'payroll', ids: [slip.id], transfer_date: jstDate(1) } })).json();
     await mm.reset();
     await keiri.post(`/api/transfers/batches/${made.id}/mark-paid`, { data: {} });
-    const posts = await mm.waitFor(p => p.to === to('sato') && p.message.includes('合算される経費'));
-    expect(posts.length).toBeGreaterThan(0); // the reimbursed expense
+    expect((await mm.waitFor(p => p.message.includes('が支払済になりました'))).map(p => p.to)).toEqual([to('sato')]);
+    expect((await mm.waitFor(p => p.message.includes('立替金が返金されました'))).map(p => p.to)).toEqual([to('sato')]); // the merged expense
     const all = await mm.posts();
     expect(all.every(p => p.to === to('sato'))).toBe(true);
     for (const p of all) { expect(p.message).not.toContain('1234567'); expect(p.message).not.toContain('サトウ'); }
