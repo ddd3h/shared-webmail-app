@@ -123,10 +123,12 @@ test.describe('Mattermost通知', () => {
 
   test('通知に失敗しても処理は戻り、失敗の記録が残る', async ({ as }) => {
     await mm.fail(true);
+    const startedAt = new Date();
     try {
       expect((await postClaim(await as('sato'), { title: '失敗記録の申請' })).status()).toBe(201);
       await new Promise(r => setTimeout(r, 1500));
-      const rows = await db.mattermost_notifications.findMany();
+      // only this test's own DMs: late deliveries from the previous test must not count
+      const rows = await db.mattermost_notifications.findMany({ where: { notification_type: 'expense_submitted', created_at: { gte: startedAt } } });
       expect(rows.length).toBeGreaterThan(0);
       expect(rows.every(r => r.status === 'failed')).toBe(true);
     } finally { await mm.fail(false); }

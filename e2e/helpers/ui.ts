@@ -34,3 +34,13 @@ export const hasHorizontalOverflow = (page: Page) =>
 // The app's labels are plain <label> elements sitting right before their field (no htmlFor), so getByLabel can't find them.
 export const field = (scope: Page | import('@playwright/test').Locator, labelText: string | RegExp) =>
   scope.locator('label', { hasText: labelText }).first().locator('xpath=following-sibling::*[self::input or self::select or self::textarea][1]');
+
+// ---- desktop top bar ----
+// Work/money pages live under 「申請・給与」, personal pages and logout under the account menu; both are closed until clicked.
+export const topBar = (page: Page) => page.locator('header nav').first();
+export async function openWorkMenu(page: Page) {
+  await page.locator('header').getByRole('button', { name: /申請・給与/ }).click();
+}
+export async function openAccountMenu(page: Page) {
+  await page.locator('header').getByRole('button', { name: 'アカウントメニュー' }).click();
+}

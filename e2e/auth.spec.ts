@@ -1,6 +1,6 @@
 import { test, expect, uniq } from './fixtures';
 import { PASSWORD, USERS, ROLES } from './helpers/constants';
-import { fakeIp, freshContext, loginViaUi } from './helpers/ui';
+import { fakeIp, freshContext, loginViaUi, openAccountMenu } from './helpers/ui';
 import { db } from './helpers/db';
 
 test.describe('未ログインのアクセス', () => {
@@ -138,7 +138,8 @@ test.describe('セッションとログアウト', () => {
     const page = await ctx.newPage();
     await loginViaUi(page, USERS.suzuki.email, PASSWORD);
     await expect(page).toHaveURL(/\/threads/);
-    await page.getByRole('button', { name: 'ログアウト' }).first().click();
+    await openAccountMenu(page);
+    await page.getByRole('button', { name: 'ログアウト' }).click();
     await expect(page).toHaveURL(/\/login/);
     await ctx.close();
   });

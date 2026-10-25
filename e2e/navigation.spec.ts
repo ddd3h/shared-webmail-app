@@ -1,62 +1,137 @@
 import { test, expect } from './fixtures';
 import { AUTH, ROLES, USERS, type Role } from './helpers/constants';
-import { hasHorizontalOverflow } from './helpers/ui';
+import { hasHorizontalOverflow, openAccountMenu, openWorkMenu } from './helpers/ui';
 
-const NAV = ['メール', 'カレンダー', '勤怠・給与', '経費', '出張', '振込', '連絡帳', '通知', '予約送信', 'プロフィール'];
+const TOP_LEVEL = ['メール', 'カレンダー', '連絡帳', '通知'];
+const WORK_MENU = ['勤怠・給与', '経費', '出張', '振込申請'];
+const ACCOUNT_MENU = ['予約送信', 'プロフィール'];
 
-const PAGES: { path: string; link: string; heading: string | RegExp }[] = [
+const PAGES: { path: string; link: string; heading: string | RegExp; menu?: 'work' }[] = [
   { path: '/calendar', link: 'カレンダー', heading: 'カレンダー' },
-  { path: '/work', link: '勤怠・給与', heading: '勤怠・給与' },
-  { path: '/expenses', link: '経費', heading: '経費申請' },
-  { path: '/trips', link: '出張', heading: '出張申請' },
-  { path: '/payments', link: '振込', heading: '振込申請' },
+  { path: '/work', link: '勤怠・給与', heading: '勤怠・給与', menu: 'work' },
+  { path: '/expenses', link: '経費', heading: '経費申請', menu: 'work' },
+  { path: '/trips', link: '出張', heading: '出張申請', menu: 'work' },
+  { path: '/payments', link: '振込申請', heading: '振込申請', menu: 'work' },
   { path: '/contacts', link: '連絡帳', heading: '連絡帳' },
-  { path: '/scheduled', link: '予約送信', heading: '予約送信' },
 ];
 
-const header = (page: import('@playwright/test').Page) => page.locator('header nav');
+type Page = import('@playwright/test').Page;
+const header = (page: Page) => page.locator('header');
+const bar = (page: Page) => page.locator('header nav').first();
 
 test.describe('PCのナビゲーション', () => {
   for (const role of ROLES) {
     test.describe(`${USERS[role].name}（${USERS[role].role === 'admin' ? '管理者' : '一般'}）`, () => {
       test.use({ storageState: AUTH[role] });
 
-      test('メニューに共通の項目が並び、「管理」は管理者にだけ表示される', async ({ page }) => {
+      test('上のバーには主要な項目だけが並ぶ（細かい項目はまとめメニューの中）', async ({ page }) => {
         await page.goto('/threads');
-        const nav = header(page);
-        for (const label of NAV) await expect(nav.getByRole('link', { name: label, exact: true })).toBeVisible();
-        const admin = nav.getByRole('link', { name: '管理', exact: true });
-        if (USERS[role].role === 'admin') await expect(admin).toBeVisible(); else await expect(admin).toHaveCount(0);
-        // 振込データ（全銀）は管理者と経理担当にだけ
-        const transfers = nav.getByRole('link', { name: '振込データ', exact: true });
+        for (const label of TOP_LEVEL) await expect(header(page).getByRole('link', { name: label, exact: true })).toBeVisible();
+        await expect(header(page).getByRole('button', { name: /申請・給与/ })).toBeVisible();
+        await expect(header(page).getByRole('button', { name: 'アカウントメニュー' })).toBeVisible();
+        // closed by default: nothing from the groups is in the bar
+        for (const label of [...WORK_MENU, ...ACCOUNT_MENU, '管理', '振込データ']) await expect(header(page).getByRole('link', { name: label, exact: true })).toHaveCount(0);
+        // top bar = 3 links + the group button (the bell and the account button sit outside the nav)
+        await expect(bar(page).locator('a, button')).toHaveCount(4);
+      });
+
+      test('「申請・給与」を開くと勤怠・経費・出張・振込申請が並ぶ。「振込データ」は管理者と経理担当だけ', async ({ page }) => {
+        await page.goto('/threads');
+        await openWorkMenu(page);
+        for (const label of WORK_MENU) await expect(header(page).getByRole('link', { name: new RegExp(`^${label}`) })).toBeVisible();
+        const transfers = header(page).getByRole('link', { name: /^振込データ/ });
         if (USERS[role].role === 'admin' || USERS[role].is_accounting) await expect(transfers).toBeVisible(); else await expect(transfers).toHaveCount(0);
+      });
+
+      test('アカウントメニューに予約送信・プロフィール・ログアウトがあり、「管理」は管理者だけ', async ({ page }) => {
+        await page.goto('/threads');
+        await openAccountMenu(page);
+        for (const label of ACCOUNT_MENU) await expect(header(page).getByRole('link', { name: new RegExp(`^${label}`) })).toBeVisible();
+        await expect(header(page).getByRole('button', { name: 'ログアウト' })).toBeVisible();
+        const admin = header(page).getByRole('link', { name: /^管理/ });
+        if (USERS[role].role === 'admin') await expect(admin).toBeVisible(); else await expect(admin).toHaveCount(0);
       });
     });
   }
 
-  test.describe('各ページへの移動', () => {
+  test.describe('メニューの動き', () => {
     test.use({ storageState: AUTH.sato });
+
     for (const p of PAGES) {
-      test(`「${p.link}」をクリックすると ${p.path} が開き、見出しと現在地の強調が出る`, async ({ page }) => {
+      test(`「${p.link}」を開くと ${p.path} に移動し、見出しと現在地の強調が出る`, async ({ page }) => {
         await page.goto('/threads');
-        await header(page).getByRole('link', { name: p.link, exact: true }).click();
+        if (p.menu) await openWorkMenu(page);
+        await header(page).getByRole('link', { name: new RegExp(`^${p.link}`) }).first().click();
         await expect(page).toHaveURL(new RegExp(p.path));
         await expect(page.getByRole('heading', { level: 1, name: p.heading })).toBeVisible();
-        await expect(header(page).getByRole('link', { name: p.link, exact: true })).toHaveClass(/bg-blue-50/);
+        if (p.menu) {
+          // the group button is highlighted, and the menu has closed itself after the click
+          await expect(header(page).getByRole('button', { name: /申請・給与/ })).toHaveClass(/bg-blue-50/);
+          await expect(header(page).getByRole('link', { name: /^経費/ })).toHaveCount(0);
+        } else {
+          await expect(header(page).getByRole('link', { name: p.link, exact: true })).toHaveClass(/bg-blue-50/);
+        }
       });
     }
 
-    test('「通知」「プロフィール」も開ける', async ({ page }) => {
+    test('開いている項目は menu の中でも現在地として強調される', async ({ page }) => {
+      await page.goto('/expenses');
+      await openWorkMenu(page);
+      await expect(header(page).getByRole('link', { name: /^経費/ })).toHaveClass(/bg-blue-50/);
+      await expect(header(page).getByRole('link', { name: /^出張/ })).not.toHaveClass(/bg-blue-50/);
+    });
+
+    test('メニューは Escape・外側クリック・もう一度のクリックで閉じる', async ({ page }) => {
+      await page.goto('/threads');
+      const trigger = header(page).getByRole('button', { name: /申請・給与/ });
+      const item = header(page).getByRole('link', { name: /^経費/ });
+      await trigger.click(); await expect(item).toBeVisible(); await expect(trigger).toHaveAttribute('aria-expanded', 'true');
+      await page.keyboard.press('Escape'); await expect(item).toHaveCount(0); await expect(trigger).toHaveAttribute('aria-expanded', 'false');
+      await trigger.click(); await expect(item).toBeVisible();
+      await page.locator('main').click({ position: { x: 5, y: 300 } }); await expect(item).toHaveCount(0);
+      await trigger.click(); await expect(item).toBeVisible();
+      await trigger.click(); await expect(item).toHaveCount(0);
+    });
+
+    test('2つのメニューは同時に開かない', async ({ page }) => {
+      await page.goto('/threads');
+      await openWorkMenu(page);
+      await openAccountMenu(page);
+      await expect(header(page).getByRole('link', { name: /^経費/ })).toHaveCount(0);
+      await expect(header(page).getByRole('link', { name: /^プロフィール/ })).toBeVisible();
+    });
+
+    test('「通知」「プロフィール」「予約送信」も開ける', async ({ page }) => {
       await page.goto('/threads');
       await header(page).getByRole('link', { name: '通知', exact: true }).click();
       await expect(page).toHaveURL(/\/notifications/);
-      await header(page).getByRole('link', { name: 'プロフィール', exact: true }).click();
+      await openAccountMenu(page);
+      await header(page).getByRole('link', { name: /^プロフィール/ }).click();
       await expect(page).toHaveURL(/\/profile/);
+      await openAccountMenu(page);
+      await header(page).getByRole('link', { name: /^予約送信/ }).click();
+      await expect(page).toHaveURL(/\/scheduled/);
+    });
+
+    test('アカウントメニューにユーザー名が出る', async ({ page }) => {
+      await page.goto('/threads');
+      await openAccountMenu(page);
+      await expect(header(page).getByText('佐藤 さん')).toBeVisible();
     });
 
     test('現在地以外のリンクは強調されない', async ({ page }) => {
       await page.goto('/expenses');
       await expect(header(page).getByRole('link', { name: 'カレンダー', exact: true })).not.toHaveClass(/bg-blue-50/);
+    });
+
+    test('キーボードで Tab を押すと、メニューのボタンに順に移動できる', async ({ page }) => {
+      await page.goto('/threads');
+      const trigger = header(page).getByRole('button', { name: /申請・給与/ });
+      await trigger.focus();
+      await page.keyboard.press('Enter');
+      await expect(header(page).getByRole('link', { name: /^勤怠・給与/ })).toBeVisible();
+      await page.keyboard.press('Tab');
+      await expect(header(page).getByRole('link', { name: /^勤怠・給与/ })).toBeFocused();
     });
   });
 });

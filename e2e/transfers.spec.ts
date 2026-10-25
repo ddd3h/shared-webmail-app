@@ -3,7 +3,7 @@ import { AUTH, USERS } from './helpers/constants';
 import { db } from './helpers/db';
 import { jstDate, resetTransfers } from './helpers/seed';
 import { makeClaim, makePayment, makePayslip, makeVendor, verifyBankAccount } from './helpers/factories';
-import { field } from './helpers/ui';
+import { field, openWorkMenu } from './helpers/ui';
 import type { APIRequestContext } from '@playwright/test';
 
 const HEADER = {
@@ -562,7 +562,8 @@ test.describe('画面', () => {
     test('/transfers を開いても利用できない旨が出て、メニューにも出ない', async ({ page }) => {
       await page.goto('/transfers');
       await expect(page.getByText('経理担当と管理者だけが使えます')).toBeVisible();
-      await expect(page.locator('header nav').getByRole('link', { name: '振込データ' })).toHaveCount(0);
+      await openWorkMenu(page);
+      await expect(page.locator('header').getByRole('link', { name: /^振込データ/ })).toHaveCount(0);
     });
 
     test('勤怠・給与の「受取口座」から口座を登録でき、カナ以外はエラーになる', async ({ page }) => {
@@ -644,7 +645,8 @@ test.describe('画面', () => {
 
     test('メニューに「振込データ」が出る', async ({ page }) => {
       await page.goto('/threads');
-      await page.locator('header nav').getByRole('link', { name: '振込データ', exact: true }).click();
+      await openWorkMenu(page);
+      await page.locator('header').getByRole('link', { name: /^振込データ/ }).click();
       await expect(page).toHaveURL(/\/transfers/);
       await expect(page.getByRole('heading', { level: 1, name: '振込データ' })).toBeVisible();
     });
