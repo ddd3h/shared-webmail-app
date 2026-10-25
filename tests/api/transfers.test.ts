@@ -71,7 +71,7 @@ beforeEach(() => {
 describe('受取口座（本人）', () => {
   it('登録すると暗号化して保存し、確認は未済・監査ログと通知を出す', async () => {
     db.user_bank_accounts.findUnique.mockResolvedValue(null);
-    db.user_bank_accounts.upsert.mockImplementation(async (a: any) => ({ id: 'a1', user_id: 'u1', ...a.create }));
+    db.user_bank_accounts.upsert.mockImplementation(async (a: any) => ({ ...a.create, id: 'a1' }));
     const res = await putMine(json(ACCOUNT, 'PUT'));
     expect(res.status).toBe(200);
     const data = db.user_bank_accounts.upsert.mock.calls[0][0].create;
@@ -84,7 +84,7 @@ describe('受取口座（本人）', () => {
 
   it('同じ内容の保存では確認済を外さず、通知もしない', async () => {
     db.user_bank_accounts.findUnique.mockResolvedValue(acctRow({ user_id: 'u1' }));
-    db.user_bank_accounts.upsert.mockImplementation(async (a: any) => ({ id: 'a1', user_id: 'u1', ...acctRow(), ...a.update }));
+    db.user_bank_accounts.upsert.mockImplementation(async (a: any) => ({ ...acctRow({ user_id: 'u1' }), ...a.update }));
     await putMine(json(ACCOUNT, 'PUT'));
     expect(db.user_bank_accounts.upsert.mock.calls[0][0].update).not.toHaveProperty('verified_at');
     expect(notifyBankAccountChanged).not.toHaveBeenCalled();
@@ -92,7 +92,7 @@ describe('受取口座（本人）', () => {
 
   it('番号を変えると確認済が外れ、確認が外れたことを返す', async () => {
     db.user_bank_accounts.findUnique.mockResolvedValue(acctRow({ user_id: 'u1' }));
-    db.user_bank_accounts.upsert.mockImplementation(async (a: any) => ({ id: 'a1', user_id: 'u1', ...acctRow(), ...a.update }));
+    db.user_bank_accounts.upsert.mockImplementation(async (a: any) => ({ ...acctRow({ user_id: 'u1' }), ...a.update }));
     const res = await putMine(json({ ...ACCOUNT, account_number: '7654321' }, 'PUT'));
     expect(db.user_bank_accounts.upsert.mock.calls[0][0].update).toMatchObject({ verified_at: null, verified_by_id: null });
     expect((await res.json()).verification_cleared).toBe(true);
@@ -112,7 +112,7 @@ describe('受取口座（本人）', () => {
 
   it('銀行名・支店名は漢字のままでよい', async () => {
     db.user_bank_accounts.findUnique.mockResolvedValue(null);
-    db.user_bank_accounts.upsert.mockImplementation(async (a: any) => ({ id: 'a1', user_id: 'u1', ...a.create }));
+    db.user_bank_accounts.upsert.mockImplementation(async (a: any) => ({ ...a.create, id: 'a1' }));
     expect((await putMine(json(ACCOUNT, 'PUT'))).status).toBe(200);
   });
 
