@@ -5,7 +5,7 @@ import ReportsPanel from './ReportsPanel';
 import PayrollPanel from './PayrollPanel';
 import { Notice, TYPE_LABEL, btnPrimary, inp, api, type WorkerType } from './ui';
 
-type Member = { id: string; name: string; email: string; role: string; worker_type: WorkerType };
+type Member = { id: string; name: string; email: string; role: string; worker_type: WorkerType; is_accounting: boolean };
 const SECTIONS = [
   { key: 'members', label: '区分・設定' },
   { key: 'attendance', label: '勤怠の確認' },
@@ -34,6 +34,10 @@ export default function AdminPanel() {
     const res = await api(`/api/work/users/${id}`, 'PATCH', { worker_type });
     if (res.ok) { setMembers(ms => ms.map(m => m.id === id ? { ...m, worker_type } : m)); flash('success', '区分を更新しました'); } else flash('error', '更新に失敗しました');
   }
+  async function setAccounting(id: string, is_accounting: boolean) {
+    const res = await api(`/api/work/users/${id}`, 'PATCH', { is_accounting });
+    if (res.ok) { setMembers(ms => ms.map(m => m.id === id ? { ...m, is_accounting } : m)); flash('success', is_accounting ? '経理担当にしました（全銀データの作成・口座の確認ができます）' : '経理担当を外しました'); } else flash('error', '更新に失敗しました');
+  }
   async function saveSettings() {
     if (!settings) return;
     const res = await api('/api/work/settings', 'PUT', { daily_minutes: Number(settings.daily_minutes), auto_break_minutes: Number(settings.auto_break_minutes) });
@@ -57,7 +61,7 @@ export default function AdminPanel() {
         <div className="space-y-4">
           <div className="rounded-xl border border-gray-200 bg-white overflow-x-auto">
             <table className="w-full text-sm">
-              <thead className="bg-gray-50 text-xs text-gray-500"><tr><th className="px-3 py-2 text-left">名前</th><th className="px-3 py-2 text-left">区分</th><th className="px-3 py-2 text-left hidden sm:table-cell">使える機能</th></tr></thead>
+              <thead className="bg-gray-50 text-xs text-gray-500"><tr><th className="px-3 py-2 text-left">名前</th><th className="px-3 py-2 text-left">区分</th><th className="px-3 py-2 text-left">経理担当</th><th className="px-3 py-2 text-left hidden sm:table-cell">使える機能</th></tr></thead>
               <tbody className="divide-y divide-gray-100">
                 {members.map(m => (
                   <tr key={m.id}>
@@ -66,6 +70,11 @@ export default function AdminPanel() {
                       <select className={`${inp} max-w-[9rem]`} value={m.worker_type} onChange={e => setType(m.id, e.target.value as WorkerType)} aria-label={`${m.name}の区分`}>
                         {(Object.keys(TYPE_LABEL) as WorkerType[]).map(t => <option key={t} value={t}>{TYPE_LABEL[t]}</option>)}
                       </select>
+                    </td>
+                    <td className="px-3 py-2">
+                      {m.role === 'admin'
+                        ? <span className="text-xs text-gray-400">管理者</span>
+                        : <input type="checkbox" className="h-4 w-4" checked={m.is_accounting} onChange={e => setAccounting(m.id, e.target.checked)} aria-label={`${m.name}を経理担当にする`} />}
                     </td>
                     <td className="px-3 py-2 text-xs text-gray-500 hidden sm:table-cell">{m.worker_type === 'employee' ? '打刻・勤怠・給与明細' : m.worker_type === 'contractor' ? '業務報告書・報酬明細' : '報酬明細'}</td>
                   </tr>

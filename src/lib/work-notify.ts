@@ -182,3 +182,21 @@ export function notifyPaymentPaid(requestIds: string[], paidDate: string) {
       `💴 **振込が完了しました**\n\n${mmText(r.vendor.name, 60)} 宛「${mmText(r.title, 80)}」 ${yen(r.amount)}（振込日 ${paidDate}）\n\n${appUrl()}/payments`, 'payment_paid')));
   });
 }
+
+// ---- bank accounts (never include the number) ----
+export function notifyBankAccountChanged(userId: string) {
+  return safely('bank_changed', async () => {
+    const u = await prisma.users.findUnique({ where: { id: userId }, select: { name: true } });
+    if (!u) return;
+    const finance = await prisma.users.findMany({ where: { id: { not: userId }, OR: [{ role: 'admin' }, { is_accounting: true }] }, select: { id: true, email: true } });
+    await dmAll(finance, `🏦 **受取口座が登録・変更されました**\n\n**${mmText(u.name, 40)}** さんの口座は未確認です。本人の書類と照合して確認済にしてください。\n\n${appUrl()}/transfers`, 'bank_account_changed');
+  });
+}
+
+export function notifyBankAccountVerified(userId: string) {
+  return safely('bank_verified', async () => {
+    const u = await prisma.users.findUnique({ where: { id: userId }, select: { id: true, email: true } });
+    if (!u) return;
+    await sendDirectMessage(u.id, u.email, `✅ **受取口座が確認されました**\n\n給与などの振込先として使えるようになりました。\n\n${appUrl()}/work`, 'bank_account_verified');
+  });
+}

@@ -40,6 +40,7 @@ export async function serializeRequest(r: any, admin: boolean) {
     invoice_date: ymd(r.invoice_date),
     due_date: ymd(r.due_date),
     description: r.description,
+    batch_id: r.batch_id ?? null,
     status: r.status,
     reviewer: r.reviewer?.name ?? null,
     reviewed_at: r.reviewed_at,

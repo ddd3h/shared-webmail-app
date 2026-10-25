@@ -3,17 +3,17 @@ import { prisma } from '@/lib/db';
 import { getSession, requireAuth } from '@/lib/auth';
 import { logAudit } from '@/lib/audit';
 import { decrypt } from '@/lib/crypto';
-import { getActor, isAdmin } from '@/lib/work-auth';
+import { getActor, isFinance } from '@/lib/work-auth';
 import { jstDateString } from '@/lib/work';
 import { ACCOUNT_TYPE_LABEL, toCsv, transferAmount, type AccountType } from '@/lib/payment';
 
-// GET /api/payments/export?ids=a,b - CSV of the transfers to make (admin only).
+// GET /api/payments/export?ids=a,b - CSV of the transfers to make (finance staff).
 // Only approved requests whose payee account is verified are included; without `ids` that means all of them.
 export async function GET(req: NextRequest) {
   const session = await getSession();
   requireAuth(session);
   const actor = await getActor(session.userId);
-  if (!actor || !isAdmin(actor)) return NextResponse.json({ error: 'forbidden' }, { status: 403 });
+  if (!actor || !isFinance(actor)) return NextResponse.json({ error: 'forbidden' }, { status: 403 });
   const idsParam = new URL(req.url).searchParams.get('ids');
   const ids = idsParam ? idsParam.split(',').filter(Boolean).slice(0, 500) : null;
 

@@ -21,7 +21,7 @@ export async function seedBase() {
   await truncateAll();
   const hash = await hashPassword(PASSWORD, { N: 1024 }); // cheap cost factor: the tests log in a lot
   for (const u of Object.values(USERS)) {
-    await db.users.create({ data: { id: u.id, name: u.name, email: u.email, role: u.role, worker_type: u.worker_type, password_hash: hash } });
+    await db.users.create({ data: { id: u.id, name: u.name, email: u.email, role: u.role, worker_type: u.worker_type, is_accounting: !!u.is_accounting, password_hash: hash } });
   }
 
   await db.mailboxes.create({ data: { id: MAILBOX_ID, type: 'team', display_name: '営業チーム共有', email_address: 'sales@e2e.test', is_active: true } });
@@ -82,6 +82,16 @@ export async function resetTrips() {
 export async function resetPayments() {
   await db.payment_requests.deleteMany({});
   await db.payment_vendors.deleteMany({});
+}
+// 全銀: batches, everybody's receiving account, the company header settings, and payment/payslip rows that point at batches
+export async function resetTransfers() {
+  await db.transfer_batches.deleteMany({});
+  await db.user_bank_accounts.deleteMany({});
+  await db.payslips.deleteMany({});
+  await db.expense_claims.deleteMany({});
+  await db.payment_requests.deleteMany({});
+  await db.payment_vendors.deleteMany({});
+  await db.app_settings.deleteMany({ where: { key: { startsWith: 'ZENGIN_' } } });
 }
 export async function resetWork() {
   await db.attendance_records.deleteMany({});

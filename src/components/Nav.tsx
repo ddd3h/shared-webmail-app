@@ -20,6 +20,7 @@ const desktopBaseItems = [
 export default function Nav() {
   const pathname = usePathname();
   const [isAdmin, setIsAdmin] = useState(false);
+  const [isFinance, setIsFinance] = useState(false);
   const [menuMounted, setMenuMounted] = useState(false);
   const [animateIn, setAnimateIn] = useState(false);
   const sheetRef = useRef<HTMLDivElement>(null);
@@ -31,6 +32,11 @@ export default function Nav() {
     fetch('/api/auth/session')
       .then(r => r.json())
       .then(d => { if (d.user?.role === 'admin') setIsAdmin(true); })
+      .catch(() => {});
+    // 経理担当 (and admins) get the 全銀 transfer-file page
+    fetch('/api/work/me')
+      .then(r => (r.ok ? r.json() : null))
+      .then(d => { if (d?.is_finance) setIsFinance(true); })
       .catch(() => {});
   }, []);
 
@@ -83,9 +89,12 @@ export default function Nav() {
   const isActive = (href: string) =>
     href === '/' ? pathname === '/' : pathname.startsWith(href);
 
-  const desktopItems = isAdmin
-    ? [...desktopBaseItems, { href: '/admin/settings', label: '管理' }]
+  const withTransfers = isFinance
+    ? desktopBaseItems.flatMap(i => (i.href === '/payments' ? [i, { href: '/transfers', label: '振込データ' }] : [i]))
     : desktopBaseItems;
+  const desktopItems = isAdmin
+    ? [...withTransfers, { href: '/admin/settings', label: '管理' }]
+    : withTransfers;
 
   return (
     <>
@@ -230,6 +239,17 @@ export default function Nav() {
                   </svg>
                   振込申請
                 </Link>
+                {isFinance && (
+                  <Link
+                    href="/transfers"
+                    className={`flex items-center gap-3 px-3 py-3 rounded-xl text-sm font-medium transition-colors ${isActive('/transfers') ? 'bg-blue-50 text-blue-700' : 'text-gray-700 hover:bg-gray-100'}`}
+                  >
+                    <svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 10v6m0 0l-3-3m3 3l3-3M3 17V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
+                    </svg>
+                    振込データ
+                  </Link>
+                )}
                 <Link
                   href="/scheduled"
                   className={`flex items-center gap-3 px-3 py-3 rounded-xl text-sm font-medium transition-colors ${isActive('/scheduled') ? 'bg-blue-50 text-blue-700' : 'text-gray-700 hover:bg-gray-100'}`}

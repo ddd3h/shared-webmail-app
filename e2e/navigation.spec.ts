@@ -27,6 +27,9 @@ test.describe('PCのナビゲーション', () => {
         for (const label of NAV) await expect(nav.getByRole('link', { name: label, exact: true })).toBeVisible();
         const admin = nav.getByRole('link', { name: '管理', exact: true });
         if (USERS[role].role === 'admin') await expect(admin).toBeVisible(); else await expect(admin).toHaveCount(0);
+        // 振込データ（全銀）は管理者と経理担当にだけ
+        const transfers = nav.getByRole('link', { name: '振込データ', exact: true });
+        if (USERS[role].role === 'admin' || USERS[role].is_accounting) await expect(transfers).toBeVisible(); else await expect(transfers).toHaveCount(0);
       });
     });
   }

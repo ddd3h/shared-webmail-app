@@ -2,7 +2,7 @@ import { PrismaClient } from '@prisma/client';
 import { DATABASE_URL, ENCRYPTION_KEY_HEX } from './constants';
 
 // factories encrypt account numbers with the same key the server under test uses
-process.env.ENCRYPTION_KEY_HEX ||= ENCRYPTION_KEY_HEX;
+process.env.ENCRYPTION_KEY_HEX = ENCRYPTION_KEY_HEX; // always the test key: a .env value would not match the dev server the tests talk to
 
 // One client per worker process, pointed at the E2E database (never the dev one).
 const g = globalThis as any;

@@ -11,7 +11,7 @@ vi.mock('@/lib/auth', () => ({ getSession: vi.fn(async () => ({ userId: 'u1' }))
 vi.mock('@/lib/audit', () => ({ logAudit: vi.fn() }));
 vi.mock('@/lib/crypto', () => ({ encrypt: vi.fn(async (s: string) => `enc:${s}`), decrypt: vi.fn(async (s: string) => s.replace(/^enc:/, '')) }));
 vi.mock('@/lib/attachment-storage', () => ({ saveUploadedFiles: vi.fn(async () => []), deleteStoredFiles: vi.fn() }));
-vi.mock('@/lib/work-auth', () => ({ getActor: vi.fn(), isAdmin: (a: any) => a.role === 'admin' }));
+vi.mock('@/lib/work-auth', () => ({ getActor: vi.fn(), isAdmin: (a: any) => a.role === 'admin', isFinance: (a: any) => a.role === 'admin' || !!a.is_accounting }));
 vi.mock('@/lib/work-notify', () => ({ notifyPaymentSubmitted: vi.fn(), notifyPaymentReviewed: vi.fn(), notifyPaymentPaid: vi.fn() }));
 
 import { prisma } from '@/lib/db';

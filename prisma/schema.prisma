@@ -101,6 +101,10 @@ model users {
   expense_reimbursed         expense_claims[]         @relation("expense_reimburser")
   business_trips             business_trips[]         @relation("trip_applicant")
   trips_reviewed             business_trips[]         @relation("trip_reviewer")
+  is_accounting              Boolean                  @default(false)
+  bank_account               user_bank_accounts?      @relation("bank_owner")
+  bank_accounts_verified     user_bank_accounts[]     @relation("bank_verifier")
+  transfer_batches           transfer_batches[]       @relation("batch_creator")
   payment_requests           payment_requests[]       @relation("payment_applicant")
   payments_reviewed          payment_requests[]       @relation("payment_reviewer")
   payments_paid              payment_requests[]       @relation("payment_payer")
@@ -772,9 +776,11 @@ model payslips {
   pay_date      DateTime? @db.Date
   note          String?
   created_by_id String?
+  batch_id      String?   // the 全銀 transfer file this statement was put into
   created_at    DateTime  @default(now())
   updated_at    DateTime  @updatedAt
 
+  batch   transfer_batches? @relation(fields: [batch_id], references: [id], onDelete: SetNull)
   user    users           @relation("payslip_user", fields: [user_id], references: [id], onDelete: Cascade)
   creator users?          @relation("payslip_creator", fields: [created_by_id], references: [id], onDelete: SetNull)
   items   payslip_items[]
@@ -782,6 +788,7 @@ model payslips {
 
   @@index([user_id, pay_month])
   @@index([pay_month])
+  @@index([batch_id])
 }
 
 model payslip_items {
@@ -963,9 +970,11 @@ model payment_requests {
   paid_at          DateTime? @db.Date
   paid_by_id       String?
   paid_note        String?
+  batch_id         String?   // the 全銀 transfer file this request was put into
   created_at       DateTime  @default(now())
   updated_at       DateTime  @updatedAt
 
+  batch     transfer_batches?  @relation(fields: [batch_id], references: [id], onDelete: SetNull)
   user      users              @relation("payment_applicant", fields: [user_id], references: [id], onDelete: Cascade)
   vendor    payment_vendors    @relation(fields: [vendor_id], references: [id])
   reviewer  users?             @relation("payment_reviewer", fields: [reviewed_by_id], references: [id], onDelete: SetNull)
@@ -975,6 +984,7 @@ model payment_requests {
   @@index([user_id, due_date])
   @@index([status])
   @@index([vendor_id, invoice_number])
+  @@index([batch_id])
 }
 
 model payment_documents {
@@ -989,4 +999,49 @@ model payment_documents {
   request payment_requests @relation(fields: [request_id], references: [id], onDelete: Cascade)
 
   @@index([request_id])
+}
+
+// A person's own bank account (where salary and expense reimbursements are paid). Number encrypted at rest.
+// verified_at is set by finance staff (never by the owner); any change by the owner clears it.
+model user_bank_accounts {
+  id                 String    @id @default(cuid())
+  user_id            String    @unique
+  bank_name          String
+  bank_code          String
+  branch_name        String
+  branch_code        String
+  account_type       String    // 'ordinary' | 'checking' | 'savings'
+  account_number_enc String
+  account_last4      String
+  account_holder     String    // 口座名義（カナ）
+  verified_at        DateTime?
+  verified_by_id     String?
+  created_at         DateTime  @default(now())
+  updated_at         DateTime  @updatedAt
+
+  user     users  @relation("bank_owner", fields: [user_id], references: [id], onDelete: Cascade)
+  verifier users? @relation("bank_verifier", fields: [verified_by_id], references: [id], onDelete: SetNull)
+}
+
+// A generated 全銀 (総合振込 / 給与振込) file. `content_b64` is the exact bytes that were downloaded.
+// kind 'payment' = payment requests, 'payroll' = pay statements. category_code is the 種別コード (21 総合 / 11 給与 / 12 賞与).
+model transfer_batches {
+  id            String    @id @default(cuid())
+  kind          String
+  category_code String
+  transfer_date DateTime  @db.Date
+  item_count    Int
+  total_amount  Int
+  file_name     String
+  content_b64   String    @db.Text
+  created_by_id String?
+  created_at    DateTime  @default(now())
+  paid_at       DateTime? @db.Date
+  paid_by_id    String?
+
+  creator  users?             @relation("batch_creator", fields: [created_by_id], references: [id], onDelete: SetNull)
+  payments payment_requests[]
+  payslips payslips[]
+
+  @@index([created_at])
 }

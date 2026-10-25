@@ -4,7 +4,7 @@ import { prisma } from '@/lib/db';
 import { getSession, requireAuth } from '@/lib/auth';
 import { logAudit } from '@/lib/audit';
 import { decrypt, encrypt } from '@/lib/crypto';
-import { getActor, isAdmin } from '@/lib/work-auth';
+import { getActor, isAdmin, isFinance } from '@/lib/work-auth';
 import { isValidAccountNumber, last4 } from '@/lib/payment';
 import { serializeVendor } from '@/lib/payment-server';
 
@@ -15,9 +15,10 @@ export async function GET(req: NextRequest) {
   const actor = await getActor(session.userId);
   if (!actor) return NextResponse.json({ error: 'not_found' }, { status: 404 });
   const admin = isAdmin(actor);
+  const finance = isFinance(actor);
   const all = new URL(req.url).searchParams.get('all') === '1' && admin;
   const rows = await prisma.payment_vendors.findMany({ where: all ? {} : { is_active: true }, orderBy: [{ name: 'asc' }] });
-  return NextResponse.json({ items: await Promise.all(rows.map(v => serializeVendor(v, admin))) });
+  return NextResponse.json({ items: await Promise.all(rows.map(v => serializeVendor(v, finance))) });
 }
 
 const optional = (re: RegExp) => z.string().trim().regex(re).optional().or(z.literal('').transform(() => undefined));

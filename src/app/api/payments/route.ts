@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/db';
 import { getSession, requireAuth } from '@/lib/auth';
-import { getActor, isAdmin } from '@/lib/work-auth';
+import { getActor, isFinance } from '@/lib/work-auth';
 import { saveUploadedFiles, deleteStoredFiles } from '@/lib/attachment-storage';
 import { MAX_ATTACHMENT_BYTES } from '@/lib/attachment-limits';
 import { isReceiptType } from '@/lib/expense';
@@ -18,7 +18,7 @@ export async function GET(req: NextRequest) {
   requireAuth(session);
   const actor = await getActor(session.userId);
   if (!actor) return NextResponse.json({ error: 'not_found' }, { status: 404 });
-  const admin = isAdmin(actor);
+  const admin = isFinance(actor); // finance staff (admins + 経理担当) see every request in full
 
   const sp = new URL(req.url).searchParams;
   const all = sp.get('scope') === 'all';
