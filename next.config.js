@@ -15,6 +15,10 @@ const SECURITY_HEADERS = [
     key: 'Permissions-Policy',
     value: 'camera=(), microphone=(), geolocation=(), payment=()',
   },
+  // Other sites' windows can't keep a handle on ours, and other sites can't embed our files
+  { key: 'Cross-Origin-Opener-Policy', value: 'same-origin' },
+  { key: 'Cross-Origin-Resource-Policy', value: 'same-origin' },
+  { key: 'X-Permitted-Cross-Domain-Policies', value: 'none' },
   {
     // 2-year HSTS — only effective over HTTPS; harmless over HTTP (browsers ignore it)
     key: 'Strict-Transport-Security',
@@ -84,6 +88,11 @@ const nextConfig = {
         source: '/(.*)',
         headers: SECURITY_HEADERS,
       },
+      // Answers that hold personal or financial data must never be kept by a browser or a shared cache
+      ...['/api/auth/:path*', '/api/security/:path*', '/api/admin/:path*', '/api/bank-accounts/:path*', '/api/transfers/:path*', '/api/profile/:path*'].map(source => ({
+        source,
+        headers: [{ key: 'Cache-Control', value: 'no-store, max-age=0' }],
+      })),
       // Service Worker must not be cached and must be allowed at root scope
       {
         source: '/sw.js',

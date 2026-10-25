@@ -38,7 +38,7 @@ describe('POST /api/users', () => {
     (getSession as any).mockResolvedValue({ userId: 'user-id', role: 'user' });
     (prisma.users.findUnique as any).mockResolvedValue({ id: 'user-id', role: 'user' });
 
-    const req = mockNextRequest({ name: 'New User', email: 'new@example.com', password: 'password123' });
+    const req = mockNextRequest({ name: 'New User', email: 'new@example.com', password: 'Tr0ub4dor-9x-Pw' });
     const res = await POST(req);
     expect(res.status).toBe(403);
   });
@@ -51,7 +51,7 @@ describe('POST /api/users', () => {
         return Promise.resolve(null);
     });
 
-    const req = mockNextRequest({ name: 'Duplicate User', email: 'duplicate@example.com', password: 'password123' });
+    const req = mockNextRequest({ name: 'Duplicate User', email: 'duplicate@example.com', password: 'Tr0ub4dor-9x-Pw' });
     const res = await POST(req);
     const data = await res.json();
     
@@ -71,7 +71,7 @@ describe('POST /api/users', () => {
     const req = mockNextRequest({
       name: 'New User',
       email: 'new@example.com',
-      password: 'password123',
+      password: 'Tr0ub4dor-9x-Pw',
       role: 'admin',
       mattermost_user_id: 'mm123'
     });
@@ -87,7 +87,7 @@ describe('POST /api/users', () => {
         email: 'new@example.com',
         role: 'admin',
         mattermost_user_id: 'mm123',
-        password_hash: 'hashed_password123'
+        password_hash: 'hashed_Tr0ub4dor-9x-Pw'
       })
     }));
   });

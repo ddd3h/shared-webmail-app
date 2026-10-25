@@ -91,6 +91,8 @@ model users {
   sessions                   sessions[]
   login_logs                 login_logs[]
   last_login_at              DateTime?
+  locked_at                  DateTime? // an admin locked the account: no login, sessions revoked
+  known_devices              known_devices[]
   worker_type                WorkerType               @default(employee)
   attendance_records         attendance_records[]
   work_reports               work_reports[]
@@ -608,6 +610,9 @@ model sessions {
   ip_address       String
   user_agent       String?
   network_type     String   @default("residential")
+  country          String?
+  city             String?
+  device_id        String?
   expires_at       DateTime
   last_activity_at DateTime @default(now())
   created_at       DateTime @default(now())
@@ -1157,4 +1162,53 @@ model eval_scores {
   criterion  eval_criteria @relation(fields: [criterion_id], references: [id], onDelete: Cascade)
 
   @@unique([evaluation_id, criterion_id])
+}
+
+
+// ---- セキュリティ ----
+// Browsers a person has logged in from before. The browser keeps a random token in a cookie; only its hash is stored here.
+// A login from a browser that is not in this table is a "new device" (the person is told about it).
+model known_devices {
+  id            String   @id @default(cuid())
+  user_id       String
+  token_hash    String   @unique
+  user_agent    String?
+  first_ip      String
+  last_ip       String
+  country       String?
+  city          String?
+  first_seen_at DateTime @default(now())
+  last_seen_at  DateTime @default(now())
+
+  user users @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@index([user_id])
+}
+
+// Addresses that may not reach the app. `ip` is a single address or an IPv4 CIDR. source: 'manual' (an admin) | 'auto' (sweep detection).
+model ip_blocks {
+  id            String    @id @default(cuid())
+  ip            String    @unique
+  reason        String
+  source        String    @default("manual")
+  expires_at    DateTime? // null = until an admin removes it
+  created_by_id String?
+  created_at    DateTime  @default(now())
+
+  @@index([expires_at])
+}
+
+// Things worth a human's attention: attacks noticed, accounts locked, logins from new places. severity: info | warn | alert
+model security_events {
+  id         String   @id @default(cuid())
+  type       String
+  severity   String   @default("info")
+  ip         String?
+  user_id    String?
+  email      String?
+  detail     String?
+  created_at DateTime @default(now())
+
+  @@index([created_at])
+  @@index([type])
 }

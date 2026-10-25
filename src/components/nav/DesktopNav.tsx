@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import Dropdown from './Dropdown';
 import Icon from './Icon';
-import { ACCOUNT_ITEMS, ADMIN_ITEM, APPROVALS_ITEM, MAIN_ITEMS, NOTIFICATIONS_ITEM, ORG_GROUP_LABEL, ORG_ITEMS, TRANSFERS_ITEM, WORK_GROUP_LABEL, WORK_ITEMS, isActivePath, iconPath, type NavItem } from './items';
+import { ACCOUNT_ITEMS, ADMIN_ITEM, SECURITY_ITEM, APPROVALS_ITEM, MAIN_ITEMS, NOTIFICATIONS_ITEM, ORG_GROUP_LABEL, ORG_ITEMS, TRANSFERS_ITEM, WORK_GROUP_LABEL, WORK_ITEMS, isActivePath, iconPath, type NavItem } from './items';
 import { logout, type NavUser } from './useNavUser';
 
 const Chevron = () => <svg className="w-3.5 h-3.5 opacity-60" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>;
@@ -44,7 +44,7 @@ const initialOf = (name: string) => (name.trim() ? [...name.trim()][0] : '?');
 export default function DesktopNav({ user }: { user: NavUser }) {
   const pathname = usePathname();
   const workItems = [...WORK_ITEMS, ...(user.canApprove ? [APPROVALS_ITEM] : []), ...(user.isFinance ? [TRANSFERS_ITEM] : [])];
-  const accountItems = user.isAdmin ? [...ACCOUNT_ITEMS, ADMIN_ITEM] : ACCOUNT_ITEMS;
+  const accountItems = user.isAdmin ? [...ACCOUNT_ITEMS, ADMIN_ITEM, SECURITY_ITEM] : ACCOUNT_ITEMS;
 
   return (
     <header className="hidden md:block sticky top-0 z-50 bg-white border-b border-gray-200 shadow-sm">

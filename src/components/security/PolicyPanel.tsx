@@ -1,0 +1,42 @@
+'use client';
+import { useEffect, useState } from 'react';
+import type { Policy } from './types';
+
+// アクセスの条件: どこから使えるか、セッションをどれだけ続けるか、端末の確認。
+export default function PolicyPanel() {
+  const [p, setP] = useState<Policy | null>(null);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  useEffect(() => { fetch('/api/admin/security/policy').then(r => r.json()).then(setP).catch(() => {}); }, []);
+
+  async function save() {
+    if (!p) return;
+    const res = await fetch('/api/admin/security/policy', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ allowed_cidrs: p.allowed_cidrs, allowed_countries: p.allowed_countries, session_max_days: Number(p.session_max_days), new_device_alert: p.new_device_alert, device_binding: p.device_binding }) });
+    const e = await res.json().catch(() => ({}));
+    setMsg(res.ok ? { ok: true, text: '保存しました' } : { ok: false, text: e.message ?? '保存できませんでした。入力を確認してください' });
+  }
+
+  if (!p) return <p className="text-sm text-gray-400">読み込み中…</p>;
+  return (
+    <section className="card p-5 space-y-4" aria-label="アクセスの条件">
+      <div><h2 className="font-semibold text-gray-900">アクセスの条件</h2><p className="text-xs text-gray-500 mt-0.5">いまあなたが使っているアドレス: <span className="font-mono text-gray-700">{p.your_ip}</span></p></div>
+      <div>
+        <label className="label text-xs">使えるネットワーク（1行に1つ。空なら制限なし）</label>
+        <textarea className="input font-mono text-sm" rows={4} placeholder={'203.0.113.7  # 本社\n198.51.100.0/24  # 支社'} value={p.allowed_cidrs} onChange={e => setP({ ...p, allowed_cidrs: e.target.value })} />
+        <p className="mt-1 text-xs text-gray-500">設定すると、それ以外のアドレスからはログインも利用もできません。ご自身のアドレスが含まれていないと保存できません。</p>
+      </div>
+      <div>
+        <label className="label text-xs">ログインを許可する国（英語名をカンマ区切り。空なら制限なし）</label>
+        <input className="input" placeholder="Japan" value={p.allowed_countries} onChange={e => setP({ ...p, allowed_countries: e.target.value })} />
+      </div>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div><label className="label text-xs">セッションの最長日数（操作を続けていても、この日数でログアウト）</label><input className="input" type="number" min={1} max={90} value={p.session_max_days} onChange={e => setP({ ...p, session_max_days: Number(e.target.value) })} /></div>
+        <div className="space-y-2 pt-5">
+          <label className="flex items-start gap-2 text-sm text-gray-700"><input type="checkbox" className="mt-1" checked={p.new_device_alert} onChange={e => setP({ ...p, new_device_alert: e.target.checked })} />新しい端末からログインしたら本人にMattermostで知らせる</label>
+          <label className="flex items-start gap-2 text-sm text-gray-700"><input type="checkbox" className="mt-1" checked={p.device_binding} onChange={e => setP({ ...p, device_binding: e.target.checked })} />Cookieを別の種類の端末で使われたら、セッションを終了する</label>
+        </div>
+      </div>
+      {msg && <p className={`rounded-lg px-3 py-2 text-sm ${msg.ok ? 'bg-emerald-50 text-emerald-800' : 'bg-red-50 text-red-700'}`} role="status">{msg.text}</p>}
+      <div className="flex justify-end"><button onClick={save} className="btn btn-primary btn-sm">保存</button></div>
+    </section>
+  );
+}

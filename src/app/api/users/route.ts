@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { getSession, requireAuth } from '@/lib/auth';
 import { hashPassword } from '@/lib/password';
+import { passwordProblem } from '@/lib/password-policy';
 import { z } from 'zod';
 
 export async function GET(req: NextRequest) {
@@ -41,7 +42,7 @@ export async function POST(req: NextRequest) {
   const schema = z.object({
     name: z.string().min(1),
     email: z.string().email(),
-    password: z.string().min(8),
+    password: z.string().min(1).max(200),
     role: z.enum(['user', 'admin']).default('user'),
     mattermost_user_id: z.string().nullable().optional()
   });
@@ -52,6 +53,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'bad_request', details: result.error.format() }, { status: 400 });
   }
   const input = result.data;
+  const weak = passwordProblem(input.password, { email: input.email, name: input.name });
+  if (weak) return NextResponse.json({ error: 'password_weak', message: weak }, { status: 400 });
 
   // Check for email uniqueness
   const existing = await prisma.users.findUnique({ where: { email: input.email } });

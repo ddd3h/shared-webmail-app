@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { getSession, requireAuth } from '@/lib/auth';
 import { hashPassword } from '@/lib/password';
+import { passwordProblem } from '@/lib/password-policy';
+import { revokeUserSessions } from '@/lib/auth';
 import { logAudit } from '@/lib/audit';
 import { clearAvatarCache } from '@/lib/avatar-cache';
 import { deleteStoredFiles } from '@/lib/attachment-storage';
@@ -20,7 +22,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     name: z.string().min(1).optional(),
     email: z.string().email().optional(),
     role: z.enum(['user', 'admin']).optional(),
-    password: z.string().min(8).optional(),
+    password: z.string().min(1).max(200).optional(),
     mattermost_user_id: z.string().nullable().optional(),
   });
 
@@ -42,13 +44,20 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     data.email = input.email;
   }
   if (input.role) data.role = input.role;
-  if (input.password) data.password_hash = await hashPassword(input.password);
+  if (input.password) {
+    const target = await prisma.users.findUnique({ where: { id }, select: { email: true, name: true } });
+    const weak = passwordProblem(input.password, { email: input.email ?? target?.email, name: input.name ?? target?.name });
+    if (weak) return NextResponse.json({ error: 'password_weak', message: weak }, { status: 400 });
+    data.password_hash = await hashPassword(input.password);
+  }
   
   const mattermostIdChanged = 'mattermost_user_id' in input;
   if (mattermostIdChanged) data.mattermost_user_id = input.mattermost_user_id || null;
 
   try {
     const updated = await prisma.users.update({ where: { id }, data });
+    // a password set by an admin ends the person's sessions (they may have been opened with the old one)
+    if (data.password_hash && id !== session.userId) await revokeUserSessions(id);
 
     // Clear avatar cache so the new Mattermost ID's image is fetched immediately
     if (mattermostIdChanged) clearAvatarCache(id).catch(() => {});

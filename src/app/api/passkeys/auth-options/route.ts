@@ -5,6 +5,7 @@ import { storeChallenge } from '@/lib/passkey-challenge';
 import { getRpConfig } from '@/lib/passkey-rp';
 import { checkRateLimit, getClientIp } from '@/lib/rate-limit';
 import { sendDosAlert } from '@/lib/dos-alert';
+import { gateAddress } from '@/lib/login-guard';
 import { randomUUID } from 'crypto';
 
 // 20 challenge requests per 5 minutes per IP
@@ -14,6 +15,8 @@ const IP_LIMIT = 20;
 // POST body: { email? } — if no email, discoverable credential flow
 export async function POST(req: NextRequest) {
   const ip = getClientIp(req);
+  const address = await gateAddress(ip);
+  if (!address.ok) return NextResponse.json({ error: address.error }, { status: address.status });
   const result = checkRateLimit(`passkey-options:ip:${ip}`, IP_LIMIT, WINDOW_MS);
   if (!result.allowed) {
     if (result.isFirstBlock) sendDosAlert(ip, 'passkey-options', result.retryAfterSec);

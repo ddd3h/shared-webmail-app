@@ -246,3 +246,24 @@ export function notifyEvaluationFinalized(evaluationId: string) {
     await sendDirectMessage(e.user.id, e.user.email, `📝 **人事評価の結果が公開されました**\n\n「${mmText(e.cycle.name, 60)}」の結果を確認できます。\n\n${appUrl()}/evaluations`, 'eval_finalized');
   });
 }
+
+// ---- security notices to the person whose account it is (no passwords or tokens, only where/what) ----
+export function notifyNewDeviceLogin(userId: string, o: { place: string; device: string; ip: string; method: string; at: Date }) {
+  return safely('new_device_login', async () => {
+    const u = await prisma.users.findUnique({ where: { id: userId }, select: { id: true, email: true } });
+    if (!u) return;
+    const when = o.at.toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' });
+    await sendDirectMessage(u.id, u.email,
+      `🔐 **新しい端末からログインがありました**\n\n日時: ${when}\n端末: ${mmText(o.device, 60)}\n場所: ${mmText(o.place, 80)}（${mmText(o.ip, 45)}）\n方法: ${o.method}\n\n` +
+      `心当たりがない場合は、すぐにパスワードを変更し、「ログイン中の端末」から該当の端末を終了してください。\n${appUrl()}/profile`, 'security_new_device');
+  });
+}
+
+export function notifyLoginLockout(userId: string, ip: string) {
+  return safely('login_lockout', async () => {
+    const u = await prisma.users.findUnique({ where: { id: userId }, select: { id: true, email: true } });
+    if (!u) return;
+    await sendDirectMessage(u.id, u.email,
+      `⚠️ **ログインに繰り返し失敗しています**\n\nあなたのアカウントに、${mmText(ip, 45)} から何度もログインが試みられ、一時的に制限しました。ご自身でない場合は、パスワードを変更してください。\n${appUrl()}/profile`, 'security_lockout');
+  });
+}

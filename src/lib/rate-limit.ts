@@ -1,4 +1,5 @@
 import type { NextRequest } from 'next/server';
+import { clientIpFrom } from '@/lib/client-ip';
 
 interface Entry {
   count: number;
@@ -53,10 +54,7 @@ export function resetRateLimit(key: string) {
   store.delete(key);
 }
 
+/** The caller's address (see client-ip.ts for why the X-Forwarded-For header is not taken at face value). */
 export function getClientIp(req: NextRequest): string {
-  return (
-    req.headers.get('x-forwarded-for')?.split(',')[0].trim() ||
-    req.headers.get('x-real-ip') ||
-    'unknown'
-  );
+  return clientIpFrom(name => req.headers.get(name));
 }

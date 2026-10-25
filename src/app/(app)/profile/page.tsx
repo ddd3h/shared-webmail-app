@@ -1,4 +1,5 @@
 'use client';
+import SecuritySection from '@/components/security/SecuritySection';
 import { useEffect, useState, useCallback } from 'react';
 import { startRegistration } from '@simplewebauthn/browser';
 
@@ -409,6 +410,7 @@ export default function ProfilePage() {
 
       {/* Passkeys */}
       <PasskeySection />
+      <SecuritySection />
 
       {/* Signature */}
       <div className="card p-5 space-y-4">

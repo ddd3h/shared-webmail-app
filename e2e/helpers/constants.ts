@@ -8,7 +8,7 @@ export const ENCRYPTION_KEY_HEX = '111111111111111111111111111111111111111111111
 
 export const PASSWORD = 'E2ePassw0rd!';
 
-export type Role = 'admin' | 'admin2' | 'sato' | 'suzuki' | 'yamada' | 'tanaka' | 'keiri';
+export type Role = 'admin' | 'admin2' | 'sato' | 'suzuki' | 'yamada' | 'tanaka' | 'keiri' | 'guest';
 
 // worker_type: 従業員=employee / 業務委託=contractor / 役員=executive
 export const USERS: Record<Role, { id: string; name: string; email: string; role: 'admin' | 'user'; worker_type: 'employee' | 'contractor' | 'executive'; is_accounting?: boolean }> = {
@@ -19,6 +19,8 @@ export const USERS: Record<Role, { id: string; name: string; email: string; role
   yamada: { id: 'u_yamada', name: '山田',     email: 'yamada@e2e.test', role: 'user',  worker_type: 'executive' },
   tanaka: { id: 'u_tanaka', name: '田中',     email: 'tanaka@e2e.test', role: 'user',  worker_type: 'employee' },
   // 経理担当: a normal user who may also make 全銀 files and check receiving accounts
+  // a person nobody else's test depends on: security tests may end all of this account's sessions or lock it
+  guest:  { id: 'u_guest',  name: '来客',     email: 'guest@e2e.test',  role: 'user',  worker_type: 'contractor' },
   keiri:  { id: 'u_keiri',  name: '経理',     email: 'keiri@e2e.test',  role: 'user',  worker_type: 'employee', is_accounting: true },
 };
 

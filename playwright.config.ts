@@ -41,6 +41,12 @@ export default defineConfig({
     env: {
       DATABASE_URL,
       SESSION_SECRET: 'e2e-session-secret-at-least-32-characters-long',
+      // tests change settings and block lists directly in the DB, so the server must not remember them for long
+      SECURITY_CACHE_TTL_MS: '200',
+      // the tests play the part of one reverse proxy that appends the client address
+      TRUSTED_PROXY_COUNT: '1',
+      // the specs run through hundreds of requests a minute as one user; only the guest account, used by the security specs, is held to the budgets
+      API_BUDGET_EXEMPT_USER_IDS: 'u_admin,u_admin2,u_sato,u_suzuki,u_yamada,u_tanaka,u_keiri',
       ENCRYPTION_KEY_HEX,
       ENCRYPTION_KEY_VERSION: 'v1',
       NEXT_PUBLIC_APP_URL: BASE_URL,
