@@ -101,6 +101,11 @@ model users {
   expense_reimbursed         expense_claims[]         @relation("expense_reimburser")
   business_trips             business_trips[]         @relation("trip_applicant")
   trips_reviewed             business_trips[]         @relation("trip_reviewer")
+  payment_requests           payment_requests[]       @relation("payment_applicant")
+  payments_reviewed          payment_requests[]       @relation("payment_reviewer")
+  payments_paid              payment_requests[]       @relation("payment_payer")
+  vendors_created            payment_vendors[]        @relation("vendor_creator")
+  vendors_verified           payment_vendors[]        @relation("vendor_verifier")
   scheduled_sends            scheduled_sends[]
   calendar_events_created    calendar_events[]        @relation("calendar_event_creator")
   calendar_events_owned      calendar_events[]        @relation("calendar_event_owner")
@@ -904,4 +909,84 @@ model trip_allowance_lines {
   type trip_allowance_types?  @relation(fields: [type_id], references: [id], onDelete: SetNull)
 
   @@index([trip_id])
+}
+
+// Payee (取引先) with its bank account. The account number is encrypted at rest; only the last
+// digits are kept in clear for display. verified_at is set by an admin; any change to the bank
+// details clears it, and a request can only be approved while its vendor is verified.
+model payment_vendors {
+  id                 String    @id @default(cuid())
+  name               String
+  name_kana          String?
+  bank_name          String
+  bank_code          String?
+  branch_name        String
+  branch_code        String?
+  account_type       String    // 'ordinary' | 'checking' | 'savings'
+  account_number_enc String
+  account_last4      String
+  account_holder     String    // 口座名義（カナ）
+  notes              String?
+  is_active          Boolean   @default(true)
+  verified_at        DateTime?
+  verified_by_id     String?
+  created_by_id      String?
+  created_at         DateTime  @default(now())
+  updated_at         DateTime  @updatedAt
+
+  verifier users?                @relation("vendor_verifier", fields: [verified_by_id], references: [id], onDelete: SetNull)
+  creator  users?                @relation("vendor_creator", fields: [created_by_id], references: [id], onDelete: SetNull)
+  requests payment_requests[]
+
+  @@index([name])
+}
+
+// Bank transfer request (振込申請). status: pending -> approved | rejected; approved -> paid (振込済).
+// transfer amount = amount - deduction_amount - (fee if fee_bearer = 'vendor').
+model payment_requests {
+  id               String    @id @default(cuid())
+  user_id          String
+  vendor_id        String
+  title            String
+  amount           Int
+  deduction_amount Int       @default(0)
+  fee              Int       @default(0)
+  fee_bearer       String    @default("us") // 'us' (当方負担) | 'vendor' (先方負担: deducted from the transfer)
+  invoice_number   String?
+  invoice_date     DateTime? @db.Date
+  due_date         DateTime  @db.Date
+  description      String?
+  status           String    @default("pending")
+  reviewed_by_id   String?
+  reviewed_at      DateTime?
+  review_comment   String?
+  paid_at          DateTime? @db.Date
+  paid_by_id       String?
+  paid_note        String?
+  created_at       DateTime  @default(now())
+  updated_at       DateTime  @updatedAt
+
+  user      users              @relation("payment_applicant", fields: [user_id], references: [id], onDelete: Cascade)
+  vendor    payment_vendors    @relation(fields: [vendor_id], references: [id])
+  reviewer  users?             @relation("payment_reviewer", fields: [reviewed_by_id], references: [id], onDelete: SetNull)
+  payer     users?             @relation("payment_payer", fields: [paid_by_id], references: [id], onDelete: SetNull)
+  documents payment_documents[]
+
+  @@index([user_id, due_date])
+  @@index([status])
+  @@index([vendor_id, invoice_number])
+}
+
+model payment_documents {
+  id           String   @id @default(cuid())
+  request_id   String
+  filename     String
+  content_type String
+  size         Int
+  storage_key  String
+  created_at   DateTime @default(now())
+
+  request payment_requests @relation(fields: [request_id], references: [id], onDelete: Cascade)
+
+  @@index([request_id])
 }

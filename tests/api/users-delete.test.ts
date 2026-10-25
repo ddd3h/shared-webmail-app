@@ -15,6 +15,7 @@ vi.mock('@/lib/db', () => ({
     drafts: { deleteMany: vi.fn() },
     draft_attachments: { findMany: vi.fn(async () => []) },
     expense_receipts: { findMany: vi.fn(async () => []) },
+    payment_documents: { findMany: vi.fn(async () => []) },
     $transaction: vi.fn((operations) => Promise.all(operations)),
   }
 }));

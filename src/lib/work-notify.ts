@@ -145,3 +145,40 @@ export function notifyTripReviewed(tripId: string, action: 'approve' | 'reject')
     await sendDirectMessage(t.user.id, t.user.email, msg, action === 'approve' ? 'trip_approved' : 'trip_rejected');
   });
 }
+
+// ---- bank transfer requests (account details are never put in a DM) ----
+export function notifyPaymentSubmitted(requestId: string, resubmitted = false) {
+  return safely('payment_submitted', async () => {
+    const r = await prisma.payment_requests.findUnique({ where: { id: requestId }, include: { user: { select: { id: true, name: true } }, vendor: { select: { name: true } } } });
+    if (!r) return;
+    const msg =
+      `🏦 **振込申請が${resubmitted ? '再申請されました' : '届きました'}**\n\n` +
+      `**${mmText(r.user.name, 40)}** さん ・ ${mmText(r.vendor.name, 60)} 宛 ・ **${yen(r.amount)}**\n` +
+      `件名: ${mmText(r.title, 100)} ・ 支払期日 ${r.due_date.toISOString().slice(0, 10)}\n\n承認・却下: ${appUrl()}/payments`;
+    await dmAll(await adminsExcept(r.user_id), msg, 'payment_submitted');
+  });
+}
+
+export function notifyPaymentReviewed(requestId: string, action: 'approve' | 'reject') {
+  return safely('payment_reviewed', async () => {
+    const r = await prisma.payment_requests.findUnique({ where: { id: requestId }, include: { user: { select: { id: true, email: true } }, vendor: { select: { name: true } } } });
+    if (!r) return;
+    const label = `${mmText(r.vendor.name, 60)} 宛「${mmText(r.title, 80)}」 ${yen(r.amount)}`;
+    const msg = action === 'approve'
+      ? `✅ **振込申請が承認されました**\n\n${label}\n支払期日までに振込が行われます。\n\n${appUrl()}/payments`
+      : `❌ **振込申請が却下されました**\n\n${label}\n理由: ${mmText(r.review_comment || '(なし)', 300)}\n\n修正して再申請: ${appUrl()}/payments`;
+    await sendDirectMessage(r.user.id, r.user.email, msg, action === 'approve' ? 'payment_approved' : 'payment_rejected');
+  });
+}
+
+// Transferred -> the applicant of each request
+export function notifyPaymentPaid(requestIds: string[], paidDate: string) {
+  return safely('payment_paid', async () => {
+    const rows = await prisma.payment_requests.findMany({
+      where: { id: { in: requestIds } },
+      select: { title: true, amount: true, user: { select: { id: true, email: true } }, vendor: { select: { name: true } } },
+    });
+    await Promise.all(rows.map(r => sendDirectMessage(r.user.id, r.user.email,
+      `💴 **振込が完了しました**\n\n${mmText(r.vendor.name, 60)} 宛「${mmText(r.title, 80)}」 ${yen(r.amount)}（振込日 ${paidDate}）\n\n${appUrl()}/payments`, 'payment_paid')));
+  });
+}
