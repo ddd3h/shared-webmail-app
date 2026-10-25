@@ -103,6 +103,13 @@ model users {
   trips_reviewed             business_trips[]         @relation("trip_reviewer")
   is_accounting              Boolean                  @default(false)
   bank_account               user_bank_accounts?      @relation("bank_owner")
+  org_unit_id                String?
+  position_id                String?
+  org_unit                   org_units?               @relation("unit_members", fields: [org_unit_id], references: [id], onDelete: SetNull)
+  position                   org_positions?           @relation(fields: [position_id], references: [id], onDelete: SetNull)
+  headed_units               org_units[]              @relation("unit_head")
+  evaluations_received       evaluations[]            @relation("eval_subject")
+  evaluations_to_do          evaluations[]            @relation("eval_evaluator")
   bank_accounts_verified     user_bank_accounts[]     @relation("bank_verifier")
   transfer_batches           transfer_batches[]       @relation("batch_creator")
   payment_requests           payment_requests[]       @relation("payment_applicant")
@@ -1044,4 +1051,110 @@ model transfer_batches {
   payslips payslips[]
 
   @@index([created_at])
+}
+
+
+// ---- 組織 ----
+// 部署・チーム。親子でツリーになる。head_user_id が部署長（部下の承認・評価の担当）。
+model org_units {
+  id           String   @id @default(cuid())
+  name         String
+  parent_id    String?
+  head_user_id String?
+  sort         Int      @default(0)
+  created_at   DateTime @default(now())
+  updated_at   DateTime @updatedAt
+
+  parent   org_units?  @relation("unit_tree", fields: [parent_id], references: [id], onDelete: SetNull)
+  children org_units[] @relation("unit_tree")
+  head     users?      @relation("unit_head", fields: [head_user_id], references: [id], onDelete: SetNull)
+  members  users[]     @relation("unit_members")
+
+  @@index([parent_id])
+}
+
+// 役職。permissions は ORG_CAPABILITIES のキー。部署長になっている部署（配下を含む）にだけ効く。
+model org_positions {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  level       Int      @default(0) // 大きいほど上位（表示順）
+  permissions String[]
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+
+  members users[]
+}
+
+// ---- 人事評価 ----
+// status: draft（準備中）→ open（評価中）→ closed（終了）
+model eval_cycles {
+  id            String    @id @default(cuid())
+  name          String
+  period_start  DateTime  @db.Date
+  period_end    DateTime  @db.Date
+  status        String    @default("draft")
+  created_by_id String?
+  opened_at     DateTime?
+  closed_at     DateTime?
+  created_at    DateTime  @default(now())
+  updated_at    DateTime  @updatedAt
+
+  criteria    eval_criteria[]
+  evaluations evaluations[]
+}
+
+model eval_criteria {
+  id          String  @id @default(cuid())
+  cycle_id    String
+  name        String
+  description String?
+  weight      Int     @default(1) // 重み（合計に対する比率で総合点に効く）
+  sort        Int     @default(0)
+
+  cycle  eval_cycles   @relation(fields: [cycle_id], references: [id], onDelete: Cascade)
+  scores eval_scores[]
+
+  @@index([cycle_id])
+}
+
+// 1人1期間につき1つ。自己評価 → 上長評価 → 人事が確定（確定すると本人に公開）。
+model evaluations {
+  id                   String    @id @default(cuid())
+  cycle_id             String
+  user_id              String
+  evaluator_id         String?
+  self_comment         String?
+  self_submitted_at    DateTime?
+  manager_comment      String?
+  manager_submitted_at DateTime?
+  score                Float? // 確定時の総合点（5点満点の加重平均）
+  grade                String? // 確定した等級（S/A/B/C/D）
+  final_comment        String?
+  finalized_at         DateTime?
+  finalized_by_id      String?
+  created_at           DateTime  @default(now())
+  updated_at           DateTime  @updatedAt
+
+  cycle     eval_cycles   @relation(fields: [cycle_id], references: [id], onDelete: Cascade)
+  user      users         @relation("eval_subject", fields: [user_id], references: [id], onDelete: Cascade)
+  evaluator users?        @relation("eval_evaluator", fields: [evaluator_id], references: [id], onDelete: SetNull)
+  scores    eval_scores[]
+
+  @@unique([cycle_id, user_id])
+  @@index([evaluator_id])
+}
+
+model eval_scores {
+  id               String  @id @default(cuid())
+  evaluation_id    String
+  criterion_id     String
+  self_score       Int?
+  self_comment     String?
+  manager_score    Int?
+  manager_comment  String?
+
+  evaluation evaluations   @relation(fields: [evaluation_id], references: [id], onDelete: Cascade)
+  criterion  eval_criteria @relation(fields: [criterion_id], references: [id], onDelete: Cascade)
+
+  @@unique([evaluation_id, criterion_id])
 }

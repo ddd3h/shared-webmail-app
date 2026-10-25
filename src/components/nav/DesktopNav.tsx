@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import Dropdown from './Dropdown';
 import Icon from './Icon';
-import { ACCOUNT_ITEMS, ADMIN_ITEM, MAIN_ITEMS, NOTIFICATIONS_ITEM, TRANSFERS_ITEM, WORK_GROUP_LABEL, WORK_ITEMS, isActivePath, iconPath, type NavItem } from './items';
+import { ACCOUNT_ITEMS, ADMIN_ITEM, APPROVALS_ITEM, MAIN_ITEMS, NOTIFICATIONS_ITEM, ORG_GROUP_LABEL, ORG_ITEMS, TRANSFERS_ITEM, WORK_GROUP_LABEL, WORK_ITEMS, isActivePath, iconPath, type NavItem } from './items';
 import { logout, type NavUser } from './useNavUser';
 
 const Chevron = () => <svg className="w-3.5 h-3.5 opacity-60" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>;
@@ -43,7 +43,7 @@ const initialOf = (name: string) => (name.trim() ? [...name.trim()][0] : '?');
 
 export default function DesktopNav({ user }: { user: NavUser }) {
   const pathname = usePathname();
-  const workItems = user.isFinance ? [...WORK_ITEMS, TRANSFERS_ITEM] : WORK_ITEMS;
+  const workItems = [...WORK_ITEMS, ...(user.canApprove ? [APPROVALS_ITEM] : []), ...(user.isFinance ? [TRANSFERS_ITEM] : [])];
   const accountItems = user.isAdmin ? [...ACCOUNT_ITEMS, ADMIN_ITEM] : ACCOUNT_ITEMS;
 
   return (
@@ -59,6 +59,9 @@ export default function DesktopNav({ user }: { user: NavUser }) {
             {MAIN_ITEMS.map(i => <TopLink key={i.href} item={i} pathname={pathname} />)}
             <Dropdown active={workItems.some(i => isActivePath(pathname, i.href))} trigger={<>{WORK_GROUP_LABEL}<Chevron /></>}>
               {workItems.map(i => <MenuLink key={i.href} item={i} pathname={pathname} />)}
+            </Dropdown>
+            <Dropdown active={ORG_ITEMS.some(i => isActivePath(pathname, i.href))} trigger={<>{ORG_GROUP_LABEL}<Chevron /></>}>
+              {ORG_ITEMS.map(i => <MenuLink key={i.href} item={i} pathname={pathname} />)}
             </Dropdown>
           </nav>
 

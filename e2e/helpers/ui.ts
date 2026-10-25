@@ -44,3 +44,6 @@ export async function openWorkMenu(page: Page) {
 export async function openAccountMenu(page: Page) {
   await page.locator('header').getByRole('button', { name: 'アカウントメニュー' }).click();
 }
+export async function openOrgMenu(page: Page) {
+  await page.locator('header').getByRole('button', { name: /組織・人事/ }).click();
+}

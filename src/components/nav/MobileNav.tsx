@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import Icon from './Icon';
-import { ACCOUNT_ITEMS, ADMIN_ITEM, NOTIFICATIONS_ITEM, TRANSFERS_ITEM, WORK_GROUP_LABEL, WORK_ITEMS, isActivePath, iconPath, type NavItem } from './items';
+import { ACCOUNT_ITEMS, ADMIN_ITEM, APPROVALS_ITEM, NOTIFICATIONS_ITEM, ORG_GROUP_LABEL, ORG_ITEMS, TRANSFERS_ITEM, WORK_GROUP_LABEL, WORK_ITEMS, isActivePath, iconPath, type NavItem } from './items';
 import { logout, type NavUser } from './useNavUser';
 
 const SHEET_MS = 280;
@@ -72,7 +72,7 @@ export default function MobileNav({ user }: { user: NavUser }) {
   const pathname = usePathname();
   const sheet = useSheet(pathname);
   const active = (href: string) => isActivePath(pathname, href);
-  const workItems = user.isFinance ? [...WORK_ITEMS, TRANSFERS_ITEM] : WORK_ITEMS;
+  const workItems = [...WORK_ITEMS, ...(user.canApprove ? [APPROVALS_ITEM] : []), ...(user.isFinance ? [TRANSFERS_ITEM] : [])];
   const otherItems = [NOTIFICATIONS_ITEM, ...ACCOUNT_ITEMS, ...(user.isAdmin ? [ADMIN_ITEM] : [])];
 
   return (
@@ -100,6 +100,8 @@ export default function MobileNav({ user }: { user: NavUser }) {
               <p className="px-2 pb-1 text-sm font-semibold text-gray-900">メニュー{user.name && <span className="ml-2 text-xs font-normal text-gray-500">{user.name} さん</span>}</p>
               <SectionTitle>{WORK_GROUP_LABEL}</SectionTitle>
               <nav className="space-y-0.5">{workItems.map(i => <SheetLink key={i.href} item={i} active={active(i.href)} />)}</nav>
+              <SectionTitle>{ORG_GROUP_LABEL}</SectionTitle>
+              <nav className="space-y-0.5">{ORG_ITEMS.map(i => <SheetLink key={i.href} item={i} active={active(i.href)} />)}</nav>
               <SectionTitle>その他</SectionTitle>
               <nav className="space-y-0.5">{otherItems.map(i => <SheetLink key={i.href} item={i} active={active(i.href)} />)}</nav>
               <div className="border-t border-gray-100 mt-2 pt-2">

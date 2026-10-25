@@ -1,8 +1,8 @@
 'use client';
 import { useEffect, useState } from 'react';
 
-export type NavUser = { name: string; isAdmin: boolean; isFinance: boolean };
-const GUEST: NavUser = { name: '', isAdmin: false, isFinance: false };
+export type NavUser = { name: string; isAdmin: boolean; isFinance: boolean; canApprove: boolean };
+const GUEST: NavUser = { name: '', isAdmin: false, isFinance: false, canApprove: false };
 
 // Who is looking: decides which menu entries exist (管理 for admins, 振込データ for finance staff).
 export function useNavUser(): NavUser {
@@ -10,7 +10,7 @@ export function useNavUser(): NavUser {
   useEffect(() => {
     fetch('/api/work/me')
       .then(r => (r.ok ? r.json() : null))
-      .then(d => { if (d) setUser({ name: d.name ?? '', isAdmin: d.role === 'admin', isFinance: !!d.is_finance }); })
+      .then(d => { if (d) setUser({ name: d.name ?? '', isAdmin: d.role === 'admin', isFinance: !!d.is_finance, canApprove: !!d.can_approve }); })
       .catch(() => {});
   }, []);
   return user;

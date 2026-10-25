@@ -12,10 +12,12 @@ vi.mock('@/lib/db', () => ({
 vi.mock('@/lib/auth', () => ({ getSession: vi.fn(async () => ({ userId: 'u1' })), requireAuth: vi.fn() }));
 vi.mock('@/lib/audit', () => ({ logAudit: vi.fn() }));
 vi.mock('@/lib/work-auth', () => ({ getActor: vi.fn(), isAdmin: (a: any) => a.role === 'admin' }));
+vi.mock('@/lib/org-server', () => ({ canReviewUser: vi.fn(async (a: any) => a.role === 'admin') }));
 vi.mock('@/lib/work-notify', () => ({ notifyTripSubmitted: vi.fn(), notifyTripReviewed: vi.fn() }));
 
 import { prisma } from '@/lib/db';
 import { getActor } from '@/lib/work-auth';
+import { canReviewUser } from '@/lib/org-server';
 import { notifyTripReviewed, notifyTripSubmitted } from '@/lib/work-notify';
 import { GET as list, POST as create } from '@/app/api/trips/route';
 import { PATCH as patch, DELETE as withdraw } from '@/app/api/trips/[id]/route';
@@ -94,8 +96,16 @@ describe('一覧', () => {
 
 describe('承認', () => {
   const act = (b: object) => review(json(b), ctx);
-  it('管理者以外は承認できない', async () => {
+  it('管理者でも、申請者の部署長でもない人は承認できない', async () => {
+    (prisma.business_trips.findUnique as any).mockResolvedValue(trip({ user_id: 'u2' }));
     expect((await act({ action: 'approve' })).status).toBe(403);
+    expect(prisma.business_trips.updateMany).not.toHaveBeenCalled();
+  });
+  it('申請者の部署長（権限あり）は、管理者でなくても承認できる', async () => {
+    (prisma.business_trips.findUnique as any).mockResolvedValue(trip({ user_id: 'u2' }));
+    (prisma.business_trips.updateMany as any).mockResolvedValue({ count: 1 });
+    (canReviewUser as any).mockResolvedValueOnce(true);
+    expect((await act({ action: 'approve' })).status).toBe(200);
   });
   it('却下にはコメントが必要', async () => {
     (getActor as any).mockResolvedValue(actor('admin'));

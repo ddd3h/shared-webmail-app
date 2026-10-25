@@ -15,9 +15,11 @@ vi.mock('@/lib/work-notify', () => ({
 vi.mock('@/lib/attachment-storage', () => ({ saveUploadedFiles: vi.fn(async () => []), deleteStoredFiles: vi.fn() }));
 vi.mock('@/lib/trip-server', () => ({ checkTripLink: vi.fn() }));
 vi.mock('@/lib/work-auth', () => ({ getActor: vi.fn(), isAdmin: (a: any) => a.role === 'admin' }));
+vi.mock('@/lib/org-server', () => ({ canReviewUser: vi.fn(async (a: any) => a.role === 'admin') }));
 
 import { prisma } from '@/lib/db';
 import { getActor } from '@/lib/work-auth';
+import { canReviewUser } from '@/lib/org-server';
 import { checkTripLink } from '@/lib/trip-server';
 import { GET as list } from '@/app/api/expenses/route';
 import { PATCH as edit } from '@/app/api/expenses/[id]/route';
@@ -90,10 +92,22 @@ describe('編集', () => {
 });
 
 describe('承認', () => {
-  it('管理者以外は承認できない', async () => {
+  it('管理者でも、申請者の部署長でもない人は承認できない', async () => {
     (getActor as any).mockResolvedValue(actor());
+    (prisma.expense_claims.findUnique as any).mockResolvedValue({ id: 'c1', user_id: 'u2', status: 'pending', amount: 1000 });
+    (canReviewUser as any).mockResolvedValue(false);
     expect((await review(json({ action: 'approve' }), ctx)).status).toBe(403);
+    expect(prisma.expense_claims.updateMany).not.toHaveBeenCalled();
     expect(notifyExpenseReviewed).not.toHaveBeenCalled();
+  });
+  it('申請者の部署長（権限あり）は、管理者でなくても承認できる', async () => {
+    (getActor as any).mockResolvedValue(actor());
+    (prisma.expense_claims.findUnique as any).mockResolvedValue({ id: 'c1', user_id: 'u2', status: 'pending', amount: 1000 });
+    (prisma.expense_claims.updateMany as any).mockResolvedValue({ count: 1 });
+    (canReviewUser as any).mockResolvedValue(true);
+    expect((await review(json({ action: 'approve' }), ctx)).status).toBe(200);
+    expect(canReviewUser).toHaveBeenCalledWith(expect.objectContaining({ id: 'u1' }), 'u2');
+    expect(notifyExpenseReviewed).toHaveBeenCalledWith('c1', 'approve');
   });
   it('却下にはコメントが必要', async () => {
     (getActor as any).mockResolvedValue(actor('admin'));

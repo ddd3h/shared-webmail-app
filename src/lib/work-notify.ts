@@ -3,6 +3,7 @@
 import { prisma } from '@/lib/db';
 import { mmText, sendDirectMessage } from '@/lib/mattermost-dm';
 import { PAYMENT_LABEL, type PaymentMethod } from '@/lib/expense';
+import { approversOf } from '@/lib/org-server';
 
 const appUrl = () => (process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000').replace(/\/$/, '');
 const yen = (n: number) => `¥${n.toLocaleString('ja-JP')}`;
@@ -15,11 +16,17 @@ async function adminsExcept(userId: string) {
   return prisma.users.findMany({ where: { role: 'admin', id: { not: userId } }, select: { id: true, email: true } });
 }
 
+// Admins plus the unit heads who may approve this person's requests, without the person themselves
+async function reviewersOf(userId: string) {
+  const [admins, heads] = await Promise.all([adminsExcept(userId), approversOf(userId)]);
+  return [...new Map([...admins, ...heads].map(u => [u.id, u])).values()];
+}
+
 async function dmAll(users: { id: string; email: string }[], message: string, type: string) {
   await Promise.all(users.map(u => sendDirectMessage(u.id, u.email, message, type)));
 }
 
-// A new (or resubmitted) claim -> every admin except the claimant
+// A new (or resubmitted) claim -> admins and the claimant's unit heads (never the claimant)
 export function notifyExpenseSubmitted(claimId: string, resubmitted = false) {
   return safely('expense_submitted', async () => {
     const c = await prisma.expense_claims.findUnique({ where: { id: claimId }, include: { user: { select: { id: true, name: true } } } });
@@ -28,8 +35,8 @@ export function notifyExpenseSubmitted(claimId: string, resubmitted = false) {
       `🧾 **経費申請が${resubmitted ? '再申請されました' : '届きました'}**\n\n` +
       `**${mmText(c.user.name, 40)}** さん ・ **${yen(c.amount)}** ・ ${mmText(c.category, 20)}（${PAYMENT_LABEL[c.payment_method as PaymentMethod]}）\n` +
       `件名: ${mmText(c.title, 100)}\n\n` +
-      `承認・却下: ${appUrl()}/expenses`;
-    await dmAll(await adminsExcept(c.user_id), msg, 'expense_submitted');
+      `承認・却下: ${appUrl()}/approvals`;
+    await dmAll(await reviewersOf(c.user_id), msg, 'expense_submitted');
   });
 }
 
@@ -120,7 +127,7 @@ export function notifyExpenseAddedToPayslip(claimIds: string[], payMonth: string
 
 const fmtDate = (d: Date) => `${d.getUTCMonth() + 1}/${d.getUTCDate()}`;
 
-// A trip request (or a resubmission) -> every admin except the applicant
+// A trip request (or a resubmission) -> admins and the applicant's unit heads (never the applicant)
 export function notifyTripSubmitted(tripId: string, resubmitted = false) {
   return safely('trip_submitted', async () => {
     const t = await prisma.business_trips.findUnique({ where: { id: tripId }, include: { user: { select: { id: true, name: true } } } });
@@ -128,8 +135,8 @@ export function notifyTripSubmitted(tripId: string, resubmitted = false) {
     const msg =
       `✈️ **出張申請が${resubmitted ? '再申請されました' : '届きました'}**\n\n` +
       `**${mmText(t.user.name, 40)}** さん ・ ${mmText(t.destination, 60)} ・ ${fmtDate(t.start_date)}〜${fmtDate(t.end_date)}\n` +
-      `業務内容: ${mmText(t.purpose, 120)}\n\n承認・却下: ${appUrl()}/trips`;
-    await dmAll(await adminsExcept(t.user_id), msg, 'trip_submitted');
+      `業務内容: ${mmText(t.purpose, 120)}\n\n承認・却下: ${appUrl()}/approvals`;
+    await dmAll(await reviewersOf(t.user_id), msg, 'trip_submitted');
   });
 }
 
@@ -198,5 +205,44 @@ export function notifyBankAccountVerified(userId: string) {
     const u = await prisma.users.findUnique({ where: { id: userId }, select: { id: true, email: true } });
     if (!u) return;
     await sendDirectMessage(u.id, u.email, `✅ **受取口座が確認されました**\n\n給与などの振込先として使えるようになりました。\n\n${appUrl()}/work`, 'bank_account_verified');
+  });
+}
+
+// ---- 人事評価 (scores and grades are never put in a DM) ----
+async function hrPeopleExcept(userId: string) {
+  return prisma.users.findMany({ where: { id: { not: userId }, OR: [{ role: 'admin' }, { position: { permissions: { has: 'hr_admin' } } }] }, select: { id: true, email: true } });
+}
+
+export function notifyEvaluationOpened(cycleId: string) {
+  return safely('eval_opened', async () => {
+    const c = await prisma.eval_cycles.findUnique({ where: { id: cycleId }, include: { evaluations: { select: { user: { select: { id: true, email: true } } } } } });
+    if (!c) return;
+    const msg = `📝 **人事評価が始まりました**\n\n「${mmText(c.name, 60)}」の自己評価を入力してください。\n\n${appUrl()}/evaluations`;
+    await dmAll(c.evaluations.map(e => e.user), msg, 'eval_opened');
+  });
+}
+
+export function notifyEvaluationSelfSubmitted(evaluationId: string) {
+  return safely('eval_self_submitted', async () => {
+    const e = await prisma.evaluations.findUnique({ where: { id: evaluationId }, include: { user: { select: { name: true } }, evaluator: { select: { id: true, email: true } }, cycle: { select: { name: true } } } });
+    if (!e?.evaluator) return;
+    await sendDirectMessage(e.evaluator.id, e.evaluator.email,
+      `📝 **自己評価が提出されました**\n\n**${mmText(e.user.name, 40)}** さん（${mmText(e.cycle.name, 60)}）の評価をお願いします。\n\n${appUrl()}/evaluations`, 'eval_self_submitted');
+  });
+}
+
+export function notifyEvaluationManagerSubmitted(evaluationId: string) {
+  return safely('eval_manager_submitted', async () => {
+    const e = await prisma.evaluations.findUnique({ where: { id: evaluationId }, include: { user: { select: { id: true, name: true } }, cycle: { select: { name: true } } } });
+    if (!e) return;
+    await dmAll(await hrPeopleExcept(e.user.id), `📝 **上長の評価が提出されました**\n\n**${mmText(e.user.name, 40)}** さん（${mmText(e.cycle.name, 60)}）の結果を確認して、確定してください。\n\n${appUrl()}/evaluations`, 'eval_manager_submitted');
+  });
+}
+
+export function notifyEvaluationFinalized(evaluationId: string) {
+  return safely('eval_finalized', async () => {
+    const e = await prisma.evaluations.findUnique({ where: { id: evaluationId }, include: { user: { select: { id: true, email: true } }, cycle: { select: { name: true } } } });
+    if (!e) return;
+    await sendDirectMessage(e.user.id, e.user.email, `📝 **人事評価の結果が公開されました**\n\n「${mmText(e.cycle.name, 60)}」の結果を確認できます。\n\n${appUrl()}/evaluations`, 'eval_finalized');
   });
 }

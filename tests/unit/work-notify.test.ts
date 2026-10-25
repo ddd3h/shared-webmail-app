@@ -9,6 +9,8 @@ vi.mock('@/lib/db', () => ({
   },
 }));
 const send = vi.fn();
+const approvers = vi.fn(async (_userId: string): Promise<{ id: string; email: string }[]> => []);
+vi.mock('@/lib/org-server', () => ({ approversOf: (id: string) => approvers(id) }));
 vi.mock('@/lib/mattermost-dm', async () => {
   const actual = await vi.importActual<typeof import('@/lib/mattermost-dm')>('@/lib/mattermost-dm');
   return { mmText: actual.mmText, sendDirectMessage: (...a: any[]) => send(...a) };
@@ -24,7 +26,7 @@ const claim = (o: object = {}) => ({
   review_comment: null, user: { id: 'u2', name: '佐藤', email: 'sato@example.com' }, ...o,
 });
 
-beforeEach(() => { vi.resetAllMocks(); send.mockResolvedValue(true); });
+beforeEach(() => { vi.resetAllMocks(); send.mockResolvedValue(true); approvers.mockResolvedValue([]); });
 
 describe('経費申請の通知', () => {
   it('申請者以外の管理者全員に届く', async () => {
@@ -35,8 +37,17 @@ describe('経費申請の通知', () => {
     expect(send).toHaveBeenCalledTimes(2);
     const msg = send.mock.calls[0][2] as string;
     expect(msg).toContain('¥12,345');
-    expect(msg).toContain('/expenses');
+    expect(msg).toContain('/approvals');
     expect(msg).toContain('立替');
+  });
+  it('申請者の部署長（承認できる人）にも届く。管理者と重なっても1通だけ', async () => {
+    (prisma.expense_claims.findUnique as any).mockResolvedValue(claim());
+    (prisma.users.findMany as any).mockResolvedValue([{ id: 'a1', email: 'a1@example.com' }]);
+    approvers.mockResolvedValue([{ id: 'a1', email: 'a1@example.com' }, { id: 'h1', email: 'h1@example.com' }]);
+    await notifyExpenseSubmitted('c1');
+    expect(approvers).toHaveBeenCalledWith('u2');
+    expect(send.mock.calls.map(c => c[0]).sort()).toEqual(['a1', 'h1']);
+    expect(send.mock.calls[0][2]).toContain('/approvals');
   });
   it('再申請と分かる文言になる', async () => {
     (prisma.expense_claims.findUnique as any).mockResolvedValue(claim());

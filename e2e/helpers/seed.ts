@@ -104,3 +104,13 @@ export async function setWorkerType(userId: string, worker_type: 'employee' | 'c
 export async function clearNotifications() {
   await db.mattermost_notifications.deleteMany({});
 }
+
+// 組織と人事評価: periods/forms, 部署, 役職, and everybody's placement
+export async function resetOrg() {
+  await db.eval_cycles.deleteMany({}); // forms and scores go with them
+  await db.users.updateMany({ data: { org_unit_id: null, position_id: null } });
+  await db.org_units.deleteMany({});
+  await db.org_positions.deleteMany({});
+  await db.expense_claims.deleteMany({});
+  await db.business_trips.deleteMany({});
+}
