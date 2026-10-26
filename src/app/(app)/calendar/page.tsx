@@ -1,6 +1,9 @@
 'use client';
 import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
+import Modal from '@/components/Modal';
+import TodoModal from '@/components/todos/TodoModal';
+import { canTick, setDone, type Todo } from '@/components/todos/types';
 
 type Mailbox = { id: string; display_name: string; type: string; email_address: string };
 type CalEvent = {
@@ -67,6 +70,10 @@ function CalendarView() {
   const [googleConfigured, setGoogleConfigured] = useState(false);
   const [loading, setLoading] = useState(false);
   const [draft, setDraft] = useState<Draft | null>(null);
+  // to-dos with a due date are drawn on the calendar too
+  const [todos, setTodos] = useState<Todo[]>([]);
+  const [showTodos, setShowTodos] = useState(true);
+  const [todoModal, setTodoModal] = useState<{ todo?: Todo; due?: string } | null>(null);
   const [showSettings, setShowSettings] = useState(!!sp.get('link'));
   const [msg, setMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
@@ -99,13 +106,18 @@ function CalendarView() {
     try {
       const from = new Date(gridStart.getTime() - 86400_000).toISOString();
       const to = new Date(gridStart.getFullYear(), gridStart.getMonth(), gridStart.getDate() + 43).toISOString();
-      const res = await fetch(`/api/calendar/events?mailboxId=${mailboxId}&from=${from}&to=${to}`);
+      const lastDay = days[days.length - 1];
+      const [res, todoRes] = await Promise.all([
+        fetch(`/api/calendar/events?mailboxId=${mailboxId}&from=${from}&to=${to}`),
+        fetch(`/api/todos?mailboxId=${mailboxId}&from=${ymd(gridStart)}&to=${ymd(lastDay)}`),
+      ]);
       if (res.ok) {
         const d = await res.json();
         setEvents(d.items); setLinks(d.links); setPeople(d.people); setMe(d.me); setPerm(d.permissions); setGoogleConfigured(d.google_configured);
       }
+      if (todoRes.ok) setTodos((await todoRes.json()).items);
     } finally { setLoading(false); }
-  }, [mailboxId, gridStart, ready]);
+  }, [mailboxId, gridStart, days, ready]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -120,7 +132,10 @@ function CalendarView() {
     next.has(id) ? next.delete(id) : next.add(id);
     setShown(next);
   }
+  const todosOn = (d: Date) => showTodos ? todos.filter(t => t.due_date === ymd(d) && (!shown || shown.has(t.assignee?.id ?? TEAM))) : [];
   const selectedEvents = dayEvents(selected);
+  const selectedTodos = todosOn(selected);
+  async function tick(t: Todo) { if (await setDone(t.id, !t.done)) load(); else flash('error', '更新できませんでした'); }
   const today = ymd(new Date());
 
   function newDraft(day: Date): Draft {
@@ -191,6 +206,9 @@ function CalendarView() {
         {perm.can_edit && (
           <button onClick={() => setDraft(newDraft(selected))} className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700">＋ 予定</button>
         )}
+        {perm.can_edit && (
+          <button onClick={() => setTodoModal({ due: ymd(selected) })} className="rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50">＋ ToDo</button>
+        )}
       </div>
 
       {msg && <div className={`text-sm rounded-lg px-3 py-2 ${msg.type === 'success' ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-600'}`}>{msg.text}</div>}
@@ -222,6 +240,9 @@ function CalendarView() {
         <button onClick={() => setCursor(new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1))} className="px-3 py-1.5 rounded-lg border border-gray-300 text-sm" aria-label="次の月">›</button>
         <button onClick={() => { const n = new Date(); setCursor(new Date(n.getFullYear(), n.getMonth(), 1)); setSelected(n); }} className="ml-1 px-3 py-1.5 rounded-lg border border-gray-300 text-sm">今日</button>
         {loading && <span className="text-xs text-gray-400">読み込み中…</span>}
+        <label className="ml-auto flex items-center gap-1.5 text-xs text-gray-600">
+          <input type="checkbox" checked={showTodos} onChange={e => setShowTodos(e.target.checked)} />ToDoも表示
+        </label>
       </div>
 
       <div className="grid md:grid-cols-[1fr_20rem] gap-4">
@@ -232,6 +253,11 @@ function CalendarView() {
           <div className="grid grid-cols-7">
             {days.map(d => {
               const list = dayEvents(d);
+              const dayTodos = todosOn(d);
+              // three lines a day; a day with to-dos keeps room for at least one of them
+              const shownEvents = list.slice(0, dayTodos.length > 0 ? 2 : 3);
+              const shownTodos = dayTodos.slice(0, 3 - shownEvents.length);
+              const hidden = list.length + dayTodos.length - shownEvents.length - shownTodos.length;
               const inMonth = d.getMonth() === cursor.getMonth();
               const isSel = ymd(d) === ymd(selected);
               return (
@@ -239,10 +265,13 @@ function CalendarView() {
                   className={`flex flex-col items-stretch justify-start min-h-18 md:min-h-24 border-t border-l border-gray-100 p-1 text-left align-top ${inMonth ? 'bg-white' : 'bg-gray-50/70'} ${isSel ? 'ring-2 ring-inset ring-blue-500' : ''}`}>
                   <div className={`text-xs mb-0.5 ${ymd(d) === today ? 'flex h-5 w-5 items-center justify-center rounded-full bg-blue-600 text-white' : inMonth ? 'text-gray-700' : 'text-gray-400'}`}>{d.getDate()}</div>
                   <div className="space-y-0.5">
-                    {list.slice(0, 3).map(e => (
+                    {shownEvents.map(e => (
                       <div key={e.id} className="truncate rounded-sm px-1 text-[10px] md:text-[11px] leading-4 text-white" style={{ background: colorOf(e.owner?.id ?? null) }}>{e.title}</div>
                     ))}
-                    {list.length > 3 && <div className="text-[10px] text-gray-500">+{list.length - 3}件</div>}
+                    {shownTodos.map(t => (
+                      <div key={t.id} data-testid="todo-chip" className={`truncate rounded-sm border border-dashed px-1 text-[10px] md:text-[11px] leading-4 ${t.done ? 'border-gray-300 text-gray-400 line-through' : t.overdue ? 'border-red-400 bg-red-50 text-red-700' : 'border-amber-400 bg-amber-50 text-amber-900'}`}>{t.done ? '☑' : '☐'} {t.title}</div>
+                    ))}
+                    {hidden > 0 && <div className="text-[10px] text-gray-500">+{hidden}件</div>}
                   </div>
                 </button>
               );
@@ -267,6 +296,23 @@ function CalendarView() {
               </li>
             ))}
           </ul>
+          {selectedTodos.length > 0 && (
+            <div className="mt-4 border-t border-gray-100 pt-3" aria-label="この日のToDo">
+              <h3 className="mb-2 text-xs font-semibold text-gray-700">ToDo</h3>
+              <ul className="space-y-1.5">
+                {selectedTodos.map(t => (
+                  <li key={t.id} className="flex items-start gap-2">
+                    <button onClick={() => tick(t)} disabled={!canTick(t, perm.can_edit, me)} role="checkbox" aria-checked={t.done} aria-label={`${t.title}を${t.done ? '未完了に戻す' : '完了にする'}`}
+                      className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-sm border text-[10px] ${t.done ? 'border-emerald-500 bg-emerald-500 text-white' : 'border-gray-300 bg-white hover:border-blue-500'} disabled:opacity-40`}>{t.done ? '✓' : ''}</button>
+                    <button onClick={() => setTodoModal({ todo: t })} className="min-w-0 flex-1 text-left">
+                      <div className={`text-sm wrap-break-word ${t.done ? 'text-gray-400 line-through' : t.overdue ? 'text-red-700' : 'text-gray-900'}`}>{t.title}</div>
+                      <div className="text-xs text-gray-500">{t.assignee?.name ?? 'チーム全体'}</div>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
         </aside>
       </div>
       </>}
@@ -313,21 +359,15 @@ function CalendarView() {
         </Modal>
       )}
 
+      {todoModal && (
+        <TodoModal mailboxId={mailboxId} people={people} me={me} todo={todoModal.todo} defaultDue={todoModal.due} canEdit={perm.can_edit}
+          onClose={() => setTodoModal(null)} onChanged={text => { setTodoModal(null); flash('success', text); load(); }} />
+      )}
+
       {showSettings && (
         <GoogleSettings mailboxId={mailboxId} links={links} configured={googleConfigured} focusLink={sp.get('link')}
           onClose={() => setShowSettings(false)} onChanged={load} flash={flash} />
       )}
-    </div>
-  );
-}
-
-function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
-  return (
-    <div className="fixed inset-0 z-70 flex items-end md:items-center justify-center bg-black/40 p-0 md:p-4" onClick={onClose}>
-      <div className="w-full md:max-w-lg max-h-[90vh] overflow-y-auto rounded-t-2xl md:rounded-2xl bg-white p-4 shadow-xl" onClick={e => e.stopPropagation()}>
-        <h3 className="text-base font-semibold text-gray-900 mb-3">{title}</h3>
-        {children}
-      </div>
     </div>
   );
 }

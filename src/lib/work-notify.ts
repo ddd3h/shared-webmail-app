@@ -288,3 +288,18 @@ export function notifyMfaChanged(userId: string, what: 'enabled' | 'disabled' | 
     await sendDirectMessage(u.id, u.email, `🔐 **${text}**\n\n心当たりがない場合は、すぐに管理者に連絡し、パスワードを変更してください。\n${appUrl()}/profile`, `security_mfa_${what}`);
   });
 }
+
+// A to-do was given to somebody -> that person (never when they gave it to themselves)
+export function notifyTodoAssigned(todoId: string, byUserId: string) {
+  return safely('todo_assigned', async () => {
+    const t = await prisma.todos.findUnique({
+      where: { id: todoId },
+      include: { assignee: { select: { id: true, email: true } }, creator: { select: { name: true } }, mailbox: { select: { display_name: true } } },
+    });
+    if (!t?.assignee || t.assignee.id === byUserId) return;
+    const by = await prisma.users.findUnique({ where: { id: byUserId }, select: { name: true } });
+    const due = t.due_date ? `\n期限: ${t.due_date.toISOString().slice(0, 10)}` : '';
+    const msg = `📝 **ToDoが割り当てられました**\n\n${mmText(t.title, 100)}${due}\n担当に指定した人: ${mmText(by?.name ?? '', 40)} ・ ${mmText(t.mailbox.display_name, 40)}\n\n${appUrl()}/todos`;
+    await sendDirectMessage(t.assignee.id, t.assignee.email, msg, 'todo_assigned');
+  });
+}

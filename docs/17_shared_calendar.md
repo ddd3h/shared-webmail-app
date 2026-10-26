@@ -44,6 +44,10 @@ Google Cloud Console で Calendar API を有効化し、OAuthクライアント�
 
 `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` は連絡帳同期と共通です。トークンは暗号化して `calendar_google_links` に保存します。
 
+## ToDoの表示
+
+期限つきの共有ToDoは、同じカレンダーの日のマスと、日を選んだときの一覧にも出ます（詳しくは [25_todos.md](25_todos.md)）。
+
 ## 未対応（今後の課題）
 
 - 繰り返し予定（ローカル予定）、リマインダー・通知

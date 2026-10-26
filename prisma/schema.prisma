@@ -126,6 +126,9 @@ model users {
   scheduled_sends            scheduled_sends[]
   calendar_events_created    calendar_events[]        @relation("calendar_event_creator")
   calendar_events_owned      calendar_events[]        @relation("calendar_event_owner")
+  todos_created              todos[]                  @relation("todo_creator")
+  todos_assigned             todos[]                  @relation("todo_assignee")
+  todos_done                 todos[]                  @relation("todo_done_by")
   calendar_google_links      calendar_google_links[]
 }
 
@@ -156,6 +159,7 @@ model mailboxes {
   scheduled_sends scheduled_sends[]
   calendar_events calendar_events[]
   calendar_google_links calendar_google_links[]
+  todos todos[]
 }
 
 model mailbox_credentials {
@@ -745,6 +749,30 @@ model calendar_events {
   @@unique([link_id, google_event_id])
   @@index([mailbox_id, start_at])
   @@index([owner_user_id])
+}
+
+// A to-do shared by the people of a mailbox's team. They see it with the calendar (it shows on its due date);
+// the same permissions apply: view = can_view, edit = can_reply. assignee null = the whole team.
+model todos {
+  id            String    @id @default(cuid())
+  mailbox_id    String
+  title         String
+  description   String?
+  due_date      DateTime? @db.Date // Japan-local date, no time
+  assignee_id   String?
+  done_at       DateTime?
+  done_by_id    String?
+  created_by_id String?
+  created_at    DateTime  @default(now())
+  updated_at    DateTime  @updatedAt
+
+  mailbox  mailboxes @relation(fields: [mailbox_id], references: [id], onDelete: Cascade)
+  assignee users?    @relation("todo_assignee", fields: [assignee_id], references: [id], onDelete: SetNull)
+  done_by  users?    @relation("todo_done_by", fields: [done_by_id], references: [id], onDelete: SetNull)
+  creator  users?    @relation("todo_creator", fields: [created_by_id], references: [id], onDelete: SetNull)
+
+  @@index([mailbox_id, due_date])
+  @@index([assignee_id])
 }
 
 // One row per employee per day (work_date is the Japan-local date). Times are UTC instants.

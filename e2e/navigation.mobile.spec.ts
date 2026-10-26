@@ -57,7 +57,7 @@ test.describe('スマホのメニューシート', () => {
 
   test('通知・勤怠・給与・経費・出張・振込・予約送信・プロフィール・ログアウトが並ぶ', async ({ page }) => {
     const sheet = await openSheet(page);
-    for (const l of ['通知', '勤怠・給与', '経費', '出張', '振込申請', '組織', '人事評価', '予約送信', 'プロフィール']) await expect(sheet.getByRole('link', { name: l })).toBeVisible();
+    for (const l of ['ToDo', '通知', '勤怠・給与', '経費', '出張', '振込申請', '組織', '人事評価', '予約送信', 'プロフィール']) await expect(sheet.getByRole('link', { name: l })).toBeVisible();
     await expect(sheet.getByRole('button', { name: 'ログアウト' })).toBeVisible();
   });
 
