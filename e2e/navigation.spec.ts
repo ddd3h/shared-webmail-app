@@ -5,7 +5,7 @@ import { hasHorizontalOverflow, openAccountMenu, openOrgMenu, openWorkMenu } fro
 
 test.beforeAll(async () => { await resetOrg(); }); // the menu tests assume nobody heads a unit
 
-const TOP_LEVEL = ['メール', 'カレンダー', '連絡帳', '通知'];
+const TOP_LEVEL = ['メール', 'カレンダー', 'ToDo', '連絡帳', '通知'];
 const WORK_MENU = ['勤怠・給与', '経費', '出張', '振込申請'];
 const ACCOUNT_MENU = ['予約送信', 'プロフィール'];
 
@@ -36,8 +36,8 @@ test.describe('PCのナビゲーション', () => {
         for (const label of [...WORK_MENU, ...ACCOUNT_MENU, '管理', '振込データ']) await expect(header(page).getByRole('link', { name: label, exact: true })).toHaveCount(0);
         await expect(header(page).getByRole('button', { name: /組織・人事/ })).toBeVisible();
         for (const label of ['組織', '人事評価']) await expect(header(page).getByRole('link', { name: label, exact: true })).toHaveCount(0);
-        // top bar = 3 links + the two group buttons (the bell and the account button sit outside the nav)
-        await expect(bar(page).locator('a, button')).toHaveCount(5);
+        // top bar = 4 links (mail, calendar, ToDo, contacts) + the two group buttons (the bell and the account button sit outside the nav)
+        await expect(bar(page).locator('a, button')).toHaveCount(6);
       });
 
       test('「申請・給与」を開くと勤怠・経費・出張・振込申請が並ぶ。「振込データ」は管理者と経理担当だけ', async ({ page }) => {
