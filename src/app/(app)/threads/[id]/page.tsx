@@ -3,6 +3,7 @@ import { use, useEffect, useState, useRef, useCallback, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import ComposeForm, { type SendPayload } from '@/components/ComposeForm';
+import { refreshMail } from '@/lib/unread-client';
 
 type Props = { params: Promise<{ id: string }> };
 
@@ -290,8 +291,8 @@ function ThreadDetailPageInner({ params }: Props) {
       setExpandedMsgs(new Set([lastId]));
     }
     setLoading(false);
-    // Always mark as read when opening a thread
-    fetch(`/api/threads/${id}/read`, { method: 'POST' }).catch(() => {});
+    // Always mark as read when opening a thread; the unread counts and lists are asked again only once that is saved
+    fetch(`/api/threads/${id}/read`, { method: 'POST' }).then(refreshMail).catch(() => {});
   }, [id, router]);
 
   useEffect(() => { load(); }, [load]);
@@ -454,19 +455,19 @@ function ThreadDetailPageInner({ params }: Props) {
 
   async function markUnread() {
     const res = await fetch(`/api/threads/${id}/unread`, { method: 'POST' });
-    if (res.ok) { router.push(backUrl); }
+    if (res.ok) { refreshMail(); router.push(backUrl); }
     else flashMsg('error', '未読にするのに失敗しました');
   }
 
   async function markSpam() {
     const res = await fetch(`/api/threads/${id}/spam`, { method: 'POST' });
-    if (res.ok) { router.push(backUrl); }
+    if (res.ok) { refreshMail(); router.push(backUrl); }
     else flashMsg('error', '迷惑メールとしてマークできませんでした');
   }
 
   async function markUnspam() {
     const res = await fetch(`/api/threads/${id}/unspam`, { method: 'POST' });
-    if (res.ok) { setData(prev => prev ? { ...prev, is_spam: false } : prev); flashMsg('success', '迷惑メールの設定を解除しました'); }
+    if (res.ok) { refreshMail(); setData(prev => prev ? { ...prev, is_spam: false } : prev); flashMsg('success', '迷惑メールの設定を解除しました'); }
     else flashMsg('error', '解除できませんでした');
   }
 
@@ -476,7 +477,7 @@ function ThreadDetailPageInner({ params }: Props) {
       : 'このスレッドとすべてのメッセージを完全に削除しますか？\nこの操作は元に戻せません。';
     if (!confirm(confirmMsg)) return;
     const res = await fetch(`/api/threads/${id}/delete`, { method: 'POST' });
-    if (res.ok) { router.push(backUrl); }
+    if (res.ok) { refreshMail(); router.push(backUrl); }
     else flashMsg('error', '削除に失敗しました');
   }
 
@@ -506,6 +507,7 @@ function ThreadDetailPageInner({ params }: Props) {
       setMoving(false);
       setShowMoveModal(false);
       setMoveStep('idle');
+      refreshMail();
       router.push(`/threads/${id}`);
       await load();
     } else {

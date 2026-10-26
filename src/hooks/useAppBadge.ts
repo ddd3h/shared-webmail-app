@@ -1,32 +1,17 @@
 'use client';
 import { useEffect } from 'react';
+import useSWR from 'swr';
+import { UNREAD_KEY, unreadFetcher } from '@/lib/unread-client';
 
-async function syncBadge() {
-  if (!('setAppBadge' in navigator)) return;
-  try {
-    const res = await fetch('/api/threads/unread-counts');
-    if (!res.ok) return;
-    const { personal, team } = await res.json();
-    const total = (personal || 0) + (team || 0);
-    if (total > 0) {
-      await navigator.setAppBadge(total);
-    } else {
-      await navigator.clearAppBadge();
-    }
-  } catch {}
-}
-
-// Syncs the PWA app badge with the current unread count.
-// - On mount: sets badge to current unread total
-// - On visibilitychange: refreshes when user returns to the tab
+// Keeps the PWA app badge equal to the unread total. The total is the shared unread-count entry, so it follows
+// everything that changes it (reading a thread, marking unread, bulk actions); it is also asked again every minute
+// and whenever the app comes back to the foreground.
 export function useAppBadge() {
-  useEffect(() => {
-    syncBadge();
+  const { data } = useSWR(UNREAD_KEY, unreadFetcher, { refreshInterval: 60_000, revalidateOnFocus: true });
+  const total = data ? (data.personal || 0) + (data.team || 0) : null;
 
-    const onVisibility = () => {
-      if (document.visibilityState === 'visible') syncBadge();
-    };
-    document.addEventListener('visibilitychange', onVisibility);
-    return () => document.removeEventListener('visibilitychange', onVisibility);
-  }, []);
+  useEffect(() => {
+    if (total === null || !('setAppBadge' in navigator)) return;
+    (total > 0 ? navigator.setAppBadge(total) : navigator.clearAppBadge()).catch(() => {}); // the Badge API is best-effort
+  }, [total]);
 }

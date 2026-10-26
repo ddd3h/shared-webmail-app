@@ -1,6 +1,7 @@
 'use client';
 import { Suspense, useEffect, useState, useRef } from 'react';
 import useSWR from 'swr';
+import { UNREAD_KEY, refreshMail } from '@/lib/unread-client';
 import { useRouter, useSearchParams } from 'next/navigation';
 import ComposeForm, { type SendPayload } from '@/components/ComposeForm';
 import SenderAvatar from '@/components/SenderAvatar';
@@ -355,7 +356,7 @@ function ThreadList() {
   const searchPersonalKey = initialized && isSearching ? buildThreadsKey('personal', '', search) : null;
   const searchTeamKey = initialized && isSearching ? buildThreadsKey('team', '', search) : null;
   const draftsKey = initialized && tab === 'drafts' ? '/api/drafts' : null;
-  const unreadCountsKey = initialized ? '/api/threads/unread-counts' : null;
+  const unreadCountsKey = initialized ? UNREAD_KEY : null;
 
   const { data: threadResult, isValidating: threadsValidating, mutate: mutateThreads } = useSWR(threadsKey, fetcher);
   const { data: searchPersonalResult, isValidating: searchPersonalValidating } = useSWR(searchPersonalKey, fetcher);
@@ -496,7 +497,7 @@ function ThreadList() {
     setIsAllSelected(false);
     setConfirmDelete(false);
     setBulkLoading(false);
-    mutateThreads();
+    refreshMail(); // the list and the unread counts
   }
 
   async function bulkMarkRead() { await performBulkAction('read'); }
@@ -642,7 +643,7 @@ function ThreadList() {
       {showCompose && (
         <ComposeModal
           onClose={() => { setShowCompose(false); setOpenDraftId(undefined); setInitialTo(undefined); setInitialSubject(undefined); }}
-          onSent={() => { mutateThreads(); }}
+          onSent={() => { refreshMail(); }}
           initialDraftId={openDraftId}
           initialTo={initialTo}
           initialSubject={initialSubject}
@@ -736,7 +737,7 @@ function ThreadList() {
                     boxes.map(mb => fetch(`/api/mailboxes/${mb.id}/resync`, { method: 'POST' }))
                   );
                 } catch {}
-                if (tab === 'drafts') await mutateDrafts(); else await mutateThreads();
+                if (tab === 'drafts') await mutateDrafts(); else await refreshMail();
                 setSyncing(false);
               }}
               disabled={syncing}
