@@ -2,10 +2,11 @@ import { test, expect } from './fixtures';
 import { request as pwRequest, type APIRequestContext, type Browser, type BrowserContext, type Page } from '@playwright/test';
 import { BASE_URL, PASSWORD } from './helpers/constants';
 import { db } from './helpers/db';
-import { deleteTestAccounts, newAccount } from './helpers/accounts';
+import { deleteAccountsWithPrefix, newAccount } from './helpers/accounts';
 
 test.describe.configure({ mode: 'serial' });
-test.afterAll(async () => { await deleteTestAccounts(); });
+// the accounts of this spec are called rem-…; they must not stay behind (other specs count the users)
+test.afterAll(async () => { await db.known_devices.deleteMany({ where: { user_id: { startsWith: 'u_rem-' } } }); await deleteAccountsWithPrefix('rem'); });
 
 const uaOf = (page: Page) => page.evaluate(() => navigator.userAgent); // the browser's own, whatever the test machine is
 const SAFARI_MAC = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15';
