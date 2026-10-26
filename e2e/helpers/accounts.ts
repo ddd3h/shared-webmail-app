@@ -10,9 +10,14 @@ export async function newAccount(prefix = 'acct') {
   const user = await db.users.create({ data: { id: `u_${email.split('@')[0]}`, name: '試験用', email, role: 'user', worker_type: 'employee', password_hash: await hashPassword(PASSWORD, { N: 1024 }) } });
   return { id: user.id, email, mm: `mm-${email.split('@')[0]}` };
 }
-export const deleteTestAccounts = () => db.users.deleteMany({ where: { email: { contains: '@e2e.test' }, id: { startsWith: 'u_acct-' } } });
+// the notification list keeps a row per person, so those go first
+export async function deleteTestAccounts() {
+  await db.notification_events.deleteMany({ where: { user_id: { startsWith: 'u_acct-' } } });
+  return db.users.deleteMany({ where: { email: { contains: '@e2e.test' }, id: { startsWith: 'u_acct-' } } });
+}
 export async function deleteAccountsWithPrefix(prefix: string) {
   const where = { user_id: { startsWith: `u_${prefix}-` } };
   await db.mattermost_notifications.deleteMany({ where });
+  await db.notification_events.deleteMany({ where });
   await db.users.deleteMany({ where: { id: { startsWith: `u_${prefix}-` } } });
 }
