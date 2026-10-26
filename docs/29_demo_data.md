@@ -8,7 +8,7 @@ npm run seed:demo -- --relax-security    # 入れたうえで「パスワード�
 npm run seed:demo -- --reset             # デモデータだけを消す
 ```
 
-`DATABASE_URL`（と、口座を入れるための `ENCRYPTION_KEY_HEX`）は `.env` から読みます。実行すると、対象のデータベース（パスワードは伏せて）を表示します。
+`DATABASE_URL`（と、口座を入れるための `ENCRYPTION_KEY_HEX`）は `.env` から読みます。接続先が自分のPC（`localhost`）で、データベースがまだ動いていなければ、**自動で起動し、終わったら止めます**（`npm run dev` と同じ仕組み。[11_setup_run_deploy.md](11_setup_run_deploy.md)）。実行すると、対象のデータベース（パスワードは伏せて）を表示します。
 
 ## 入るもの
 

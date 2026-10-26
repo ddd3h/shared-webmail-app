@@ -162,6 +162,8 @@ node prisma/seed.mjs
 npm run dev
 ```
 
+`npm run dev` は、**データベースも自動で起動**します（Docker が必要）。Ctrl+C で止めるとデータベースも止まります（データは残ります）。マイグレーションも自動で適用します。詳しくは [docs/11_setup_run_deploy.md](docs/11_setup_run_deploy.md)。
+
 `http://localhost:3000` にアクセスし、以下でログイン：
 
 ```
@@ -220,7 +222,9 @@ npx prisma generate
 ## npm スクリプト
 
 ```bash
-npm run dev          # 開発サーバー（Hot Reload）
+npm run dev          # 開発サーバー（Hot Reload）。DBも自動で起動し、止めるとDBも止まる
+npm run dev:nodb     # DBは自分で用意するとき（開発サーバーだけ起動）
+npm run db:reset     # 開発用DBのデータをすべて消す（Docker のボリュームごと）
 npm run build        # 本番ビルド
 npm run start        # 本番サーバー起動
 npm run test         # Vitestでテスト実行

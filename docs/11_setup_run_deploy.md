@@ -87,6 +87,17 @@ npm run dev
 # → http://localhost:3000 でアクセス可能
 ```
 
+**データベースも一緒に起動します**（`scripts/with-db.mjs`）。
+
+1. `.env` の `DATABASE_URL` を読み、接続先が `localhost` で、まだ何も動いていなければ、`docker-compose.dev.yml` で PostgreSQL を起動します（ユーザー・パスワード・DB名・ポートは `DATABASE_URL` のとおり）。
+2. 未適用のマイグレーションを適用します（`prisma migrate deploy`）。
+3. 開発サーバーを起動します。**Ctrl+C で止めると、起動したDBも止まります**（データは Docker のボリュームに残るので、次回は続きから）。
+
+- すでに自分で PostgreSQL を動かしている（`localhost:5432` が応答する）ときや、接続先が別のホストのときは、何も起動せず、止めもしません。別の端末で `npm run seed:demo` を流しても、動いているDBをそのまま使い、止めません。
+- Docker が使えないときは、その旨を表示して止まります。自分で PostgreSQL を用意する場合は `npm run dev:nodb`（または `DEV_DB=off npm run dev`）。
+- データを全部消してやり直すには `npm run db:reset`。`DATABASE_URL` のパスワードを変えたあとは、一度これで作り直してください（既存のボリュームは最初のパスワードのままです）。
+- 本番用の `docker-compose.yml` とは別のもの（別のプロジェクト名・ボリューム）です。互いに影響しません。
+
 ### 8. 動作確認
 
 1. `http://localhost:3000` にアクセス

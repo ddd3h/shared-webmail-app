@@ -3,7 +3,9 @@
   "private": true,
   "version": "0.1.0",
   "scripts": {
-    "dev": "next dev",
+    "dev": "node scripts/with-db.mjs --migrate -- next dev",
+    "dev:nodb": "next dev",
+    "db:reset": "docker compose -f docker-compose.dev.yml down -v",
     "build": "next build",
     "postbuild": "cp -r public .next/standalone/ && cp -r .next/static .next/standalone/.next/ && cp -r .next/server .next/standalone/.next/",
     "start": "node .next/standalone/server.js",
@@ -21,7 +23,7 @@
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:report": "playwright show-report",
-    "seed:demo": "node --env-file-if-exists=.env prisma/seed-demo.mjs"
+    "seed:demo": "node scripts/with-db.mjs --migrate -- node --env-file-if-exists=.env prisma/seed-demo.mjs"
   },
   "dependencies": {
     "@huggingface/transformers": "^4.3.1",
