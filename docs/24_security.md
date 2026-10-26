@@ -11,6 +11,12 @@
 ## 1. 接続元（どこからアクセスしているか）
 
 - **正しいIPの決め方**（`src/lib/client-ip.ts`）: `X-Forwarded-For` の左端はクライアントが好きな値を書けるため、IP単位の制限をすべて回避できてしまいます。自社のプロキシ（nginx）が**追記した右側**を使います。プロキシの台数は `TRUSTED_PROXY_COUNT`（既定 1）。0 ならヘッダーを信用しません。
+- **Cloudflare を使うとき**: つなぎ方で設定が変わります。
+  | つなぎ方 | 設定 |
+  |---|---|
+  | ブラウザ → Cloudflare → **アプリ**（nginx なし）、または Cloudflare Tunnel（cloudflared） | `TRUSTED_PROXY_COUNT=1`（既定のまま）で正しく動きます |
+  | ブラウザ → Cloudflare → **nginx** → アプリ | 既定の nginx 設定（`$proxy_add_x_forwarded_for`）のままだと、アプリが受け取る接続元の末尾が**Cloudflare のアドレス**になり、IP固定のセッションがランダムに切れ、IP単位の制限やブロックが全員に及びます。`deploy/nginx-cloudflare.conf` の設定（Cloudflare の範囲からだけ `CF-Connecting-IP` を信用し、アドレスを1つだけ渡す）にして、`TRUSTED_PROXY_COUNT=1` のままにしてください。範囲の一覧は `deploy/update-cloudflare-ips.sh` で更新します |
+  Cloudflare 側は、**Email Address Obfuscation（メールアドレスの難読化）・Rocket Loader・Auto Minify をオフ**にしてください（画面の書き換えで表示が崩れます）。`/api/cron/*` にはボット対策（Bot Fight Mode・チャレンジ）を適用しないルールを入れてください。アップロードの上限は Cloudflare の無料・Pro プランで100MBです（アプリは1通10ファイル×10MB＋余白で、超えると 413 になります）。nginx は Cloudflare のアドレスからだけ受け付けるように、ファイアウォールで閉じてください。
 - **IPアドレスが分からないリクエストは拒否**（403 `ip_unknown`）: プロキシの設定ミス（`TRUSTED_PROXY_COUNT` の誤り、プロキシを通っていない、`X-Forwarded-For` が不正な値）でアドレスが取れないと、制限・ブロック・セッションのIP確認がすべて効かなくなるため、通しません。「検知したできごと」に記録します（1分に1回まで）。スケジューラ用の `/api/cron/*` は秘密キーで守られているので対象外です。**`TRUSTED_PROXY_COUNT=0` はアドレスが常に不明になるため、全員が入れなくなります。通常は設定しないでください。**
   - nginx は `proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;` にしてください（`scripts/setup.sh` と `deploy/nginx-collab.conf` はそうなっています）。
 - **ログインの履歴**: 成功・失敗ごとに、時刻・IP・端末（ブラウザとOS）・国と市区町村・ネットワークの種類（自宅／公共Wi-Fi／クラウド・VPN）を記録します。
