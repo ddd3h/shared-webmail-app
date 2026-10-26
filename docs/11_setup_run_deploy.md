@@ -90,7 +90,7 @@ npm run dev
 **データベースも一緒に起動します**（`scripts/with-db.mjs`）。
 
 1. `.env` の `DATABASE_URL` を読み、接続先が `localhost` で、まだ何も動いていなければ、`docker-compose.dev.yml` で PostgreSQL を起動します（ユーザー・パスワード・DB名・ポートは `DATABASE_URL` のとおり）。
-2. 未適用のマイグレーションを適用します（`prisma migrate deploy`）。
+2. 未適用のマイグレーションを適用し（`prisma migrate deploy`）、Prisma クライアントを最新にします（`prisma generate`。`git pull` のあとに「Unknown argument」と出るのを防ぎます）。
 3. 開発サーバーを起動します。**Ctrl+C で止めると、起動したDBも止まります**（データは Docker のボリュームに残るので、次回は続きから）。
 
 - すでに自分で PostgreSQL を動かしている（`localhost:5432` が応答する）ときや、接続先が別のホストのときは、何も起動せず、止めもしません。別の端末で `npm run seed:demo` を流しても、動いているDBをそのまま使い、止めません。

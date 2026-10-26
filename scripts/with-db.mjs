@@ -6,7 +6,8 @@
 //   (a database you started yourself, or another terminal running this script), nothing is started and nothing is stopped.
 // - Otherwise `docker compose -f docker-compose.dev.yml up -d --wait db` starts a PostgreSQL, and it is stopped when the command ends
 //   (Ctrl+C included). The data stays in a docker volume for next time (`npm run db:reset` throws it away).
-// - --migrate applies the pending migrations (prisma migrate deploy) first, so a new database is ready to use.
+// - --migrate applies the pending migrations (prisma migrate deploy) and refreshes the Prisma client (prisma generate) first,
+//   so a new database is ready to use and a freshly pulled schema is known to the code.
 // - DEV_DB=off: do nothing of the above and just run the command.
 import { spawn, spawnSync } from 'node:child_process';
 import net from 'node:net';
@@ -91,6 +92,10 @@ if (migrate) {
     if (started && /P1000|Authentication failed/.test(`${m.stdout}${m.stderr}`)) explainLoginFailure(started);
     finish(m.status ?? 1);
   }
+  // after a pull the generated client may be older than schema.prisma ("Unknown argument ..."); this is quick when it is current
+  const gen = spawnSync('npx', ['prisma', 'generate'], { encoding: 'utf8' });
+  if (gen.status !== 0) { process.stdout.write(gen.stdout ?? ''); process.stderr.write(gen.stderr ?? ''); console.error('[db] prisma generate に失敗しました'); finish(gen.status ?? 1); }
+  say('Prismaクライアントを最新にしました');
 }
 
 const child = spawn(command[0], command.slice(1), { stdio: 'inherit' });
