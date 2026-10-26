@@ -22,10 +22,12 @@ test.afterAll(async () => { await db.thread_reads.deleteMany({}); await db.messa
 
 // the number on the 「共有メール」 tab, as people see it ('' = no number)
 const teamBadge = (page: import('@playwright/test').Page) => page.getByRole('button', { name: /共有メール/ }).locator('span.rounded-full');
+// each row is drawn twice (phone layout and wide layout); only one is visible
+const subject = (page: import('@playwright/test').Page, text: string) => page.getByText(text).locator('visible=true').first();
 const openTeam = async (page: import('@playwright/test').Page) => {
   await page.goto('/threads');
   await page.getByRole('button', { name: /共有メール/ }).click();
-  await expect(page.getByText(SUBJECTS[0]).first()).toBeVisible();
+  await expect(subject(page, SUBJECTS[0])).toBeVisible();
 };
 // the app icon badge: what the page asked the browser to show last
 const recordAppBadge = (page: import('@playwright/test').Page) => page.addInitScript(() => {
@@ -40,11 +42,11 @@ test.describe('既読にしたら、未読の数がすぐ変わる（再読み�
   test('スレッドを開いて一覧に戻ると、タブの数が1つ減る', async ({ page }) => {
     await openTeam(page);
     await expect(teamBadge(page)).toHaveText('3');
-    await page.getByText(SUBJECTS[0]).first().click();
+    await subject(page, SUBJECTS[0]).click();
     await expect(page).toHaveURL(/\/threads\/[^/?]+/);
     await expect(page.getByText('本文').first()).toBeVisible();
     await page.goBack();
-    await expect(page.getByText(SUBJECTS[1]).first()).toBeVisible();
+    await expect(subject(page, SUBJECTS[1])).toBeVisible();
     await expect(teamBadge(page)).toHaveText('2');
     await page.reload();
     await expect(teamBadge(page)).toHaveText('2'); // the same as after a reload
@@ -54,7 +56,7 @@ test.describe('既読にしたら、未読の数がすぐ変わる（再読み�
     await recordAppBadge(page);
     await openTeam(page);
     await expect.poll(() => appBadge(page)).toBe(3);
-    await page.getByText(SUBJECTS[1]).first().click();
+    await subject(page, SUBJECTS[1]).click();
     await expect(page.getByText('本文').first()).toBeVisible();
     await expect.poll(() => appBadge(page), { timeout: 5000 }).toBe(2);
   });
@@ -64,20 +66,20 @@ test.describe('既読にしたら、未読の数がすぐ変わる（再読み�
     await openTeam(page);
     await expect(teamBadge(page)).toHaveText('3');
     const rows = page.locator('div.group').filter({ hasText: SUBJECTS[0] });
-    await rows.first().hover();
-    await rows.first().locator('input[type=checkbox]').first().click({ force: true });
-    await page.getByTitle('既読にする').first().click();
+    await rows.locator('visible=true').first().hover();
+    await rows.locator('visible=true').first().locator('input[type=checkbox]:visible').first().click({ force: true });
+    await page.getByRole('button', { name: '既読', exact: true }).locator('visible=true').first().click();
     await expect(teamBadge(page)).toHaveText('2');
     await expect.poll(() => appBadge(page)).toBe(2);
   });
 
   test('未読に戻すと、数が増える', async ({ page }) => {
     await openTeam(page);
-    await page.getByText(SUBJECTS[2]).first().click();
+    await subject(page, SUBJECTS[2]).click();
     await expect(page.getByText('本文').first()).toBeVisible();
-    await page.getByTitle('未読にする').first().click();
+    await page.getByTitle('未読にする').locator('visible=true').first().click();
     await expect(page).toHaveURL(/\/threads(\?|$)/);
-    await expect(page.getByText(SUBJECTS[1]).first()).toBeVisible();
+    await expect(subject(page, SUBJECTS[1])).toBeVisible();
     await expect(teamBadge(page)).toHaveText('3');
   });
 

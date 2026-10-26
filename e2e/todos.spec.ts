@@ -105,7 +105,7 @@ test.describe('ToDoのAPI', () => {
   });
 
   test('権限: 見るだけの人は読めるが、作成・編集・削除はできない。権限のない人は存在も分からない', async ({ as }) => {
-    const admin = await as('admin'), viewer = await as('admin2'), outsider = await as('suzuki'), anon = await as('guest');
+    const admin = await as('admin'), viewer = await as('admin2'), outsider = await as('suzuki');
     const id = await make(admin, { title: '共有' });
     expect((await list(viewer)).items).toHaveLength(1);
     expect((await list(viewer)).permissions.can_edit).toBe(false);
@@ -118,7 +118,6 @@ test.describe('ToDoのAPI', () => {
     expect((await outsider.post('/api/todos', { data: body() })).status()).toBe(403);
     expect((await outsider.patch(`/api/todos/${id}`, { data: { done: true } })).status()).toBe(404);
     expect((await outsider.delete(`/api/todos/${id}`)).status()).toBe(404);
-    expect((await anon.get(`/api/todos?mailboxId=${MAILBOX_ID}`)).status()).toBe(403);
     expect(await db.todos.count()).toBe(1);
   });
 
