@@ -50,7 +50,7 @@ test.describe('スマホのメニューシート', () => {
   async function openSheet(page: import('@playwright/test').Page) {
     await page.goto('/threads');
     await bottomBar(page).getByRole('button', { name: 'メニュー' }).click();
-    const sheet = page.locator('div.fixed.inset-0.z-\\[60\\]');
+    const sheet = page.locator('div.fixed.inset-0.z-60');
     await expect(sheet).toBeVisible();
     return sheet;
   }
@@ -77,7 +77,7 @@ test.describe('スマホのメニューシート', () => {
       const sheet = await openSheet(page);
       await sheet.getByRole('link', { name: label }).click();
       await expect(page).toHaveURL(url);
-      await expect(page.locator('div.fixed.inset-0.z-\\[60\\]')).toBeHidden();
+      await expect(page.locator('div.fixed.inset-0.z-60')).toBeHidden();
     });
   }
 
@@ -93,7 +93,7 @@ test.describe('スマホのメニュー（管理者）', () => {
   test('管理者には「管理」が表示される', async ({ page }) => {
     await page.goto('/threads');
     await bottomBar(page).getByRole('button', { name: 'メニュー' }).click();
-    await expect(page.locator('div.fixed.inset-0.z-\\[60\\]').getByRole('link', { name: '管理', exact: true })).toBeVisible();
+    await expect(page.locator('div.fixed.inset-0.z-60').getByRole('link', { name: '管理', exact: true })).toBeVisible();
   });
 });
 
