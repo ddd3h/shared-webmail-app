@@ -1,5 +1,6 @@
 import { test as base, expect, request as pwRequest, type APIRequestContext } from '@playwright/test';
 import { AUTH, BASE_URL, type Role } from './helpers/constants';
+import { patchContext } from './helpers/hydration';
 
 type Fixtures = {
   // An authenticated API client for the given role (shares the cookie jar format of the UI sessions).
@@ -18,9 +19,15 @@ export const hideDevOverlay = () => {
 };
 
 export const test = base.extend<Fixtures>({
+  // every context a spec opens by hand (browser.newContext) is patched too
+  browser: [async ({ browser }, use) => {
+    const open = browser.newContext.bind(browser);
+    browser.newContext = async (...args: Parameters<typeof open>) => patchContext(await open(...args));
+    await use(browser);
+  }, { scope: 'worker' }],
   context: async ({ context }, use) => {
     await context.addInitScript(hideDevOverlay);
-    await use(context);
+    await use(patchContext(context));
   },
   as: async ({}, use) => {
     const made: APIRequestContext[] = [];

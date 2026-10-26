@@ -26,7 +26,9 @@ export default function WorkPage() {
   const [tab, setTab] = useState('');
 
   useEffect(() => {
-    fetch('/api/work/me').then(r => r.json()).then((d: Me) => { setMe(d); setTab(tabsFor(d)[0].key); }).catch(() => {});
+    let current = true; // a late answer (dev mode asks twice) must not undo a tab the person already chose
+    fetch('/api/work/me').then(r => r.json()).then((d: Me) => { if (current) { setMe(d); setTab(t => t || tabsFor(d)[0].key); } }).catch(() => {});
+    return () => { current = false; };
   }, []);
 
   if (!me) return <p className="text-sm text-gray-400">読み込み中…</p>;
