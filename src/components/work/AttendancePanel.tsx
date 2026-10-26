@@ -75,10 +75,10 @@ export default function AttendancePanel({ userId }: { userId?: string }) {
               <span className={`mt-1 inline-block rounded-full px-2 py-0.5 text-xs font-medium ${statusColor}`}>{status}</span>
               {t.clock_in_at && <span className="ml-2 text-xs text-gray-500">出勤 {fmtTime(t.clock_in_at)}{t.clock_out_at ? ` / 退勤 ${fmtTime(t.clock_out_at)}` : ''}</span>}
             </div>
-            <div className="flex flex-wrap gap-2 ml-auto">
+            <div className="grid w-full grid-cols-2 gap-2 sm:ml-auto sm:flex sm:w-auto sm:flex-wrap">
               {(['clock_in', 'break_start', 'break_end', 'clock_out'] as const).map(a => (
                 <button key={a} disabled={busy || !t.allowed.includes(a)} onClick={() => punch(a)}
-                  className={`rounded-xl px-5 py-3 text-sm font-semibold disabled:opacity-30 ${a === 'clock_in' ? 'bg-blue-600 text-white' : a === 'clock_out' ? 'bg-gray-800 text-white' : 'border border-gray-300 text-gray-700 bg-white'}`}>
+                  className={`rounded-xl px-5 py-4 text-base sm:py-3 sm:text-sm font-semibold disabled:opacity-30 ${a === 'clock_in' ? 'bg-blue-600 text-white' : a === 'clock_out' ? 'bg-gray-800 text-white' : 'border border-gray-300 text-gray-700 bg-white'}`}>
                   {PUNCH_LABEL[a]}
                 </button>
               ))}

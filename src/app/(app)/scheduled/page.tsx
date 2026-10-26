@@ -72,7 +72,7 @@ export default function ScheduledSendsPage() {
     <div className="space-y-4">
       <div>
         <h1 className="text-xl font-bold text-gray-900">予約送信</h1>
-        <p className="text-xs text-gray-500 mt-0.5">指定した日時に自動送信されるメールの一覧です</p>
+        <p className="hidden md:block text-xs text-gray-500 mt-0.5">指定した日時に自動送信されるメールの一覧です</p>
       </div>
 
       {msg && (

@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import type { Policy } from './types';
+import FoldCard from '@/components/mobile/FoldCard';
 
 // アクセスの条件: どこから使えるか、セッションをどれだけ続けるか、端末の確認。
 export default function PolicyPanel() {
@@ -17,8 +18,8 @@ export default function PolicyPanel() {
 
   if (!p) return <p className="text-sm text-gray-400">読み込み中…</p>;
   return (
-    <section className="card p-5 space-y-4" aria-label="アクセスの条件">
-      <div><h2 className="font-semibold text-gray-900">アクセスの条件</h2><p className="text-xs text-gray-500 mt-0.5">いまあなたが使っているアドレス: <span className="font-mono text-gray-700">{p.your_ip}</span></p></div>
+    <FoldCard title="アクセスの条件" label="アクセスの条件" bodyClass="space-y-4">
+      <div><p className="text-xs text-gray-500 mt-0.5">いまあなたが使っているアドレス: <span className="font-mono text-gray-700">{p.your_ip}</span></p></div>
       <div>
         <label className="label text-xs">使えるネットワーク（1行に1つ。空なら制限なし）</label>
         <textarea className="input font-mono text-sm" rows={4} placeholder={'203.0.113.7  # 本社\n198.51.100.0/24  # 支社'} value={p.allowed_cidrs} onChange={e => setP({ ...p, allowed_cidrs: e.target.value })} />
@@ -42,6 +43,6 @@ export default function PolicyPanel() {
       </div>
       {msg && <p className={`rounded-lg px-3 py-2 text-sm ${msg.ok ? 'bg-emerald-50 text-emerald-800' : 'bg-red-50 text-red-700'}`} role="status">{msg.text}</p>}
       <div className="flex justify-end"><button onClick={save} className="btn btn-primary btn-sm">保存</button></div>
-    </section>
+    </FoldCard>
   );
 }

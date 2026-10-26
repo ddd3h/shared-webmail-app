@@ -4,6 +4,7 @@ import { Modal, Notice, Stat, api, btn, btnPrimary, inp, yen } from '@/component
 import { transferAmount } from '@/lib/payment';
 import VendorForm, { blankVendor } from './VendorForm';
 import { RequestDetail, RequestHeader, todayJst, type Request, type Summary, type Vendor } from './shared';
+import FilterBar from '@/components/mobile/FilterBar';
 
 type Form = {
   id?: string; vendor_id: string; title: string; amount: string; deduction_amount: string; fee: string; fee_bearer: 'us' | 'vendor';
@@ -92,13 +93,7 @@ export default function MyPayments({ vendors, onVendorsChanged }: { vendors: Ven
         </div>
       )}
       <Notice msg={msg} />
-      <div className="flex flex-wrap items-center gap-2">
-        {FILTERS.map(f => (
-          <button key={f.k} onClick={() => setFilter(f.k)} className={`rounded-full px-3 py-1.5 text-sm ${filter === f.k ? 'bg-gray-900 text-white' : 'bg-white border border-gray-200 text-gray-700'}`}>{f.l}</button>
-        ))}
-        <div className="flex-1" />
-        <button className={btnPrimary} onClick={() => { setForm(blank()); setFiles([]); }}>＋ 振込を申請</button>
-      </div>
+      <FilterBar filters={FILTERS} value={filter} onChange={setFilter} action={{ label: '＋ 振込を申請', className: btnPrimary, onClick: () => { setForm(blank()); setFiles([]); } }} />
 
       <div className="space-y-2">
         {items.length === 0 && <p className="text-sm text-gray-400">振込申請はありません</p>}

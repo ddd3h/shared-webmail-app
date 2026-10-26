@@ -1,6 +1,7 @@
 'use client';
 import { useCallback, useEffect, useState } from 'react';
 import { reasonLabel } from './types';
+import FoldCard from '@/components/mobile/FoldCard';
 
 type Sess = { id: string; ip: string; device: string; place: string | null; network_type: string; last_activity_at: string; created_at: string; current: boolean };
 type Login = { id: string; success: boolean; reason: string | null; ip: string; device: string; place: string | null; at: string };
@@ -35,9 +36,8 @@ export default function SecuritySection() {
 
   const others = (sessions ?? []).filter(s => !s.current).length;
   return (
-    <div className="card p-5 space-y-5" aria-label="セキュリティ">
+    <FoldCard title="ログイン中の端末" label="セキュリティ" className="card p-5" bodyClass="space-y-5">
       <div>
-        <h2 className="font-semibold text-gray-900">ログイン中の端末</h2>
         <p className="text-xs text-gray-500 mt-0.5">いま、あなたのアカウントにログインしている端末です。心当たりのない端末があれば終了し、パスワードを変更してください。</p>
       </div>
       {msg && <p className="rounded-lg bg-emerald-50 border border-emerald-200 px-3 py-2 text-sm text-emerald-800" role="status">{msg}</p>}
@@ -74,6 +74,6 @@ export default function SecuritySection() {
           </ul>
         )}
       </div>
-    </div>
+    </FoldCard>
   );
 }

@@ -26,9 +26,9 @@ export default function PaymentsPage() {
     <div className="space-y-4">
       <div>
         <h1 className="text-xl font-bold text-gray-900">振込申請</h1>
-        <p className="text-xs text-gray-500 mt-0.5">取引先への銀行振込の申請と承認、振込済みの記録</p>
+        <p className="hidden md:block text-xs text-gray-500 mt-0.5">取引先への銀行振込の申請と承認、振込済みの記録</p>
       </div>
-      <div className="flex gap-1 border-b border-gray-200">
+      <div className="flex gap-1 overflow-x-auto whitespace-nowrap border-b border-gray-200">
         {tabs.map(t => (
           <button key={t.k} onClick={() => setTab(t.k)} className={`px-4 py-2 text-sm font-medium -mb-px border-b-2 ${tab === t.k ? 'border-blue-600 text-blue-700' : 'border-transparent text-gray-500 hover:text-gray-800'}`}>{t.l}</button>
         ))}

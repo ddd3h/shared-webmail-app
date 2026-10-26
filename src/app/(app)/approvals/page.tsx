@@ -45,7 +45,7 @@ export default function ApprovalsPage() {
     <div className="space-y-4">
       <div>
         <h1 className="text-xl font-bold text-gray-900">チームの承認</h1>
-        <p className="text-xs text-gray-500 mt-0.5">担当している部署のメンバーの、承認待ちの経費・出張</p>
+        <p className="hidden md:block text-xs text-gray-500 mt-0.5">担当している部署のメンバーの、承認待ちの経費・出張</p>
       </div>
       <Notice msg={msg} />
       {!data.allowed && <p className="text-sm text-gray-500">承認できるメンバーがいません。部署長に設定され、役職に「部下の経費・出張を承認する」権限があると、ここに表示されます。</p>}

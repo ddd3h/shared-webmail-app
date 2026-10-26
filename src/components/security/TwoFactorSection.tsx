@@ -1,6 +1,7 @@
 'use client';
 import { useCallback, useEffect, useState } from 'react';
 import { RecoveryCodesView, SetupStep } from './TwoFactorParts';
+import FoldCard from '@/components/mobile/FoldCard';
 
 type Status = { enabled: boolean; enabled_at: string | null; recovery_remaining: number; passkeys: number; required: boolean };
 type Setup = { qr: string; secret: string; token: string };
@@ -56,9 +57,8 @@ export default function TwoFactorSection() {
 
   if (!status) return null;
   return (
-    <div className="card p-5 space-y-4" aria-label="2段階認証">
+    <FoldCard title="2段階認証" label="2段階認証" className="card p-5" bodyClass="space-y-4">
       <div>
-        <h2 className="font-semibold text-gray-900">2段階認証</h2>
         <p className="text-xs text-gray-500 mt-0.5">パスワードでログインするときに、認証アプリの6桁のコードも入力します。パスキーでのログインには不要です。</p>
       </div>
       {notice && <p className="rounded-lg bg-emerald-50 border border-emerald-200 px-3 py-2 text-sm text-emerald-800" role="status">{notice}</p>}
@@ -90,6 +90,6 @@ export default function TwoFactorSection() {
 
       {mode === 'setup' && setup && <div className="max-w-sm"><SetupStep qr={setup.qr} secret={setup.secret} onSubmit={confirm} onCancel={reset} busy={busy} error={error} /></div>}
       {mode === 'codes' && <div className="max-w-sm"><RecoveryCodesView codes={codes} doneLabel="完了" onDone={() => { reset(); setNotice('保存しました'); }} /></div>}
-    </div>
+    </FoldCard>
   );
 }

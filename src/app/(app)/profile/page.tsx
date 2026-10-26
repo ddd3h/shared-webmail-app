@@ -3,6 +3,7 @@ import SecuritySection from '@/components/security/SecuritySection';
 import TwoFactorSection from '@/components/security/TwoFactorSection';
 import { useEffect, useState, useCallback } from 'react';
 import { startRegistration } from '@simplewebauthn/browser';
+import FoldCard from '@/components/mobile/FoldCard';
 
 type Passkey = {
   id: string;
@@ -36,8 +37,7 @@ function PasswordSection() {
   }
 
   return (
-    <div className="card p-5 space-y-4">
-      <h2 className="font-semibold text-gray-900">パスワード変更</h2>
+    <FoldCard title="パスワード変更" className="card p-5" bodyClass="space-y-4">
       <p className="text-sm text-gray-600">
         「パスワードを変更する」をクリックすると、MattermostのDMにパスワード変更用のURLが送信されます。
       </p>
@@ -51,7 +51,7 @@ function PasswordSection() {
           {sending ? '送信中…' : 'パスワードを変更する'}
         </button>
       </div>
-    </div>
+    </FoldCard>
   );
 }
 
@@ -96,9 +96,8 @@ function MailboxSection() {
   }
 
   return (
-    <div className="card p-5 space-y-4">
+    <FoldCard title="メールアカウント" className="card p-5" bodyClass="space-y-4">
       <div>
-        <h2 className="font-semibold text-gray-900">メールアカウント</h2>
         <p className="text-xs text-gray-500 mt-0.5">割り当てられているメールアカウントの同期・接続テストができます</p>
       </div>
       {loading ? (
@@ -133,7 +132,7 @@ function MailboxSection() {
           ))}
         </div>
       )}
-    </div>
+    </FoldCard>
   );
 }
 
@@ -221,10 +220,9 @@ function PasskeySection() {
   }
 
   return (
-    <div className="card p-5 space-y-4">
+    <FoldCard title="パスキー" className="card p-5" bodyClass="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="font-semibold text-gray-900">パスキー</h2>
           <p className="text-xs text-gray-500 mt-0.5">パスワード不要の生体認証・デバイス認証でログインできます</p>
         </div>
         {!showNameInput && (
@@ -309,7 +307,7 @@ function PasskeySection() {
           ))}
         </div>
       )}
-    </div>
+    </FoldCard>
   );
 }
 
@@ -373,8 +371,7 @@ export default function ProfilePage() {
       </div>
 
       {/* Account info */}
-      <div className="card p-5 space-y-4">
-        <h2 className="font-semibold text-gray-900">アカウント情報</h2>
+      <FoldCard title="アカウント情報" className="card p-5" bodyClass="space-y-4">
         <div className="flex items-center gap-4">
           {/* Avatar */}
           <div className="shrink-0 w-16 h-16 rounded-full overflow-hidden bg-gray-100 border border-gray-200 flex items-center justify-center text-2xl font-bold text-gray-400">
@@ -401,7 +398,7 @@ export default function ProfilePage() {
             </div>
           </div>
         </div>
-      </div>
+      </FoldCard>
 
       {/* Mailboxes */}
       <MailboxSection />
@@ -415,10 +412,9 @@ export default function ProfilePage() {
       <SecuritySection />
 
       {/* Signature */}
-      <div className="card p-5 space-y-4">
+      <FoldCard title="メール署名" className="card p-5" bodyClass="space-y-4">
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="font-semibold text-gray-900">メール署名</h2>
             <p className="text-xs text-gray-500 mt-0.5">返信フォームを開いたとき、本文末尾に自動で挿入されます</p>
           </div>
           {isDirty && (
@@ -449,7 +445,7 @@ export default function ProfilePage() {
             </div>
           </div>
         )}
-      </div>
+      </FoldCard>
     </div>
   );
 }

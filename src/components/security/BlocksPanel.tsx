@@ -1,6 +1,7 @@
 'use client';
 import { useState } from 'react';
 import type { Overview } from './types';
+import FoldCard from '@/components/mobile/FoldCard';
 
 const when = (iso: string | null) => (iso ? new Date(iso).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '解除するまで');
 
@@ -23,8 +24,7 @@ export default function BlocksPanel({ blocks, onChanged }: { blocks: Overview['b
   }
 
   return (
-    <section className="card p-5 space-y-3" aria-label="ブロック中のアドレス">
-      <h2 className="font-semibold text-gray-900">ブロック中のアドレス</h2>
+    <FoldCard title="ブロック中のアドレス" label="ブロック中のアドレス" badge={`${blocks.length}件`} bodyClass="space-y-3">
       {msg && <p className={`rounded-lg px-3 py-2 text-sm ${msg.ok ? 'bg-emerald-50 text-emerald-800' : 'bg-red-50 text-red-700'}`} role="status">{msg.text}</p>}
       {blocks.length === 0 ? <p className="text-sm text-gray-400">ブロック中のアドレスはありません</p> : (
         <ul className="divide-y divide-gray-100">
@@ -45,6 +45,6 @@ export default function BlocksPanel({ blocks, onChanged }: { blocks: Overview['b
         <div><label className="label text-xs">分（空=無期限）</label><input className="input" type="number" min={1} value={minutes} onChange={e => setMinutes(e.target.value)} /></div>
         <button onClick={add} disabled={!ip.trim() || !reason.trim()} className="btn btn-primary btn-sm">ブロック</button>
       </div>
-    </section>
+    </FoldCard>
   );
 }

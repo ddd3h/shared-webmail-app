@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Modal, Notice, Stat, api, btn, btnPrimary, inp, yen } from '@/components/work/ui';
 import { CATEGORIES, ClaimDetail, ClaimHeader, type Claim, type Summary } from './shared';
+import FilterBar from '@/components/mobile/FilterBar';
 
 type Trip = { id: string; destination: string; start_date: string; end_date: string };
 type Form = { id?: string; trip_id: string; expense_date: string; category: string; title: string; amount: string; payment_method: 'personal' | 'company'; description: string };
@@ -96,13 +97,7 @@ export default function MyExpenses({ initialTripId }: { initialTripId?: string }
         </div>
       )}
       <Notice msg={msg} />
-      <div className="flex flex-wrap items-center gap-2">
-        {FILTERS.map(f => (
-          <button key={f.k} onClick={() => setFilter(f.k)} className={`rounded-full px-3 py-1.5 text-sm ${filter === f.k ? 'bg-gray-900 text-white' : 'bg-white border border-gray-200 text-gray-700'}`}>{f.l}</button>
-        ))}
-        <div className="flex-1" />
-        <button className={btnPrimary} onClick={() => { setForm(blank()); setFiles([]); }}>＋ 経費を申請</button>
-      </div>
+      <FilterBar filters={FILTERS} value={filter} onChange={setFilter} action={{ label: '＋ 経費を申請', className: btnPrimary, onClick: () => { setForm(blank()); setFiles([]); } }} />
 
       <div className="space-y-2">
         {items.length === 0 && <p className="text-sm text-gray-400">申請はありません</p>}

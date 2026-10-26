@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Notice, api, btnPrimary } from '@/components/work/ui';
 import TripForm, { draftFromTrip, type TripDraft } from './TripForm';
 import { TripDetail, TripHeader, type RateType, type Trip } from './shared';
+import FilterBar from '@/components/mobile/FilterBar';
 
 const FILTERS = [{ k: '', l: 'すべて' }, { k: 'pending', l: '承認待ち' }, { k: 'approved', l: '承認済' }, { k: 'rejected', l: '却下' }, { k: 'cancelled', l: '取消' }];
 
@@ -40,13 +41,7 @@ export default function MyTrips({ types }: { types: RateType[] }) {
   return (
     <div className="space-y-4">
       <Notice msg={msg} />
-      <div className="flex flex-wrap items-center gap-2">
-        {FILTERS.map(f => (
-          <button key={f.k} onClick={() => setFilter(f.k)} className={`rounded-full px-3 py-1.5 text-sm ${filter === f.k ? 'bg-gray-900 text-white' : 'bg-white border border-gray-200 text-gray-700'}`}>{f.l}</button>
-        ))}
-        <div className="flex-1" />
-        <button className={btnPrimary} onClick={() => setForm({ draft: blank(), resubmit: false })}>＋ 出張を申請</button>
-      </div>
+      <FilterBar filters={FILTERS} value={filter} onChange={setFilter} action={{ label: '＋ 出張を申請', className: btnPrimary, onClick: () => setForm({ draft: blank(), resubmit: false }) }} />
 
       <div className="space-y-2">
         {items.length === 0 && <p className="text-sm text-gray-400">出張の申請はありません</p>}

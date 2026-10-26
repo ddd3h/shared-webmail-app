@@ -166,7 +166,7 @@ export default function ContactsPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-bold text-gray-900">連絡帳</h1>
-          <p className="text-xs text-gray-500 mt-0.5">全員で共有する社内連絡帳</p>
+          <p className="hidden md:block text-xs text-gray-500 mt-0.5">全員で共有する社内連絡帳</p>
         </div>
         <button onClick={() => setEditing('new')} className="btn btn-primary btn-sm gap-1.5">
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>

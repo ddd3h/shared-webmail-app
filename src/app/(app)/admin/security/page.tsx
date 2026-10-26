@@ -1,4 +1,5 @@
 'use client';
+import FoldCard from '@/components/mobile/FoldCard';
 import { useCallback, useEffect, useState } from 'react';
 import BlocksPanel from '@/components/security/BlocksPanel';
 import PolicyPanel from '@/components/security/PolicyPanel';
@@ -34,7 +35,7 @@ export default function SecurityAdminPage() {
   if (!data) return <p className="text-sm text-gray-400">読み込み中…</p>;
   return (
     <div className="space-y-5">
-      <div><h1 className="text-xl font-bold text-gray-900">セキュリティ</h1><p className="text-xs text-gray-500 mt-0.5">ログインの状況、不審なアクセスの検知、アクセスの条件</p></div>
+      <div><h1 className="text-xl font-bold text-gray-900">セキュリティ</h1><p className="hidden md:block text-xs text-gray-500 mt-0.5">ログインの状況、不審なアクセスの検知、アクセスの条件</p></div>
 
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
         <Stat label="ログイン失敗（24時間）" value={data.summary.failed_24h} tone="bad" /><Stat label="ログイン成功（24時間）" value={data.summary.succeeded_24h} />
@@ -46,14 +47,12 @@ export default function SecurityAdminPage() {
       <BlocksPanel blocks={data.blocks} onChanged={load} />
 
       {data.locked.length > 0 && (
-        <section className="card p-5 space-y-2" aria-label="ロック中のアカウント">
-          <h2 className="font-semibold text-gray-900">ロック中のアカウント</h2>
+        <FoldCard title="ロック中のアカウント" label="ロック中のアカウント" defaultOpen badge={`${data.locked.length}件`}>
           <ul className="divide-y divide-gray-100">{data.locked.map(u => <li key={u.id} className="flex items-center gap-3 py-2 text-sm"><span className="flex-1">{u.name}<span className="ml-2 text-xs text-gray-400">{u.email}</span></span><button onClick={() => unlock(u.id)} className="btn btn-secondary btn-sm" aria-label={`${u.name}のロックを解除`}>解除</button></li>)}</ul>
-        </section>
+        </FoldCard>
       )}
 
-      <section className="card p-5 space-y-2" aria-label="ログイン方法">
-        <h2 className="font-semibold text-gray-900">ログイン方法（2段階認証・パスキー）</h2>
+      <FoldCard title="ログイン方法（2段階認証・パスキー）" label="ログイン方法" badge={`未設定 ${data.people.filter(p => !p.mfa && p.passkeys === 0).length}人`}>
         <p className="text-xs text-gray-500">パスワードでログインするには2段階認証が必要です。どちらもない人は、次回のログイン時に2段階認証を設定します。</p>
         <ul className="divide-y divide-gray-100">
           {data.people.map(p => (
@@ -65,10 +64,9 @@ export default function SecurityAdminPage() {
             </li>
           ))}
         </ul>
-      </section>
+      </FoldCard>
 
-      <section className="card p-5 space-y-2" aria-label="セキュリティイベント">
-        <h2 className="font-semibold text-gray-900">検知したできごと</h2>
+      <FoldCard title="検知したできごと" label="セキュリティイベント" badge={`${data.events.length}件`}>
         {data.events.length === 0 ? <p className="text-sm text-gray-400">まだありません</p> : (
           <ul className="divide-y divide-gray-100">
             {data.events.map(e => (
@@ -82,12 +80,11 @@ export default function SecurityAdminPage() {
             ))}
           </ul>
         )}
-      </section>
+      </FoldCard>
 
       <PolicyPanel />
 
-      <section className="card p-5 space-y-2" aria-label="最近のログイン">
-        <h2 className="font-semibold text-gray-900">最近のログイン</h2>
+      <FoldCard title="最近のログイン" label="最近のログイン">
         <div className="overflow-x-auto"><table className="w-full text-sm">
           <thead className="text-xs text-gray-500"><tr><th className="py-1 text-left">日時</th><th className="py-1 text-left">アカウント</th><th className="py-1 text-left">結果</th><th className="py-1 text-left">アドレス / 場所</th><th className="py-1 text-left">端末</th></tr></thead>
           <tbody className="divide-y divide-gray-100">
@@ -97,7 +94,7 @@ export default function SecurityAdminPage() {
                 <td className="py-1.5 text-gray-600"><span className="font-mono text-xs">{l.ip}</span> {l.place}</td><td className="py-1.5 text-gray-500">{l.device}</td></tr>
             ))}
           </tbody></table></div>
-      </section>
+      </FoldCard>
     </div>
   );
 }

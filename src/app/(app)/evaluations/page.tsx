@@ -17,7 +17,7 @@ export default function EvaluationsPage() {
     <div className="space-y-4">
       <div>
         <h1 className="text-xl font-bold text-gray-900">人事評価</h1>
-        <p className="text-xs text-gray-500 mt-0.5">自己評価 → 上長の評価 → 人事が確定、の順で進みます。結果は確定後に本人へ公開されます</p>
+        <p className="hidden md:block text-xs text-gray-500 mt-0.5">自己評価 → 上長の評価 → 人事が確定、の順で進みます。結果は確定後に本人へ公開されます</p>
       </div>
       {tabs.length > 1 && (
         <div className="flex gap-1 border-b border-gray-200 overflow-x-auto scrollbar-none">

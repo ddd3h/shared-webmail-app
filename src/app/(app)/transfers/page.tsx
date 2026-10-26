@@ -25,7 +25,7 @@ export default function TransfersPage() {
     <div className="space-y-4">
       <div>
         <h1 className="text-xl font-bold text-gray-900">振込データ</h1>
-        <p className="text-xs text-gray-500 mt-0.5">給与・取引先への支払を、全銀フォーマットのファイルにまとめて銀行の一括振込に使います</p>
+        <p className="hidden md:block text-xs text-gray-500 mt-0.5">給与・取引先への支払を、全銀フォーマットのファイルにまとめて銀行の一括振込に使います</p>
       </div>
       <div className="flex gap-1 border-b border-gray-200 overflow-x-auto scrollbar-none">
         {tabs.map(t => (

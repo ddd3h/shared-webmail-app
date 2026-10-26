@@ -23,7 +23,7 @@ export default function OrgPage() {
     <div className="space-y-4">
       <div>
         <h1 className="text-xl font-bold text-gray-900">組織</h1>
-        <p className="text-xs text-gray-500 mt-0.5">{data.me.is_admin ? '部署・役職・権限を登録します。承認や人事評価の担当は、ここから決まります' : '部署と、所属しているメンバー'}</p>
+        <p className="hidden md:block text-xs text-gray-500 mt-0.5">{data.me.is_admin ? '部署・役職・権限を登録します。承認や人事評価の担当は、ここから決まります' : '部署と、所属しているメンバー'}</p>
       </div>
       {tabs.length > 1 && (
         <div className="flex gap-1 border-b border-gray-200 overflow-x-auto scrollbar-none">

@@ -1,6 +1,7 @@
 'use client';
 import { Suspense, useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
+import FoldCard from '@/components/mobile/FoldCard';
 
 type Item = { key: string; value: string; isSecret: boolean };
 type User = { id: string; name: string; email: string; role: string; mattermost_user_id: string | null };
@@ -637,7 +638,7 @@ function AdminSettingsContent() {
 
       <div>
         <h1 className="text-2xl font-bold text-gray-900">管理設定</h1>
-        <p className="text-sm text-gray-500 mt-0.5">システム設定・ユーザー管理を行います（管理者専用）</p>
+        <p className="hidden md:block text-sm text-gray-500 mt-0.5">システム設定・ユーザー管理を行います（管理者専用）</p>
       </div>
 
       {/* Tabs */}
@@ -672,8 +673,7 @@ function AdminSettingsContent() {
       {/* System Settings */}
       {tab === 'system' && (
         <div className="space-y-6 max-w-2xl pb-20">
-          <div className="card p-6">
-            <h2 className="font-semibold text-gray-900 mb-4">アプリ基本設定</h2>
+          <FoldCard title="アプリ基本設定" className="card p-6" bodyClass="">
             <div className="space-y-4">
               <div>
                 <label className="label">アプリURL（NEXT_PUBLIC_APP_URL）</label>
@@ -695,13 +695,9 @@ function AdminSettingsContent() {
                 <p className="text-xs text-gray-400 mt-1">{"{{name}} と {{email}} が使えます。"}</p>
               </div>
             </div>
-          </div>
+          </FoldCard>
 
-          <div className="card p-6 border-red-100 bg-red-50/10">
-            <h2 className="font-semibold text-red-900 mb-4 flex items-center gap-2">
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m0 0v2m0-2h2m-2 0H10m11-3V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2h11l4 4V12z" /></svg>
-              セキュリティ設定
-            </h2>
+          <FoldCard title={<span className="flex items-center gap-2 text-red-900"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m0 0v2m0-2h2m-2 0H10m11-3V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2h11l4 4V12z" /></svg>セキュリティ設定</span>} className="card p-6 border-red-100 bg-red-50/10" bodyClass="">
             <div className="space-y-4">
               <div>
                 <label className="label">SESSION_SECRET</label>
@@ -722,10 +718,9 @@ function AdminSettingsContent() {
                 <p className="text-[10px] text-gray-400 mt-1">共有メールにおいて、メールボックスの何割以上を一度に削除する場合に管理者の承認を必要とするかを指定します。デフォルトは 0.3 (30%) です。</p>
               </div>
             </div>
-          </div>
+          </FoldCard>
 
-          <div className="card p-6">
-            <h2 className="font-semibold text-gray-900 mb-4">インフラ設定</h2>
+          <FoldCard title="インフラ設定" className="card p-6" bodyClass="">
             <div className="space-y-4">
               <div>
                 <label className="label">REDIS_URL (キュー管理用)</label>
@@ -736,10 +731,9 @@ function AdminSettingsContent() {
                 <input type="number" className="input" value={getVal('EMAIL_CONNECT_TIMEOUT_MS')} onChange={e => setVal('EMAIL_CONNECT_TIMEOUT_MS', e.target.value)} placeholder="10000" />
               </div>
             </div>
-          </div>
+          </FoldCard>
 
-          <div className="card p-6">
-            <h2 className="font-semibold text-gray-900 mb-4">アカウント追加時のデフォルト</h2>
+          <FoldCard title="アカウント追加時のデフォルト" className="card p-6" bodyClass="">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div className="space-y-3">
                 <h3 className="text-xs font-bold text-gray-400 uppercase">IMAP (受信)</h3>
@@ -780,10 +774,9 @@ function AdminSettingsContent() {
                 </div>
               </div>
             </div>
-          </div>
+          </FoldCard>
 
-          <div className="card p-6">
-            <h2 className="font-semibold text-gray-900 mb-4">管理者通知設定 (SMTP)</h2>
+          <FoldCard title="管理者通知設定 (SMTP)" className="card p-6" bodyClass="">
             <div className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="md:col-span-2">
@@ -827,10 +820,9 @@ function AdminSettingsContent() {
                 </div>
               </div>
             </div>
-          </div>
+          </FoldCard>
 
-          <div className="card p-6">
-            <h2 className="font-semibold text-gray-900 mb-4">Web Push (VAPID)</h2>
+          <FoldCard title="Web Push (VAPID)" className="card p-6" bodyClass="">
             <div className="space-y-3">
               <div>
                 <label className="label">VAPID 公開鍵</label>
@@ -846,10 +838,9 @@ function AdminSettingsContent() {
               </div>
               <button onClick={generateVapid} className="btn btn-secondary btn-sm">🔑 VAPID鍵を自動生成</button>
             </div>
-          </div>
+          </FoldCard>
 
-          <div className="card p-6">
-            <h2 className="font-semibold text-gray-900 mb-4">Mattermost</h2>
+          <FoldCard title="Mattermost" className="card p-6" bodyClass="">
             <div className="space-y-3">
               <div>
                 <label className="label">Base URL</label>
@@ -864,18 +855,16 @@ function AdminSettingsContent() {
                 <input className="input" value={getVal('MATTERMOST_DEFAULT_CHANNEL_ID')} onChange={e => setVal('MATTERMOST_DEFAULT_CHANNEL_ID', e.target.value)} />
               </div>
             </div>
-          </div>
+          </FoldCard>
 
-          <div className="card p-6">
-            <h2 className="font-semibold text-gray-900 mb-4">同期設定</h2>
+          <FoldCard title="同期設定" className="card p-6" bodyClass="">
             <div>
               <label className="label">同期間隔（秒）</label>
               <input type="number" className="input" value={getVal('SYNC_DEFAULT_INTERVAL_SEC')} onChange={e => setVal('SYNC_DEFAULT_INTERVAL_SEC', e.target.value)} placeholder="180" />
             </div>
-          </div>
+          </FoldCard>
 
-          <div className="card p-6">
-            <h2 className="font-semibold text-gray-900 mb-1">AI返信アシスト</h2>
+          <FoldCard title="AI返信アシスト" className="card p-6" bodyClass="">
             <p className="text-xs text-gray-500 mb-4">OpenRouter経由でAIによる返信文生成・校正を利用できます。APIキーは <a href="https://openrouter.ai/keys" target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">openrouter.ai</a> で取得してください。</p>
             <div className="space-y-3">
               <div>
@@ -898,10 +887,9 @@ function AdminSettingsContent() {
                 <p className="text-xs text-gray-400 mt-1">システムプロンプトの末尾に追加されます。文体・口調・禁止事項などを指定できます。</p>
               </div>
             </div>
-          </div>
+          </FoldCard>
 
-          <div className="card p-6">
-            <h2 className="font-semibold text-gray-900 mb-1">Google OAuth</h2>
+          <FoldCard title="Google OAuth" className="card p-6" bodyClass="">
             <p className="text-xs text-gray-500 mb-4">Google連絡帳同期に必要なOAuthクライアント認証情報です。<a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">Google Cloud Console</a> で取得してください。</p>
             <div className="space-y-3">
               <div>
@@ -913,10 +901,9 @@ function AdminSettingsContent() {
                 <input type="password" className="input font-mono text-xs" value={getVal('GOOGLE_CLIENT_SECRET')} onChange={e => setVal('GOOGLE_CLIENT_SECRET', e.target.value, true)} placeholder="GOCSPX-..." />
               </div>
             </div>
-          </div>
+          </FoldCard>
 
-          <div className="card p-6">
-            <h2 className="font-semibold text-gray-900 mb-1">Google 連絡帳</h2>
+          <FoldCard title="Google 連絡帳" className="card p-6" bodyClass="">
             <p className="text-xs text-gray-500 mb-4">Googleアカウントを連携し、Google Contactsの連絡先を社内連絡帳に同期します。</p>
             <div className="flex items-center gap-3 flex-wrap">
               <span className={`inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full ${googleLinked ? 'bg-emerald-50 text-emerald-700' : 'bg-gray-100 text-gray-500'}`}>
@@ -947,10 +934,9 @@ function AdminSettingsContent() {
                 </a>
               )}
             </div>
-          </div>
+          </FoldCard>
 
-          <div className="card p-6">
-            <h2 className="font-semibold text-gray-900 mb-1">PWA アイコン</h2>
+          <FoldCard title="PWA アイコン" className="card p-6" bodyClass="">
             <p className="text-xs text-gray-500 mb-4">ホーム画面に追加したときに表示されるアイコンです。正方形のPNG画像（512×512px以上推奨）をアップロードしてください。</p>
             <div className="flex items-start gap-5 flex-wrap">
               <div className="flex flex-col items-center gap-1.5">
@@ -1004,10 +990,9 @@ function AdminSettingsContent() {
                 )}
               </div>
             </div>
-          </div>
+          </FoldCard>
 
-          <div className="card p-6">
-            <h2 className="font-semibold text-gray-900 mb-1">通知バッジアイコン</h2>
+          <FoldCard title="通知バッジアイコン" className="card p-6" bodyClass="">
             <p className="text-xs text-gray-500 mb-4">
               Android通知のステータスバーに表示される小さいアイコンです。透過PNG（背景なし・白いシルエットのみ）を使ってください。
               通常のPWAアイコンをそのまま使うと、透過が無いため塗りつぶした四角（■）で表示されてしまいます。
@@ -1069,7 +1054,7 @@ function AdminSettingsContent() {
                 )}
               </div>
             </div>
-          </div>
+          </FoldCard>
 
         </div>
       )}
