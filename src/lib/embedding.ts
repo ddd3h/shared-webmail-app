@@ -1,21 +1,39 @@
 // Meaning-vectors ("Embedding") for the semantic mail search.
 //
-// The service is any OpenAI-compatible `POST {EMBEDDING_API_URL}/embeddings` (OpenAI, Voyage, Azure, or a server of your own
-// such as Ollama / text-embeddings-inference). It is OFF unless EMBEDDING_API_URL is set: mail text only ever leaves the
-// server for the address configured here.
+// Two ways to make them (the comparison itself, a dot product, always runs in this app):
+//  - local  (EMBEDDING_PROVIDER=local): a small multilingual model runs inside this server (src/lib/embedding-local.ts).
+//           Mail text never leaves the server.
+//  - api    (EMBEDDING_API_URL=...): any OpenAI-compatible `POST {url}/embeddings` (OpenAI, Voyage, Ollama, ...).
+// It is OFF unless one of them is set. EMBEDDING_API_URL wins when both are.
 
-export type EmbeddingConfig = { url: string; key: string | null; model: string; dims: number | null };
+export const DEFAULT_LOCAL_MODEL = 'Xenova/multilingual-e5-small';
+
+export type EmbeddingConfig =
+  | { kind: 'api'; url: string; key: string | null; model: string; dims: number | null }
+  | { kind: 'local'; model: string; dims: null; cacheDir: string | null; localOnly: boolean };
 
 export function embeddingConfig(env: NodeJS.ProcessEnv = process.env): EmbeddingConfig | null {
   const url = env.EMBEDDING_API_URL?.trim().replace(/\/+$/, '');
-  if (!url) return null;
-  const dims = parseInt(env.EMBEDDING_DIMENSIONS || '', 10);
-  return {
-    url,
-    key: env.EMBEDDING_API_KEY?.trim() || null,
-    model: env.EMBEDDING_MODEL?.trim() || 'text-embedding-3-small',
-    dims: Number.isFinite(dims) && dims > 0 ? dims : null,
-  };
+  if (url) {
+    const dims = parseInt(env.EMBEDDING_DIMENSIONS || '', 10);
+    return {
+      kind: 'api',
+      url,
+      key: env.EMBEDDING_API_KEY?.trim() || null,
+      model: env.EMBEDDING_MODEL?.trim() || 'text-embedding-3-small',
+      dims: Number.isFinite(dims) && dims > 0 ? dims : null,
+    };
+  }
+  if (env.EMBEDDING_PROVIDER?.trim().toLowerCase() === 'local') {
+    return {
+      kind: 'local',
+      model: env.EMBEDDING_MODEL?.trim() || DEFAULT_LOCAL_MODEL,
+      dims: null,
+      cacheDir: env.EMBEDDING_CACHE_DIR?.trim() || null,
+      localOnly: env.EMBEDDING_LOCAL_ONLY === '1',
+    };
+  }
+  return null;
 }
 
 export function embeddingEnabled(): boolean {
@@ -73,12 +91,22 @@ export function similarity(a: Float32Array, b: Float32Array): number {
 const REQUEST_TIMEOUT_MS = 15_000;
 const BATCH = 16;
 
+// E5-style models are trained with these prefixes: what is searched for is a "query", the mail is a "passage".
+export type EmbedRole = 'query' | 'passage';
+export function withRolePrefix(model: string, role: EmbedRole, text: string): string {
+  return /e5/i.test(model) ? `${role}: ${text}` : text;
+}
+
 /** Embeds the texts (in batches). Throws when the service is off or answers badly: callers decide how to fall back. */
-export async function embedTexts(texts: string[], cfg: EmbeddingConfig | null = embeddingConfig()): Promise<Float32Array[]> {
+export async function embedTexts(texts: string[], cfg: EmbeddingConfig | null = embeddingConfig(), role: EmbedRole = 'passage'): Promise<Float32Array[]> {
   if (!cfg) throw new Error('embedding_disabled');
+  if (cfg.kind === 'local') {
+    const { embedLocal } = await import('@/lib/embedding-local');
+    return embedLocal(texts.map(t => withRolePrefix(cfg.model, role, t)), cfg);
+  }
   const out: Float32Array[] = [];
   for (let i = 0; i < texts.length; i += BATCH) {
-    const input = texts.slice(i, i + BATCH);
+    const input = texts.slice(i, i + BATCH).map(t => withRolePrefix(cfg.model, role, t));
     const res = await fetch(`${cfg.url}/embeddings`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...(cfg.key ? { Authorization: `Bearer ${cfg.key}` } : {}) },

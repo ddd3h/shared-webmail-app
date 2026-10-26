@@ -81,7 +81,7 @@ async function embedQuery(text: string, cfg: EmbeddingConfig): Promise<Float32Ar
   const key = `${cfg.model}|${cfg.dims ?? ''}|${text}`;
   const hit = queryCache.get(key);
   if (hit) return hit;
-  const [v] = await embedTexts([text], cfg);
+  const [v] = await embedTexts([text], cfg, 'query');
   if (queryCache.size >= QUERY_CACHE_MAX) queryCache.delete(queryCache.keys().next().value as string);
   queryCache.set(key, v);
   return v;

@@ -55,7 +55,29 @@ const nextConfig = {
 
   // Keep ws external so the in-process collab server (src/lib/collab/embedded.ts)
   // gets a working ws module copied into the standalone node_modules.
-  serverExternalPackages: ['ws'],
+  // Same for the local embedding model: onnxruntime-node is a native library and cannot be bundled.
+  serverExternalPackages: ['ws', '@huggingface/transformers', 'onnxruntime-node'],
+
+  // The standalone build copies only what it can trace; the native part of the local embedding model is loaded by name at run
+  // time, so it is listed here (linux only, and without the GPU libraries: about 1/10 of the package).
+  outputFileTracingIncludes: {
+    '/api/**/*': [
+      './node_modules/onnxruntime-node/dist/**/*',
+      './node_modules/onnxruntime-node/lib/**/*',
+      './node_modules/onnxruntime-node/package.json',
+      './node_modules/onnxruntime-common/**/*',
+      './node_modules/onnxruntime-node/bin/napi-v6/linux/*/onnxruntime_binding.node',
+      './node_modules/onnxruntime-node/bin/napi-v6/linux/*/libonnxruntime.so.1',
+      './node_modules/onnxruntime-node/bin/napi-v6/linux/*/libonnxruntime_providers_shared.so',
+    ],
+  },
+  outputFileTracingExcludes: {
+    '/api/**/*': [
+      './node_modules/onnxruntime-node/bin/napi-v6/darwin/**/*',
+      './node_modules/onnxruntime-node/bin/napi-v6/win32/**/*',
+      './node_modules/onnxruntime-web/**/*',
+    ],
+  },
 
   // Suppress server identity disclosure
   poweredByHeader: false,

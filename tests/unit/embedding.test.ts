@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
+const embedLocal = vi.hoisted(() => vi.fn());
+vi.mock('@/lib/embedding-local', () => ({ embedLocal }));
 import {
-  embeddingConfig, buildEmbeddingText, normalize, packVector, unpackVector, similarity, embedTexts, EMBED_MAX_CHARS,
+  embeddingConfig, withRolePrefix, DEFAULT_LOCAL_MODEL, buildEmbeddingText, normalize, packVector, unpackVector, similarity, embedTexts, EMBED_MAX_CHARS,
 } from '@/lib/embedding';
 import { queryText, queryWithoutText } from '@/lib/threads-filter';
 import { rankBySimilarity, minSimilarity, DEFAULT_MIN_SIMILARITY } from '@/lib/semantic-search';
@@ -14,9 +16,21 @@ describe('embeddingConfig', () => {
   });
   it('末尾のスラッシュを除き、モデルと次元の既定値を持つ', () => {
     const c = embeddingConfig({ EMBEDDING_API_URL: 'http://localhost:11434/v1/' } as unknown as NodeJS.ProcessEnv)!;
-    expect(c).toEqual({ url: 'http://localhost:11434/v1', key: null, model: 'text-embedding-3-small', dims: null });
+    expect(c).toEqual({ kind: 'api', url: 'http://localhost:11434/v1', key: null, model: 'text-embedding-3-small', dims: null });
     const d = embeddingConfig({ EMBEDDING_API_URL: 'https://x', EMBEDDING_API_KEY: 'k', EMBEDDING_MODEL: 'm', EMBEDDING_DIMENSIONS: '512' } as unknown as NodeJS.ProcessEnv)!;
     expect(d).toMatchObject({ key: 'k', model: 'm', dims: 512 });
+  });
+  it('EMBEDDING_PROVIDER=local なら、サーバー内のモデルを使う（外へ送らない）', () => {
+    const c = embeddingConfig({ EMBEDDING_PROVIDER: 'Local' } as unknown as NodeJS.ProcessEnv)!;
+    expect(c).toEqual({ kind: 'local', model: DEFAULT_LOCAL_MODEL, dims: null, cacheDir: null, localOnly: false });
+    const d = embeddingConfig({ EMBEDDING_PROVIDER: 'local', EMBEDDING_MODEL: 'm', EMBEDDING_CACHE_DIR: '/data/models', EMBEDDING_LOCAL_ONLY: '1' } as unknown as NodeJS.ProcessEnv)!;
+    expect(d).toMatchObject({ kind: 'local', model: 'm', cacheDir: '/data/models', localOnly: true });
+  });
+  it('EMBEDDING_API_URL があればそちらが優先される', () => {
+    expect(embeddingConfig({ EMBEDDING_PROVIDER: 'local', EMBEDDING_API_URL: 'http://x' } as unknown as NodeJS.ProcessEnv)!.kind).toBe('api');
+  });
+  it('local 以外の値では有効にならない', () => {
+    expect(embeddingConfig({ EMBEDDING_PROVIDER: 'cloud' } as unknown as NodeJS.ProcessEnv)).toBeNull();
   });
 });
 
@@ -90,7 +104,7 @@ describe('検索語の分け方', () => {
 });
 
 describe('embedTexts', () => {
-  const cfg = { url: 'http://emb.test/v1', key: 'secret', model: 'm', dims: null };
+  const cfg = { kind: 'api' as const, url: 'http://emb.test/v1', key: 'secret', model: 'm', dims: null };
   it('設定がなければ使えない', async () => {
     await expect(embedTexts(['a'], null)).rejects.toThrow('embedding_disabled');
   });
@@ -119,5 +133,36 @@ describe('embedTexts', () => {
     await expect(embedTexts(['a'], cfg)).rejects.toThrow('embedding_http_500');
     vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ data: [] }))));
     await expect(embedTexts(['a'], cfg)).rejects.toThrow('embedding_bad_response');
+  });
+});
+
+describe('E5系モデルの接頭辞', () => {
+  it('e5 を含むモデルだけ、検索語は query:、メールは passage: を付ける', () => {
+    expect(withRolePrefix('Xenova/multilingual-e5-small', 'query', '請求書')).toBe('query: 請求書');
+    expect(withRolePrefix('intfloat/multilingual-E5-base', 'passage', '本文')).toBe('passage: 本文');
+    expect(withRolePrefix('text-embedding-3-small', 'query', '請求書')).toBe('請求書');
+  });
+  it('API でも同じ接頭辞を付けて送る', async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ data: [{ index: 0, embedding: [1, 0] }] })));
+    vi.stubGlobal('fetch', fetchMock);
+    await embedTexts(['請求書'], { kind: 'api', url: 'http://e', key: null, model: 'my-e5', dims: null }, 'query');
+    expect(JSON.parse((fetchMock.mock.calls[0] as unknown as [string, RequestInit])[1].body as string).input).toEqual(['query: 請求書']);
+  });
+});
+
+describe('embedTexts (local)', () => {
+  const local = { kind: 'local' as const, model: DEFAULT_LOCAL_MODEL, dims: null, cacheDir: null, localOnly: false };
+  it('ネットワークを使わず、ローカルのモデルに接頭辞付きで渡す', async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    embedLocal.mockResolvedValueOnce([Float32Array.from([1, 0])]);
+    const out = await embedTexts(['請求書'], local, 'query');
+    expect(embedLocal).toHaveBeenCalledWith(['query: 請求書'], local);
+    expect(Array.from(out[0])).toEqual([1, 0]);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+  it('モデルを読み込めなければ例外にする（呼び出し側がキーワード検索に戻す）', async () => {
+    embedLocal.mockRejectedValueOnce(new Error('model_load_failed'));
+    await expect(embedTexts(['a'], local)).rejects.toThrow('model_load_failed');
   });
 });

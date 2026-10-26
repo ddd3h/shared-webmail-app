@@ -24,6 +24,7 @@
     "seed:demo": "node --env-file-if-exists=.env prisma/seed-demo.mjs"
   },
   "dependencies": {
+    "@huggingface/transformers": "^4.3.1",
     "@prisma/client": "^5.13.0",
     "@simplewebauthn/browser": "^13.3.0",
     "@simplewebauthn/server": "^13.3.3",
