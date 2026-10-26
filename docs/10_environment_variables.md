@@ -36,6 +36,7 @@
 | `MATTERMOST_DEFAULT_CHANNEL_ID` | △ | Mattermost既定チャンネルID | 未実装（stub） | いいえ |
 | `NEXT_PUBLIC_APP_URL` | △ | アプリのベースURL（Push通知URLの生成等） | 要確認 | いいえ |
 | `CRON_SECRET` | △ | `/api/cron/sync` の認証トークン | `src/app/api/cron/sync/route.ts` | ✅ |
+| `EMBEDDING_API_URL` / `EMBEDDING_API_KEY` / `EMBEDDING_MODEL` / `EMBEDDING_DIMENSIONS` / `EMBEDDING_MIN_SCORE` | △ | 意味検索（Embedding）のサービス。`EMBEDDING_API_URL` が空なら機能ごと無効（詳しくは [30_semantic_search.md](30_semantic_search.md)） | `src/lib/embedding.ts`, `src/lib/semantic-search.ts` | いいえ |
 | `ENCRYPTION_KEY_VERSION` | △ | 暗号鍵バージョン識別子（例: `"v1"`） | `src/lib/crypto.ts`（推定） | いいえ |
 | `GOOGLE_CLIENT_ID` | △ | Google OAuth クライアントID（コンタクト同期用） | `src/app/api/contacts/google/auth/route.ts`, `sync/route.ts`, `callback/route.ts` | ✅ |
 | `GOOGLE_CLIENT_SECRET` | △ | Google OAuth クライアントシークレット（コンタクト同期用） | `src/app/api/contacts/google/sync/route.ts`, `callback/route.ts` | ✅ |

@@ -233,6 +233,7 @@ model threads {
   notifications         notification_events[]
   drafts                drafts[]
   scheduled_sends       scheduled_sends[]
+  embedding             thread_embeddings?
 }
 
 // Per-user read tracking for shared (team) mail threads
@@ -1257,4 +1258,17 @@ model recovery_codes {
   user users @relation(fields: [user_id], references: [id], onDelete: Cascade)
 
   @@index([user_id])
+}
+
+// One meaning-vector per thread, for the "意味でも探す" search (src/lib/semantic-search.ts).
+// The vector is float32 little-endian, normalised, so a dot product is the cosine similarity.
+// A thread is stale when last_message_at is newer than embedded_at or the model/dims differ from the current setting.
+model thread_embeddings {
+  thread_id   String   @id
+  model       String
+  dims        Int
+  vector      Bytes
+  embedded_at DateTime @default(now())
+
+  thread threads @relation(fields: [thread_id], references: [id], onDelete: Cascade)
 }

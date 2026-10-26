@@ -105,6 +105,8 @@
 | POST | `/api/admin/notification-errors/[id]/retry` | 通知再試行 | 必要 | ✅ |
 | GET | `/api/admin/users` | ユーザー管理（管理者用） | 必要 | ✅ |
 | GET | `/api/cron/sync` | 全メールボックス同期 | 不要（CRON_SECRET任意） | — |
+| GET | `/api/cron/embeddings` | 意味検索のベクトル作成（1回50件）。`Authorization: Bearer $CRON_SECRET` 必須 | CRON_SECRET | — |
+| GET | `/api/search/semantic` | 意味検索が使えるか（`{enabled}`） | 要ログイン | — |
 | POST | `/api/ai/reply` | AI返信文生成・校正 | 必要 | — |
 | GET | `/api/admin/spam-classifier` | MLスパム分類器ステータス取得 | 必要 | ✅ |
 | POST | `/api/admin/spam-classifier/model` | MLモデルアップロード | 必要 | ✅ |

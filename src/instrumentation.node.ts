@@ -8,6 +8,8 @@ import { syncMailbox } from '@/lib/mail/sync';
 import { reconcileIdleConnections } from '@/lib/mail/idle';
 import { runStaleUnreadAlerts } from '@/lib/background-jobs';
 import { dispatchDueScheduledSends } from '@/lib/mail/deliver';
+import { embeddingEnabled } from '@/lib/embedding';
+import { indexPendingThreads } from '@/lib/semantic-search';
 
 const DEFAULT_INTERVAL_SEC = 180;
 
@@ -42,6 +44,8 @@ async function runPollSync() {
 
 async function tick() {
   await runPollSync().catch(e => console.error('[cron] poll error:', e));
+  // meaning-vectors for the semantic search (does nothing unless EMBEDDING_API_URL is set)
+  if (embeddingEnabled()) await indexPendingThreads(50).catch(e => console.error('[embedding] index error:', e?.message || e));
   // Keep IDLE connections in sync with DB (picks up new/removed mailboxes)
   await reconcileIdleConnections().catch(e => console.error('[idle] reconcile error:', e));
 }

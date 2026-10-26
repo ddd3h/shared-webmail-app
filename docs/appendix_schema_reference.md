@@ -49,6 +49,7 @@ enum AuthType      { password  oauth }
 | `thread_state_history` | `thread_state_history` | threads, users |
 | `thread_visibility` | `thread_visibility` | threads, users |
 | `thread_reads` | `thread_reads` | threads, users |
+| `thread_embeddings` | `thread_embeddings` | threads（意味検索用のベクトル。docs/30） |
 | `message_sends` | `message_sends` | messages, threads, mailboxes, users |
 | `mattermost_links` | `mattermost_links` | threads, users |
 | `mattermost_notifications` | `mattermost_notifications` | threads, users |

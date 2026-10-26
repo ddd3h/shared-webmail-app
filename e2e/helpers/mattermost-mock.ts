@@ -3,6 +3,18 @@ import { MM_PORT, MM_URL } from './constants';
 
 type Post = { to: string; message: string };
 
+// Stand-in for an OpenAI-compatible /embeddings service: a word of a "concept" lights up that concept's dimension,
+// so texts about the same thing are close even when they share no word. Text with no known word gets the zero vector.
+const CONCEPTS = [
+  ['請求書', 'インボイス', '支払い', '代金', '振込'],
+  ['打ち合わせ', '会議', 'ミーティング', '日程'],
+  ['見積', '見積もり', '御見積', 'お見積り'],
+  ['採用', '面接', '応募'],
+];
+export function fakeEmbedding(text: string): number[] {
+  return CONCEPTS.map(words => words.reduce((n, w) => n + (text.includes(w) ? 1 : 0), 0));
+}
+
 // Minimal stand-in for the Mattermost REST API used by src/lib/mattermost-dm.ts.
 // It runs in the global-setup process; specs talk to it over HTTP (see mm below).
 export function startMattermostMock(): Promise<() => Promise<void>> {
@@ -10,6 +22,8 @@ export function startMattermostMock(): Promise<() => Promise<void>> {
   const channelTarget = new Map<string, string>();
   let failPosts = false;
   let imageHits = 0;
+  let failEmbeddings = false;
+  let embeddingCalls = 0;
 
   const server = http.createServer((req, res) => {
     let body = '';
@@ -18,7 +32,15 @@ export function startMattermostMock(): Promise<() => Promise<void>> {
       const url = req.url || '';
       const send = (o: unknown, code = 200) => { res.writeHead(code, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(o)); };
       if (url === '/__posts') return send(posts);
-      if (url === '/__reset') { posts.length = 0; failPosts = false; imageHits = 0; return send({ ok: true }); }
+      if (url === '/__reset') { posts.length = 0; failPosts = false; imageHits = 0; failEmbeddings = false; embeddingCalls = 0; return send({ ok: true }); }
+      if (url === '/__fail_embeddings') { failEmbeddings = JSON.parse(body || '{}').on !== false; return send({ failEmbeddings }); }
+      if (url === '/__embedding_calls') return send({ calls: embeddingCalls });
+      if (url === '/v1/embeddings') {
+        embeddingCalls++;
+        if (failEmbeddings) return send({ error: 'down' }, 503);
+        const { input } = JSON.parse(body) as { input: string[] };
+        return send({ data: input.map((t, index) => ({ index, embedding: fakeEmbedding(t) })) });
+      }
       if (url === '/__image_hits') return send({ hits: imageHits });
       if (/^\/api\/v4\/users\/[^/]+\/image$/.test(url)) { imageHits++; res.writeHead(200, { 'Content-Type': 'image/png' }); return res.end(Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64')); }
       if (url === '/__fail') { failPosts = JSON.parse(body || '{}').on !== false; return send({ failPosts }); }
@@ -46,6 +68,8 @@ export const mm = {
   async posts(): Promise<Post[]> { return (await fetch(`${MM_URL}/__posts`)).json(); },
   // How many times a profile picture was fetched from (the fake) Mattermost
   async imageHits(): Promise<number> { return (await (await fetch(`${MM_URL}/__image_hits`)).json()).hits; },
+  async failEmbeddings(on = true) { await fetch(`${MM_URL}/__fail_embeddings`, { method: 'POST', body: JSON.stringify({ on }) }); },
+  async embeddingCalls(): Promise<number> { return (await (await fetch(`${MM_URL}/__embedding_calls`)).json()).calls; },
   async reset() { await fetch(`${MM_URL}/__reset`, { method: 'POST' }); },
   async fail(on = true) { await fetch(`${MM_URL}/__fail`, { method: 'POST', body: JSON.stringify({ on }) }); },
   // DMs are sent after the HTTP response, so poll briefly.

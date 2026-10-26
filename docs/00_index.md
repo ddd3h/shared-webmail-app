@@ -30,6 +30,7 @@
 | [27_mobile.md](./27_mobile.md) | スマホ表示の方針 | 隠して必要なときに出す・シート・丸い「＋」・画面ごとの見え方 |
 | [28_profile.md](./28_profile.md) | プロフィール | 個人情報・受取口座・セキュリティ・メール署名を1か所に |
 | [29_demo_data.md](./29_demo_data.md) | デモデータ | テストサーバー用のサンプルデータの入れ方・消し方 |
+| [30_semantic_search.md](./30_semantic_search.md) | 意味検索 | Embedding を使った「意味でも探す」・設定・しくみ・デメリット |
 | [26_caching.md](./26_caching.md) | キャッシュの考え方 | Next.js 16 の Cache Components・`use cache`・何をキャッシュするか |
 
 ### 付録

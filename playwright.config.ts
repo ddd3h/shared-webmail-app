@@ -52,6 +52,10 @@ export default defineConfig({
       NEXT_PUBLIC_APP_URL: BASE_URL,
       MATTERMOST_BASE_URL: MM_URL,
       MATTERMOST_BOT_TOKEN: 'e2e-bot-token',
+      // the meaning search talks to a fake embedding service (see e2e/helpers/mattermost-mock.ts)
+      EMBEDDING_API_URL: `${MM_URL}/v1`,
+      EMBEDDING_MODEL: 'e2e-concepts',
+      CRON_SECRET: 'e2e-cron-secret',
       GOOGLE_CLIENT_ID: 'e2e-client.apps.googleusercontent.com',
       GOOGLE_CLIENT_SECRET: 'e2e-secret',
       NEXT_TELEMETRY_DISABLED: '1',

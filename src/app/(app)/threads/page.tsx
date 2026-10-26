@@ -86,6 +86,8 @@ type Thread = {
   has_mattermost: boolean;
   has_draft: boolean;
   readers: ThreadReader[];
+  match?: 'semantic'; // found by meaning, not by the words (only in a search with 意味でも探す)
+  score?: number;
 };
 
 const MAILBOX_COLOR_PALETTE = [
@@ -158,6 +160,7 @@ const TEAM_TABS = [
 // ── Search helpers ──────────────────────────────────────────────────────────
 
 const SEARCH_HISTORY_KEY = 'threads-search-history';
+const SEMANTIC_KEY = 'threads-search-semantic';
 function getSearchHistory(): string[] {
   try { return JSON.parse(localStorage.getItem(SEARCH_HISTORY_KEY) || '[]'); } catch { return []; }
 }
@@ -276,7 +279,7 @@ function setViewCookie(view: 'personal' | 'team') {
   document.cookie = `${VIEW_COOKIE}=${view}; path=/; max-age=${VIEW_COOKIE_MAX_AGE}; SameSite=Lax`;
 }
 
-function buildThreadsKey(view: string, tab: string, q: string, cursor?: { last: string; id: string }) {
+function buildThreadsKey(view: string, tab: string, q: string, cursor?: { last: string; id: string }, semantic = false) {
   const params = new URLSearchParams();
   params.set('type', view);
   if (tab === 'unread') params.set('unread', '1');
@@ -286,6 +289,7 @@ function buildThreadsKey(view: string, tab: string, q: string, cursor?: { last: 
   else if (tab === 'spam') params.set('spam', '1');
   else if (tab && tab !== 'all') params.set('status', tab);
   if (q) params.set('q', q);
+  if (q && semantic) params.set('semantic', '1');
   if (cursor) { params.set('cursor', cursor.last); params.set('cursor_id', cursor.id); }
   return `/api/threads?${params}`;
 }
@@ -317,6 +321,11 @@ function ThreadList() {
   useEffect(() => { if (searchOpen) searchRef.current?.focus(); }, [searchOpen]);
   const [showHistory, setShowHistory] = useState(false);
   const [searchHistory, setSearchHistory] = useState<string[]>([]);
+  // 意味でも探す: offered only when the server has an embedding service; the choice is remembered in this browser
+  const { data: semanticStatus } = useSWR<{ enabled: boolean }>('/api/search/semantic', fetcher);
+  const [semanticOn, setSemanticOn] = useState(true);
+  useEffect(() => { try { if (localStorage.getItem(SEMANTIC_KEY) === '0') setSemanticOn(false); } catch {} }, []);
+  const semanticSearch = !!semanticStatus?.enabled && semanticOn;
   const [showCompose, setShowCompose] = useState(false);
   const [openDraftId, setOpenDraftId] = useState<string | undefined>(undefined);
   const [initialTo, setInitialTo] = useState<string[] | undefined>(undefined);
@@ -357,8 +366,8 @@ function ThreadList() {
   const currentCursor = cursorStack[cursorStack.length - 1];
   const isSearching = search.trim().length > 0;
   const threadsKey = initialized && tab !== 'drafts' && !isSearching ? buildThreadsKey(mailboxView, tab, search, currentCursor) : null;
-  const searchPersonalKey = initialized && isSearching ? buildThreadsKey('personal', '', search) : null;
-  const searchTeamKey = initialized && isSearching ? buildThreadsKey('team', '', search) : null;
+  const searchPersonalKey = initialized && isSearching ? buildThreadsKey('personal', '', search, undefined, semanticSearch) : null;
+  const searchTeamKey = initialized && isSearching ? buildThreadsKey('team', '', search, undefined, semanticSearch) : null;
   const draftsKey = initialized && tab === 'drafts' ? '/api/drafts' : null;
   const unreadCountsKey = initialized ? UNREAD_KEY : null;
 
@@ -369,9 +378,16 @@ function ThreadList() {
   const { data: unreadResult } = useSWR(unreadCountsKey, fetcher);
 
   const threads: Thread[] = isSearching
-    ? [...(searchPersonalResult?.items || []), ...(searchTeamResult?.items || [])]
-        .sort((a, b) => new Date(b.last).getTime() - new Date(a.last).getTime())
+    ? (() => {
+        const all: Thread[] = [...(searchPersonalResult?.items || []), ...(searchTeamResult?.items || [])];
+        // the word hits by date, then the ones only close in meaning, closest first
+        const byWords = all.filter(t => t.match !== 'semantic').sort((a, b) => new Date(b.last).getTime() - new Date(a.last).getTime());
+        const byMeaning = all.filter(t => t.match === 'semantic').sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
+        return [...byWords, ...byMeaning];
+      })()
     : threadResult?.items || [];
+  const firstSemanticIndex = threads.findIndex(t => t.match === 'semantic');
+  const semanticDown = isSearching && semanticSearch && (searchPersonalResult?.semantic?.used === false || searchTeamResult?.semantic?.used === false);
   const drafts: DraftItem[] = draftResult?.drafts || [];
   const nextCursor: { last: string; id: string } | null = (!isSearching && threadResult?.nextCursor) || null;
   const personalUnread: number = unreadResult?.personal || 0;
@@ -832,6 +848,19 @@ function ThreadList() {
               </button>
             )}
           </div>
+
+          {semanticStatus?.enabled && (
+            <label className="flex items-start gap-2 text-xs text-gray-600 cursor-pointer select-none">
+              <input
+                type="checkbox" checked={semanticOn} className="mt-0.5 w-4 h-4 rounded text-blue-600 border-gray-300"
+                onChange={e => { setSemanticOn(e.target.checked); try { localStorage.setItem(SEMANTIC_KEY, e.target.checked ? '1' : '0'); } catch {} }}
+              />
+              <span><span className="font-medium text-gray-700">意味でも探す</span><span className="hidden sm:inline">　言葉が同じでなくても、内容が近いメールを下に足します</span></span>
+            </label>
+          )}
+          {semanticDown && (
+            <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-1.5">意味検索を一時的に使えません。言葉が一致したメールだけを表示しています。</p>
+          )}
 
           {/* Advanced filters */}
           {showFilters && (
@@ -1318,6 +1347,11 @@ function ThreadList() {
                     isSelected ? 'bg-blue-50' : isUnread ? 'bg-white hover:bg-blue-50/50' : 'hover:bg-gray-50'
                   }`}
                 >
+                  {index === firstSemanticIndex && (
+                    <div onClick={e => e.stopPropagation()} className="px-4 py-1.5 bg-violet-50 border-y border-violet-100 text-xs font-medium text-violet-700 cursor-default">
+                      意味が近いメール <span className="font-normal text-violet-500">（言葉は一致しませんが、内容が近いものです）</span>
+                    </div>
+                  )}
                   {/* ── モバイルレイアウト (< sm) ── */}
                   <div className="flex items-start gap-3 px-4 py-3 sm:hidden">
                     {/* アバタータップで選択 */}
@@ -1366,6 +1400,9 @@ function ThreadList() {
                         <span className={`flex-1 min-w-0 truncate text-sm ${isUnread ? 'font-medium text-gray-800' : 'text-gray-500'}`}>
                           {t.subject || '(件名なし)'}
                         </span>
+                        {t.match === 'semantic' && (
+                          <span title={`近さ ${t.score}`} className="shrink-0 text-[11px] px-1.5 py-0.5 rounded-sm bg-violet-50 text-violet-700 font-medium">意味</span>
+                        )}
                         {t.has_mattermost && (
                           <span className="shrink-0 text-xs px-1.5 py-0.5 rounded-sm bg-purple-50 text-purple-600 font-medium">M</span>
                         )}
@@ -1430,6 +1467,9 @@ function ThreadList() {
                       <span className={`truncate text-sm ${isUnread ? 'font-semibold text-gray-900' : 'text-gray-700'}`}>
                         {t.subject || '(件名なし)'}
                       </span>
+                      {t.match === 'semantic' && (
+                        <span title={`近さ ${t.score}`} className="shrink-0 text-[11px] px-1.5 py-0.5 rounded-sm bg-violet-50 text-violet-700 font-medium">意味</span>
+                      )}
                       {t.has_mattermost && (
                         <span className="shrink-0 text-xs px-1.5 py-0.5 rounded-sm bg-purple-50 text-purple-600 font-medium">M</span>
                       )}

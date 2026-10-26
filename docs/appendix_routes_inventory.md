@@ -83,6 +83,8 @@
 | POST | `/api/admin/notification-errors/[id]/retry` | `src/app/api/admin/notification-errors/[id]/retry/route.ts` |
 | GET | `/api/admin/users` | `src/app/api/admin/users/route.ts` |
 | GET | `/api/cron/sync` | `src/app/api/cron/sync/route.ts` |
+| GET | `/api/cron/embeddings` | `src/app/api/cron/embeddings/route.ts` |
+| GET | `/api/search/semantic` | `src/app/api/search/semantic/route.ts` |
 
 ---
 

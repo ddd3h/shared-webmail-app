@@ -50,6 +50,17 @@ export function parseQuery(raw: string) {
   return filters;
 }
 
+// The free words of a query (what the semantic search looks for); the rest (from:, status:, ...) still narrows the list as usual.
+export function queryText(raw: string): string {
+  return parseQuery(raw).text.join(' ');
+}
+
+export function queryWithoutText(raw: string): string {
+  const f = parseQuery(raw);
+  const free = new Set(f.text);
+  return raw.trim().split(/\s+/).filter(tok => !free.has(tok)).join(' ');
+}
+
 export function buildThreadsWhere(params: {
   session: { userId: string },
   status?: string,
