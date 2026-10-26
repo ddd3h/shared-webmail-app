@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSessionFromRequest, refreshSessionCookie } from '@/lib/auth';
+import { getSessionFromRequest, refreshSessionCookie, revokeSuspicious } from '@/lib/auth';
 import { matchesAny } from '@/lib/cidr';
-import { clientIpFrom } from '@/lib/client-ip';
+import { clientIpFrom, sameNetwork } from '@/lib/client-ip';
 import { blockIp, isIpBlocked } from '@/lib/ip-block';
 import { addStrike } from '@/lib/login-guard';
 import { originProblem } from '@/lib/origin-check';
@@ -69,6 +69,14 @@ export async function proxy(req: NextRequest) {
     }
     const res = NextResponse.redirect(loginUrl);
     res.cookies.delete('sid'); // clear stale/expired cookie
+    return res;
+  }
+
+  // A session only works from the address it began on; from anywhere else it is ended on the spot.
+  if (session.ip && !sameNetwork(ip, session.ip)) {
+    await revokeSuspicious(session.sessionId, session.userId, 'session_ip_mismatch', { expected: session.ip, got: ip, path: pathname });
+    const res = pathname.startsWith('/api/') ? NextResponse.json({ error: 'unauthorized' }, { status: 401 }) : NextResponse.redirect(new URL('/login', req.url));
+    res.cookies.delete('sid');
     return res;
   }
 

@@ -5,7 +5,7 @@ import { PASSWORD, USERS, type Role } from './constants';
 export const fakeIp = () => `10.${Math.floor(Math.random() * 250) + 1}.${Math.floor(Math.random() * 250) + 1}.${Math.floor(Math.random() * 250) + 1}`;
 
 export async function freshContext(browser: Browser, opts: Parameters<Browser['newContext']>[0] = {}): Promise<BrowserContext> {
-  const ctx = await browser.newContext({ locale: 'ja-JP', timezoneId: 'Asia/Tokyo', extraHTTPHeaders: { 'x-forwarded-for': fakeIp() }, ...opts });
+  const ctx = await browser.newContext({ locale: 'ja-JP', timezoneId: 'Asia/Tokyo', extraHTTPHeaders: opts.storageState ? {} : { 'x-forwarded-for': fakeIp() }, ...opts });
   await ctx.addInitScript(() => {
     const style = document.createElement('style');
     style.textContent = 'nextjs-portal{display:none!important}';

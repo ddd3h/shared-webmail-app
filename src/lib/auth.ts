@@ -2,6 +2,7 @@ import { cookies, headers } from 'next/headers';
 import { NextRequest, NextResponse } from 'next/server';
 import * as Iron from 'iron-webcrypto';
 import { prisma } from '@/lib/db';
+import { clientIpFrom, sameNetwork } from '@/lib/client-ip';
 import { deviceFingerprint } from '@/lib/device';
 import { loadSecurityPolicy } from '@/lib/security-settings';
 import { recordSecurityEvent } from '@/lib/security-events';
@@ -67,6 +68,7 @@ type SealedPayload = {
   expiresAt: number; // epoch ms (idle timeout: pushed forward on every request)
   issuedAt?: number; // epoch ms of the login: a session never outlives SECURITY_SESSION_MAX_DAYS, however active
   fp?: string;       // browser + OS of the login (no versions): a cookie replayed from another kind of device is refused
+  ip?: string;       // the address of the login: a session is only good from the address it began on
 };
 
 // Public type exposed to callers
@@ -79,6 +81,7 @@ export type Session = {
   expiresAt: number;
   issuedAt?: number;
   fp?: string;
+  ip?: string;
 };
 
 async function sealSession(payload: SealedPayload): Promise<string> {
@@ -97,7 +100,7 @@ async function unsealToken(token: string): Promise<SealedPayload | null> {
 const DAY_MS = 24 * 3600 * 1000;
 
 /** Ends a session and leaves a note (used when a cookie fails one of the extra checks). */
-async function revokeSuspicious(sessionId: string, userId: string, type: string, detail: Record<string, unknown>): Promise<null> {
+export async function revokeSuspicious(sessionId: string, userId: string, type: string, detail: Record<string, unknown>): Promise<null> {
   await prisma.sessions.delete({ where: { id: sessionId } }).catch(() => {});
   await recordSecurityEvent({ type, severity: 'warn', userId, detail });
   return null;
@@ -118,21 +121,27 @@ export async function getSession(): Promise<Session | null> {
   // The role comes from the DB, not the cookie, so a demotion or lock takes effect at once.
   const dbSession = await prisma.sessions.findUnique({
     where: { id: payload.sessionId },
-    select: { id: true, expires_at: true, created_at: true, user: { select: { role: true, locked_at: true } } },
+    select: { id: true, expires_at: true, created_at: true, ip_address: true, user: { select: { role: true, locked_at: true } } },
   });
   if (!dbSession) return null;
+  const hdrs = await headers();
   if (dbSession.expires_at < new Date()) {
     prisma.sessions.delete({ where: { id: payload.sessionId } }).catch(() => {});
     return null;
   }
   if (dbSession.user.locked_at) return revokeSuspicious(payload.sessionId, payload.userId, 'session_locked_account', {});
 
+  // A login belongs to the address it began on. From any other address the session is ended, not just refused,
+  // so a stolen cookie is dead for good (and the real person simply logs in again).
+  const ip = clientIpFrom(name => hdrs.get(name));
+  if (!sameNetwork(ip, dbSession.ip_address)) return revokeSuspicious(payload.sessionId, payload.userId, 'session_ip_mismatch', { expected: dbSession.ip_address, got: ip });
+
   const policy = await loadSecurityPolicy();
   const issuedAt = payload.issuedAt ?? dbSession.created_at.getTime();
   if (Date.now() - issuedAt > policy.sessionMaxDays * DAY_MS) return revokeSuspicious(payload.sessionId, payload.userId, 'session_max_age', { days: policy.sessionMaxDays });
 
   if (payload.fp && policy.deviceBinding) {
-    const now = deviceFingerprint((await headers()).get('user-agent'));
+    const now = deviceFingerprint(hdrs.get('user-agent'));
     if (now !== payload.fp) return revokeSuspicious(payload.sessionId, payload.userId, 'session_device_mismatch', { expected: payload.fp, got: now });
   }
 
@@ -145,6 +154,7 @@ export async function getSession(): Promise<Session | null> {
     expiresAt: payload.expiresAt,
     issuedAt,
     fp: payload.fp,
+    ip: dbSession.ip_address,
   };
 }
 
@@ -168,6 +178,7 @@ export async function getSessionFromRequest(req: NextRequest): Promise<{ session
       expiresAt: payload.expiresAt,
       issuedAt: payload.issuedAt,
       fp: payload.fp,
+      ip: payload.ip,
     },
     token,
   };
@@ -232,6 +243,7 @@ export async function setSessionCookie(
     expiresAt,
     issuedAt: Date.now(),
     fp: deviceFingerprint(context.userAgent),
+    ip: context.ip,
   };
 
   const token = await sealSession(payload);

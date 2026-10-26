@@ -13,6 +13,7 @@ export type Policy = { allowed_cidrs: string; allowed_countries: string; session
 export const EVENT_LABEL: Record<string, string> = {
   login_sweep: '多数のアカウントを試行（スイーピング）', ip_blocked: 'アドレスを自動ブロック', sweep_detected: '大量アクセスを検知', bad_origin: '他サイトからの更新リクエストを拒否',
   new_device_login: '新しい端末からのログイン', login_country_blocked: '許可されていない国からのログイン', mfa_enabled: '2段階認証が有効になった', mfa_disabled: '2段階認証が解除された', mfa_reset: '管理者が2段階認証をリセット', mfa_recovery_used: '回復コードでログイン', mfa_locked: '認証コードの入力を何度も間違えた', policy_2fa_off: '「パスワード＋2段階認証」の必須設定がオフにされた', policy_2fa_on: '「パスワード＋2段階認証」が必須になった',
+  session_ip_mismatch: '別のIPアドレスからのセッション使用を検知し、セッションを終了',
   session_device_mismatch: 'Cookieの使い回しを疑い、セッションを終了',
   session_max_age: '期限切れのセッションを終了', session_locked_account: 'ロック中のアカウントのセッションを終了', user_locked: 'アカウントをロック', user_unlocked: 'アカウントのロックを解除',
 };

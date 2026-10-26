@@ -26,6 +26,8 @@ async function client(ip: string, o: { ua?: string; storageState?: string } = {}
   opened.push(c);
   return c;
 }
+/** A client at `ip` that is signed in from there (a saved session would only work from the address it began on). */
+async function signedInAt(ip: string, email: string) { const c = await client(ip); expect((await login(c, email)).status()).toBe(200); return c; }
 const login = (c: APIRequestContext, email: string, password = PASSWORD) => c.post('/api/auth/login', { data: { email, password } });
 // signed in? (without a session the proxy answers with a redirect to the login page)
 const sessionOf = async (c: APIRequestContext) => {
@@ -359,7 +361,7 @@ test.describe('アクセス元の制限（管理者）', () => {
   const policy = (extra: object = {}) => ({ allowed_cidrs: '', allowed_countries: '', session_max_days: 14, new_device_alert: true, device_binding: false, ...extra });
 
   test('許可ネットワークに自分のアドレスが入っていない設定は保存できない（自分を締め出さない）', async () => {
-    const admin = await client('10.77.0.5', { storageState: AUTH.admin });
+    const admin = await signedInAt('10.77.0.5', USERS.admin.email);
     const res = await admin.put('/api/admin/security/policy', { data: policy({ allowed_cidrs: '192.168.50.0/24' }) });
     expect(res.status()).toBe(409);
     expect((await res.json()).error).toBe('locks_yourself_out');
@@ -367,7 +369,7 @@ test.describe('アクセス元の制限（管理者）', () => {
   });
 
   test('許可ネットワークを設定すると、外のアドレスからはログインも利用もできず、中なら使える。解除すると戻る', async () => {
-    const admin = await client('10.77.0.5', { storageState: AUTH.admin });
+    const admin = await signedInAt('10.77.0.5', USERS.admin.email);
     expect((await admin.put('/api/admin/security/policy', { data: policy({ allowed_cidrs: '10.77.0.0/16  # 本社' }) })).status()).toBe(200);
     const outside = await client('10.88.0.9');
     expect((await login(outside, USERS.sato.email)).status()).toBe(403);
@@ -383,7 +385,7 @@ test.describe('アクセス元の制限（管理者）', () => {
   });
 
   test('手動ブロック: 範囲を指定でき、自分のアドレスはブロックできず、解除できる', async () => {
-    const admin = await client('10.77.0.5', { storageState: AUTH.admin });
+    const admin = await signedInAt('10.77.0.5', USERS.admin.email);
     expect((await admin.post('/api/admin/security/blocks', { data: { ip: '10.77.0.0/24', reason: 'テスト' } })).status()).toBe(409); // includes the admin's own address
     expect((await admin.post('/api/admin/security/blocks', { data: { ip: 'garbage', reason: 'x' } })).status()).toBe(400);
     expect((await admin.post('/api/admin/security/blocks', { data: { ip: '10.99.0.0/24', reason: '不審なアクセス' } })).status()).toBe(201);
@@ -395,7 +397,7 @@ test.describe('アクセス元の制限（管理者）', () => {
   });
 
   test('期限つきのブロックは、期限が過ぎると効かなくなる', async () => {
-    const admin = await client('10.77.0.5', { storageState: AUTH.admin });
+    const admin = await signedInAt('10.77.0.5', USERS.admin.email);
     await db.ip_blocks.create({ data: { ip: '10.66.0.1', reason: '期限切れ', source: 'manual', expires_at: new Date(Date.now() - 1000) } });
     await admin.post('/api/admin/security/blocks', { data: { ip: '10.66.0.2', reason: 'x', minutes: 5 } });
     expect((await (await client('10.66.0.1')).get('/login')).status()).toBe(200);
@@ -411,10 +413,11 @@ test.describe('Cookieの使い回し・セッションの寿命', () => {
     const p = await (await admin.get('/api/admin/security/policy')).json();
     await admin.put('/api/admin/security/policy', { data: { allowed_cidrs: '', allowed_countries: '', session_max_days: p.session_max_days, new_device_alert: false, device_binding: true } });
     try {
-      const owner = await client(fakeIp());
+      const ownerIp = fakeIp();
+      const owner = await client(ownerIp);
       await login(owner, USERS.guest.email);
       const cookies = (await owner.storageState()).cookies.filter(c => c.name === 'sid');
-      const thief = await pwRequest.newContext({ baseURL: BASE_URL, userAgent: SAFARI_IOS, extraHTTPHeaders: { 'x-forwarded-for': fakeIp(), cookie: `sid=${cookies[0].value}` } });
+      const thief = await pwRequest.newContext({ baseURL: BASE_URL, userAgent: SAFARI_IOS, extraHTTPHeaders: { 'x-forwarded-for': ownerIp, cookie: `sid=${cookies[0].value}` } });
       opened.push(thief);
       expect(await sessionOf(thief)).toBe(false);
       expect((await db.security_events.findMany({ where: { type: 'session_device_mismatch' } })).length).toBe(1);
@@ -422,12 +425,63 @@ test.describe('Cookieの使い回し・セッションの寿命', () => {
       expect((await login(owner, USERS.guest.email)).status()).toBe(200);
       expect(await sessionOf(owner)).toBe(true);
       // a browser update (new version, same browser and OS) does not log anybody out
-      const updated = await pwRequest.newContext({ baseURL: BASE_URL, userAgent: CHROME_WIN.replace('126.0.0.0', '131.0.0.0'), extraHTTPHeaders: { 'x-forwarded-for': fakeIp(), cookie: `sid=${(await owner.storageState()).cookies.find(c => c.name === 'sid')!.value}` } });
+      const updated = await pwRequest.newContext({ baseURL: BASE_URL, userAgent: CHROME_WIN.replace('126.0.0.0', '131.0.0.0'), extraHTTPHeaders: { 'x-forwarded-for': ownerIp, cookie: `sid=${(await owner.storageState()).cookies.find(c => c.name === 'sid')!.value}` } });
       opened.push(updated);
       expect(await sessionOf(updated)).toBe(true);
     } finally {
       await admin.put('/api/admin/security/policy', { data: { allowed_cidrs: '', allowed_countries: '', session_max_days: p.session_max_days, new_device_alert: true, device_binding: false } });
     }
+  });
+
+  test('セッションは、ログインしたIPアドレスからしか使えない。別のアドレスから使うとセッションごと終了する', async () => {
+    const ip = fakeIp();
+    const owner = await signedInAt(ip, USERS.guest.email);
+    expect(await sessionOf(owner)).toBe(true);
+    const sid = (await owner.storageState()).cookies.find(c => c.name === 'sid')!.value;
+
+    const elsewhere = await pwRequest.newContext({ baseURL: BASE_URL, userAgent: CHROME_WIN, extraHTTPHeaders: { 'x-forwarded-for': fakeIp(), cookie: `sid=${sid}` } });
+    opened.push(elsewhere);
+    expect(await sessionOf(elsewhere)).toBe(false);
+    expect((await elsewhere.get('/api/threads', { maxRedirects: 0 })).status()).not.toBe(200);
+    const events = await db.security_events.findMany({ where: { type: 'session_ip_mismatch', user_id: USERS.guest.id } });
+    expect(events.length).toBeGreaterThanOrEqual(1);
+    expect(events[0].severity).toBe('warn');
+
+    // the session is gone for good: the real owner is signed out too, and logs in again
+    expect(await sessionOf(owner)).toBe(false);
+    expect(await db.sessions.count({ where: { id: { not: '' }, user_id: USERS.guest.id, ip_address: ip } })).toBe(0);
+    expect((await login(owner, USERS.guest.email)).status()).toBe(200);
+    expect(await sessionOf(owner)).toBe(true);
+  });
+
+  test('同じアドレスなら使い続けられる。IPv6は、同じ回線（先頭64ビット）の中で下位が変わっても外れない', async () => {
+    const ip = fakeIp();
+    const c = await signedInAt(ip, USERS.guest.email);
+    const sid = (await c.storageState()).cookies.find(c2 => c2.name === 'sid')!.value;
+    const same = await pwRequest.newContext({ baseURL: BASE_URL, userAgent: CHROME_WIN, extraHTTPHeaders: { 'x-forwarded-for': ip, cookie: `sid=${sid}` } });
+    opened.push(same);
+    expect(await sessionOf(same)).toBe(true);
+
+    const v6 = await signedInAt('2001:db8:1234:5678:aaaa:bbbb:cccc:dddd', USERS.guest.email);
+    const sid6 = (await v6.storageState()).cookies.find(c2 => c2.name === 'sid')!.value;
+    const rotated = await pwRequest.newContext({ baseURL: BASE_URL, userAgent: CHROME_WIN, extraHTTPHeaders: { 'x-forwarded-for': '2001:db8:1234:5678:1111:2222:3333:4444', cookie: `sid=${sid6}` } });
+    opened.push(rotated);
+    expect(await sessionOf(rotated)).toBe(true);
+    const otherLine = await pwRequest.newContext({ baseURL: BASE_URL, userAgent: CHROME_WIN, extraHTTPHeaders: { 'x-forwarded-for': '2001:db8:1234:9999:aaaa:bbbb:cccc:dddd', cookie: `sid=${sid6}` } });
+    opened.push(otherLine);
+    expect(await sessionOf(otherLine)).toBe(false);
+  });
+
+  test('画面（ブラウザ）でも、別のアドレスから開くとログイン画面に戻される', async ({ browser }) => {
+    const ip = fakeIp();
+    const c = await signedInAt(ip, USERS.guest.email);
+    const sid = (await c.storageState()).cookies.find(k => k.name === 'sid')!.value;
+    const ctx = await browser.newContext({ extraHTTPHeaders: { 'x-forwarded-for': fakeIp() } });
+    await ctx.addCookies([{ name: 'sid', value: sid, url: BASE_URL }]);
+    const page = await ctx.newPage();
+    await page.goto('/threads');
+    await expect(page).toHaveURL(/\/login/);
+    await ctx.close();
   });
 
   test('役割はCookieではなくDBから決まる: 管理者から降格すると、すぐに管理画面のAPIに入れなくなる', async () => {
@@ -465,7 +519,7 @@ test.describe('他サイトからのリクエスト・ヘッダー', () => {
   });
 
   test('セキュリティヘッダーが付き、個人情報のAPIはキャッシュされない', async () => {
-    const c = await client(fakeIp(), { storageState: AUTH.sato });
+    const c = await signedInAt(fakeIp(), USERS.guest.email);
     const page = await c.get('/login');
     const h = page.headers();
     expect(h['x-content-type-options']).toBe('nosniff');

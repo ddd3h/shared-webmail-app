@@ -22,10 +22,9 @@ export default async function globalSetup() {
   await db.app_settings.upsert({ where: { key: 'SECURITY_DEVICE_BINDING' }, create: { key: 'SECURITY_DEVICE_BINDING', value: 'off' }, update: { value: 'off' } });
 
   mkdirSync('e2e/.auth', { recursive: true });
-  let n = 1;
   for (const role of ROLES) {
-    // each login gets its own fake client IP so the per-IP login limiter never trips
-    const ctx = await request.newContext({ baseURL: BASE_URL, extraHTTPHeaders: { 'x-forwarded-for': `10.9.0.${n++}` } });
+    // no forwarding header: the saved sessions belong to this machine's own address, which is where every plain test client comes from (a session only works from the address it began on)
+    const ctx = await request.newContext({ baseURL: BASE_URL });
     const res = await ctx.post('/api/auth/login', { data: { email: USERS[role].email, password: PASSWORD } });
     if (!res.ok()) throw new Error(`E2E login failed for ${role}: ${res.status()} ${await res.text()}`);
     await ctx.storageState({ path: AUTH[role] });

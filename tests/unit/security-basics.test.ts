@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { ipMatches, isValidRule, matchesAny, normalizeIp, parseRules } from '@/lib/cidr';
-import { clientIpFrom } from '@/lib/client-ip';
+import { clientIpFrom, sameNetwork } from '@/lib/client-ip';
 import { describeDevice, deviceFingerprint, looksAutomated } from '@/lib/device';
 import { passwordProblem } from '@/lib/password-policy';
 import { parsePolicy } from '@/lib/security-settings';
@@ -233,5 +233,28 @@ describe('TOTP（認証アプリのワンタイムパスワード）', () => {
     expect(normalizeRecoveryCode(' ABCDE-fghjk ')).toBe('abcdefghjk');
     expect(looksLikeRecoveryCode('abcde fghjk')).toBe(true);
     expect(looksLikeRecoveryCode('123456')).toBe(false);
+  });
+});
+
+describe('sameNetwork（ログイン中のIPアドレス確認）', () => {
+  it('IPv4は完全一致だけ同じ', () => {
+    expect(sameNetwork('203.0.113.5', '203.0.113.5')).toBe(true);
+    expect(sameNetwork('203.0.113.5', '203.0.113.6')).toBe(false);
+    expect(sameNetwork('::ffff:203.0.113.5', '203.0.113.5')).toBe(true);
+  });
+  it('IPv6は先頭64ビット（同じ回線）が同じなら同じ。省略表記も同じ扱い', () => {
+    expect(sameNetwork('2001:db8:1:2:aaaa::1', '2001:db8:1:2:bbbb::2')).toBe(true);
+    expect(sameNetwork('2001:db8:1:3::1', '2001:db8:1:2::1')).toBe(false);
+    expect(sameNetwork('2001:0db8:0001:0002::1', '2001:db8:1:2::9')).toBe(true);
+    expect(sameNetwork('2001:db8::1', '2001:db8:0:1::1')).toBe(false);
+    expect(sameNetwork('2001:db8::1', '203.0.113.5')).toBe(false);
+  });
+  it('このマシン自身（::1 と 127.0.0.1）は同じ', () => {
+    expect(sameNetwork('::1', '127.0.0.1')).toBe(true);
+    expect(sameNetwork('::1', '203.0.113.5')).toBe(false);
+  });
+  it('分からないアドレス同士は同じ（プロキシ設定なしの構成を壊さない）', () => {
+    expect(sameNetwork('unknown', 'unknown')).toBe(true);
+    expect(sameNetwork('unknown', '203.0.113.5')).toBe(false);
   });
 });
