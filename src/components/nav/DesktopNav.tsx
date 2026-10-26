@@ -5,19 +5,22 @@ import Dropdown from './Dropdown';
 import Icon from './Icon';
 import { ACCOUNT_ITEMS, ADMIN_ITEM, SECURITY_ITEM, APPROVALS_ITEM, MAIN_ITEMS, NOTIFICATIONS_ITEM, ORG_GROUP_LABEL, ORG_ITEMS, TRANSFERS_ITEM, WORK_GROUP_LABEL, WORK_ITEMS, isActivePath, iconPath, type NavItem } from './items';
 import { logout, type NavUser } from './useNavUser';
+import CountBadge from './CountBadge';
+import { useNotificationCount } from '@/hooks/useNotificationCount';
 
 const Chevron = () => <svg className="w-3.5 h-3.5 opacity-60" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>;
 
-function TopLink({ item, pathname, iconOnly }: { item: NavItem; pathname: string; iconOnly?: boolean }) {
+function TopLink({ item, pathname, iconOnly, badge = 0 }: { item: NavItem; pathname: string; iconOnly?: boolean; badge?: number }) {
   const active = isActivePath(pathname, item.href);
   return (
     <Link
       href={item.href} aria-label={item.label} title={item.label} aria-current={active ? 'page' : undefined}
-      className={`flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium whitespace-nowrap transition-colors ${
+      className={`relative flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium whitespace-nowrap transition-colors ${
         active ? 'bg-blue-50 text-blue-700' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
       }`}
     >
       {iconOnly ? <Icon d={item.icon} /> : item.label}
+      <CountBadge count={badge} className={iconOnly ? 'absolute right-0.5 top-0.5' : ''} />
     </Link>
   );
 }
@@ -43,6 +46,7 @@ const initialOf = (name: string) => (name.trim() ? [...name.trim()][0] : '?');
 
 export default function DesktopNav({ user }: { user: NavUser }) {
   const pathname = usePathname();
+  const unreadNotifications = useNotificationCount();
   const workItems = [...WORK_ITEMS, ...(user.canApprove ? [APPROVALS_ITEM] : []), ...(user.isFinance ? [TRANSFERS_ITEM] : [])];
   const accountItems = user.isAdmin ? [...ACCOUNT_ITEMS, ADMIN_ITEM, SECURITY_ITEM] : ACCOUNT_ITEMS;
 
@@ -67,7 +71,7 @@ export default function DesktopNav({ user }: { user: NavUser }) {
 
           <div className="flex-1" />
 
-          <TopLink item={NOTIFICATIONS_ITEM} pathname={pathname} iconOnly />
+          <TopLink item={NOTIFICATIONS_ITEM} pathname={pathname} iconOnly badge={unreadNotifications} />
           <Dropdown align="right" ariaLabel="アカウントメニュー" trigger={
             <>
               <span className="flex h-6 w-6 items-center justify-center rounded-full bg-gray-200 text-xs font-semibold text-gray-700">{initialOf(user.name)}</span>

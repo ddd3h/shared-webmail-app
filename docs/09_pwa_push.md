@@ -75,7 +75,7 @@ Web Push には VAPID（Voluntary Application Server Identification）が必要�
 ## 通知購読の流れ
 
 ```
-1. ブラウザが /notifications ページを開く
+1. ブラウザがプロフィールの「通知とアプリ」（`/profile#notifications`。以前は `/notifications` にあった）を開く
 2. src/app/sw-client.tsx がマウント
 3. navigator.serviceWorker.register('/sw.js')
 4. 通知許可を確認（Notification.permission）

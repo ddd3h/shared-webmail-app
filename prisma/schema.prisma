@@ -418,11 +418,14 @@ model notification_events {
   body       String
   url        String
   priority   NotificationPriority
+  read_at    DateTime?
   created_at DateTime             @default(now())
 
   user       users   @relation(fields: [user_id], references: [id])
   thread     threads? @relation(fields: [thread_id], references: [id])
   deliveries notification_deliveries[]
+
+  @@index([user_id, created_at])
 }
 
 model notification_deliveries {

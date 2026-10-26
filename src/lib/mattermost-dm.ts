@@ -1,4 +1,5 @@
 // Mattermost DM sender — looks up user by email, creates DM channel, posts message
+import { fromDirectMessage, recordNotification } from '@/lib/notifications';
 import { prisma } from '@/lib/db';
 import { getSetting } from '@/lib/settings';
 
@@ -189,6 +190,13 @@ export async function sendDirectMessage(
   message: string,
   notificationType: string
 ): Promise<boolean> {
+  // The same news goes to the notification list in the app, whether or not Mattermost is set up
+  await recordNotification({
+    userId, type: notificationType,
+    ...fromDirectMessage(message, (process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000').replace(/\/$/, '')),
+    priority: notificationType.startsWith('security_') ? 'high' : 'normal',
+  });
+
   const { baseUrl, token } = await getConfig();
   if (!baseUrl || !token) return false;
 

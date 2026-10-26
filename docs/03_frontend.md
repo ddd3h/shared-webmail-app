@@ -36,7 +36,7 @@ src/app/
     ├── threads/
     │   ├── page.tsx        # スレッド一覧 + メール作成モーダル（'use client'）
     │   └── [id]/page.tsx   # スレッド詳細（'use client'）
-    ├── notifications/page.tsx   # 通知履歴・Push購読設定（'use client'）
+    ├── notifications/page.tsx   # 通知の一覧（受信箱）。Push購読設定はプロフィールの「通知とアプリ」（components/profile/PushSettingsSection.tsx）
     ├── contacts/page.tsx        # コンタクト管理（'use client'）
     ├── profile/page.tsx         # プロフィール・パスキー管理（'use client'）
     └── admin/
@@ -54,7 +54,8 @@ src/app/
 | `/reset-password` | パスワードリセット | リセットトークン入力・新パスワード設定 | `POST /api/profile/password-reset-request`, `POST /api/profile/password-reset` | 不要 |
 | `/threads` | スレッド一覧 | メール一覧・フィルタ・検索・複数選択・新規作成モーダル | `GET /api/threads`, `POST /api/messages/compose`, `GET /api/drafts` | 必要 |
 | `/threads/[id]` | スレッド詳細 | メール本文表示・返信・担当変更・ステータス変更・削除 | `GET /api/threads/[id]`, `POST /api/messages/[id]/reply`, `POST /api/threads/[id]/assign` | 必要 |
-| `/notifications` | 通知設定 | Push購読登録・デバイス管理 | `GET /api/push/devices`, `POST /api/push/subscribe`, `POST /api/push/test` | 必要 |
+| `/notifications` | 通知 | お知らせの一覧・既読（[31_notifications.md](31_notifications.md)） | `GET /api/notifications`, `POST /api/notifications/read` | 必要 |
+| `/profile#notifications` | プッシュ通知の設定 | Push購読登録・デバイス管理・ホーム画面への追加 | `GET /api/push/devices`, `POST /api/push/subscribe`, `POST /api/push/test` | 必要 |
 | `/contacts` | コンタクト管理 | 社内アドレス帳・Google同期 | `GET /api/contacts`, `POST /api/contacts`, Google OAuth | 必要 |
 | `/profile` | プロフィール | パスワード変更・署名編集・パスキー管理・アバター設定 | `POST /api/profile/password`, `POST /api/user/signature`, `GET /api/passkeys` | 必要 |
 | `/admin/settings` | 管理設定 | メールアカウント管理・ユーザー管理・システム設定 | `GET /api/mailboxes`, `GET /api/users`, `GET /api/admin/settings` | 必要（管理者のみ） |

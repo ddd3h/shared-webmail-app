@@ -34,7 +34,8 @@ export default defineConfig({
     { name: 'mobile', use: { ...devices['Pixel 5'] }, testMatch: /.*\.mobile\.spec\.ts/ },
   ],
   webServer: {
-    command: `npx next dev -p ${PORT}`,
+    // a leftover dev cache (.next/dev) can make the server spin for minutes, so every run starts with a clean one
+    command: `rm -rf .next/dev && npx next dev -p ${PORT}`,
     url: `${BASE_URL}/login`,
     reuseExistingServer: !process.env.CI,
     timeout: 180_000,

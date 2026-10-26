@@ -5,6 +5,8 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import Icon from './Icon';
 import { ACCOUNT_ITEMS, ADMIN_ITEM, SECURITY_ITEM, APPROVALS_ITEM, NOTIFICATIONS_ITEM, TODO_ITEM, ORG_GROUP_LABEL, ORG_ITEMS, TRANSFERS_ITEM, WORK_GROUP_LABEL, WORK_ITEMS, isActivePath, iconPath, type NavItem } from './items';
 import { logout, type NavUser } from './useNavUser';
+import CountBadge from './CountBadge';
+import { useNotificationCount } from '@/hooks/useNotificationCount';
 
 const SHEET_MS = 280;
 const SWIPE_CLOSE_PX = 80;
@@ -25,11 +27,12 @@ function BarLink({ item, active }: { item: NavItem; active: boolean }) {
   );
 }
 
-function SheetLink({ item, active }: { item: NavItem; active: boolean }) {
+function SheetLink({ item, active, badge = 0 }: { item: NavItem; active: boolean; badge?: number }) {
   return (
     <Link href={item.href} className={`flex items-center gap-3 px-3 py-3 rounded-xl text-sm font-medium transition-colors ${active ? 'bg-blue-50 text-blue-700' : 'text-gray-700 hover:bg-gray-100'}`}>
       <Icon d={item.icon} />
       {item.label}
+      <CountBadge count={badge} className="ml-auto" />
     </Link>
   );
 }
@@ -70,6 +73,7 @@ function useSheet(pathname: string) {
 
 export default function MobileNav({ user }: { user: NavUser }) {
   const pathname = usePathname();
+  const unreadNotifications = useNotificationCount();
   const sheet = useSheet(pathname);
   const active = (href: string) => isActivePath(pathname, href);
   const workItems = [...WORK_ITEMS, ...(user.canApprove ? [APPROVALS_ITEM] : []), ...(user.isFinance ? [TRANSFERS_ITEM] : [])];
@@ -81,7 +85,10 @@ export default function MobileNav({ user }: { user: NavUser }) {
         <div className="flex">
           {BAR_ITEMS.map(i => <BarLink key={i.href} item={i} active={active(i.href)} />)}
           <button onClick={sheet.open} className={`flex-1 flex flex-col items-center justify-center py-3 gap-1 text-[10px] font-medium ${sheet.mounted ? 'text-blue-600' : 'text-gray-500'}`}>
-            <Icon d={iconPath('menu')} className="w-7 h-7" strokeWidth={sheet.mounted ? 2.5 : 1.5} />
+            <span className="relative">
+              <Icon d={iconPath('menu')} className="w-7 h-7" strokeWidth={sheet.mounted ? 2.5 : 1.5} />
+              {unreadNotifications > 0 && <span aria-hidden className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full bg-red-600 ring-2 ring-white" />}
+            </span>
             メニュー
           </button>
         </div>
@@ -103,7 +110,7 @@ export default function MobileNav({ user }: { user: NavUser }) {
               <SectionTitle>{ORG_GROUP_LABEL}</SectionTitle>
               <nav className="space-y-0.5">{ORG_ITEMS.map(i => <SheetLink key={i.href} item={i} active={active(i.href)} />)}</nav>
               <SectionTitle>その他</SectionTitle>
-              <nav className="space-y-0.5">{otherItems.map(i => <SheetLink key={i.href} item={i} active={active(i.href)} />)}</nav>
+              <nav className="space-y-0.5">{otherItems.map(i => <SheetLink key={i.href} item={i} active={active(i.href)} badge={i.href === NOTIFICATIONS_ITEM.href ? unreadNotifications : 0} />)}</nav>
               <div className="border-t border-gray-100 mt-2 pt-2">
                 <button onClick={logout} className="flex items-center gap-3 w-full px-3 py-3 rounded-xl text-sm font-medium text-red-600 hover:bg-red-50 transition-colors">
                   <Icon d={iconPath('logout')} />ログアウト
