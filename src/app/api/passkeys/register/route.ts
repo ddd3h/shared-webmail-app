@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyRegistrationResponse } from '@simplewebauthn/server';
-import { getSession, requireAuth } from '@/lib/auth';
+import { getSession, requireAuth, freshLoginRequired } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { consumeChallenge } from '@/lib/passkey-challenge';
 import { getRpConfig } from '@/lib/passkey-rp';
@@ -8,6 +8,8 @@ import { getRpConfig } from '@/lib/passkey-rp';
 export async function POST(req: NextRequest) {
   const session = await getSession();
   requireAuth(session);
+  const stale = freshLoginRequired(session);
+  if (stale) return stale;
 
   const body = await req.json();
   const { name, ...registrationResponse } = body;

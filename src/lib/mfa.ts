@@ -84,7 +84,7 @@ export async function clearTotp(userId: string): Promise<void> {
   await prisma.$transaction([
     prisma.users.update({ where: { id: userId }, data: { totp_secret_enc: null, totp_enabled_at: null, totp_last_step: null } }),
     prisma.recovery_codes.deleteMany({ where: { user_id: userId } }),
-    prisma.known_devices.updateMany({ where: { user_id: userId }, data: { mfa_trusted_until: null } }),
+    prisma.known_devices.updateMany({ where: { user_id: userId }, data: { mfa_trusted_until: null, remember_until: null, public_key: null } }),
   ]);
 }
 

@@ -1217,9 +1217,18 @@ model known_devices {
   last_seen_at  DateTime @default(now())
   mfa_trusted_until DateTime? // "trust this browser": the second step is skipped until then
 
+  // "Keep me logged in" of the installed app (PWA): the app holds a private key that cannot be exported from the device and
+  // proves it holds it by signing a challenge; this row keeps the matching public key. A login without a password is possible
+  // until remember_until (pushed forward on every use). key_id = sha256 of the public key: the number that identifies the device.
+  remember_until DateTime?
+  public_key     String?
+  key_id         String?
+  device_fp      String?  // browser + OS at the time the key was registered
+
   user users @relation(fields: [user_id], references: [id], onDelete: Cascade)
 
   @@index([user_id])
+  @@index([key_id])
 }
 
 // Addresses that may not reach the app. `ip` is a single address or an IPv4 CIDR. source: 'manual' (an admin) | 'auto' (sweep detection).

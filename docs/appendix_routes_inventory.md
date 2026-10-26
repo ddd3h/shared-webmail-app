@@ -83,6 +83,8 @@
 | POST | `/api/admin/notification-errors/[id]/retry` | `src/app/api/admin/notification-errors/[id]/retry/route.ts` |
 | GET | `/api/admin/users` | `src/app/api/admin/users/route.ts` |
 | GET | `/api/cron/sync` | `src/app/api/cron/sync/route.ts` |
+| POST | `/api/auth/resume/challenge` | `src/app/api/auth/resume/challenge/route.ts` |
+| POST | `/api/auth/resume` | `src/app/api/auth/resume/route.ts` |
 | GET | `/api/notifications` | `src/app/api/notifications/route.ts` |
 | POST | `/api/notifications/read` | `src/app/api/notifications/read/route.ts` |
 | GET | `/api/notifications/unread-count` | `src/app/api/notifications/unread-count/route.ts` |

@@ -7,7 +7,7 @@ import { sessionPassword } from '@/lib/auth';
 const cryptoImpl: any = globalThis.crypto;
 export const SHORT_TTL_MS = 5 * 60 * 1000;
 
-export type Typ = 'mfa-login' | 'mfa-setup-login' | 'mfa-enroll';
+export type Typ = 'mfa-login' | 'mfa-setup-login' | 'mfa-enroll' | 'device-resume';
 
 export async function sealShort<T extends object>(typ: Typ, data: T, ttlMs = SHORT_TTL_MS): Promise<string> {
   return Iron.seal(cryptoImpl, { typ, ...data }, sessionPassword(), { ...Iron.defaults, ttl: ttlMs }) as Promise<string>;

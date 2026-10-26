@@ -1,8 +1,9 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { startAuthentication } from '@simplewebauthn/browser';
 import { CodeStep, RecoveryCodesView, SetupStep } from '@/components/security/TwoFactorParts';
+import { createDeviceKey, deviceKeySupported, forgetDeviceLogin, isStandalone, rememberFlag, resumeWithDeviceKey, setRememberFlag } from '@/lib/device-key';
 
 // credentials → (code | setup → codes): the second step only appears for a password login; passkeys skip it
 type Step = 'credentials' | 'code' | 'setup' | 'codes';
@@ -27,10 +28,43 @@ export default function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
+  // The installed app (home-screen icon) can stay logged in: it has its own key, which proves it is the same device (lib/device-key.ts)
+  const [installed, setInstalled] = useState(false);
+  const [keepLogin, setKeepLogin] = useState(true);
+  const [resuming, setResuming] = useState(false);
+  const deviceKey = useRef<string | null>(null);
+
   useEffect(() => {
     setMounted(true);
     setPasskeySupported(typeof window !== 'undefined' && !!window.PublicKeyCredential);
+    const app = isStandalone() && deviceKeySupported();
+    setInstalled(app);
+    // came back after the session ended (idle time, another network): log in again with the device key, no password
+    if (app && rememberFlag()) {
+      setResuming(true);
+      resumeWithDeviceKey().then(async r => {
+        if (r === 'ok') { const from = searchParams.get('from') || '/'; router.replace(from); router.refresh(); return; }
+        if (r === 'refused') await forgetDeviceLogin(); // expired, logged out elsewhere, or not this device: the password is needed
+        setResuming(false);
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  /** The headers of a login request: the app's public key rides along when "keep me logged in" is on. */
+  async function loginHeaders(): Promise<Record<string, string>> {
+    const h: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (installed && keepLogin) {
+      try { deviceKey.current ??= await createDeviceKey(); h['x-device-key'] = deviceKey.current; } catch { /* no key: a normal login */ }
+    }
+    return h;
+  }
+  /** The server says whether it will keep this app logged in (x-remember-days); the flag follows its answer. */
+  async function noteResult(res: Response) {
+    if (!installed || !deviceKey.current) return;
+    if (res.headers.get('x-remember-days')) setRememberFlag(true);
+    else await forgetDeviceLogin();
+  }
 
   const redirect = () => {
     const from = searchParams.get('from') || '/';
@@ -45,7 +79,7 @@ export default function LoginForm() {
     try {
       const res = await fetch('/api/auth/login', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await loginHeaders(),
         body: JSON.stringify({ email, password })
       });
       const data = await res.json().catch(() => ({}));
@@ -53,6 +87,7 @@ export default function LoginForm() {
         setError(data.error === 'unauthorized' ? 'メールアドレスまたはパスワードが正しくありません' : data.error === 'too_many_requests' ? '試行回数が多すぎます。しばらくしてからお試しください' : 'ログインに失敗しました');
         return;
       }
+      if (res.ok && !data.mfa_required && !data.mfa_setup_required) await noteResult(res); // only when a session was made
       if (data.mfa_required) { setChallenge(data.challenge); setTrustDays(data.trust_days ?? 0); setStep('code'); return; }
       if (data.mfa_setup_required) { await beginSetup(data.challenge); return; }
       redirect();
@@ -77,9 +112,9 @@ export default function LoginForm() {
   async function submitCode(code: string, trust: boolean) {
     setError(null); setLoading(true);
     try {
-      const res = await fetch('/api/auth/mfa/verify', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ challenge, code, trust_device: trust }) });
+      const res = await fetch('/api/auth/mfa/verify', { method: 'POST', headers: await loginHeaders(), body: JSON.stringify({ challenge, code, trust_device: trust }) });
       const d = await res.json().catch(() => ({}));
-      if (res.ok) { redirect(); return; }
+      if (res.ok) { await noteResult(res); redirect(); return; }
       setError(CODE_ERRORS[d.error] ?? 'ログインに失敗しました');
       if (d.error === 'challenge_expired') backToStart();
     } catch { setError('ネットワークエラーが発生しました'); } finally { setLoading(false); }
@@ -89,9 +124,9 @@ export default function LoginForm() {
     if (!setup) return;
     setError(null); setLoading(true);
     try {
-      const res = await fetch('/api/auth/mfa/enable', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ setup_token: setup.token, code }) });
+      const res = await fetch('/api/auth/mfa/enable', { method: 'POST', headers: await loginHeaders(), body: JSON.stringify({ setup_token: setup.token, code }) });
       const d = await res.json().catch(() => ({}));
-      if (res.ok) { setCodes(d.recovery_codes ?? []); setStep('codes'); return; } // signed in already; the codes are shown before moving on
+      if (res.ok) { await noteResult(res); setCodes(d.recovery_codes ?? []); setStep('codes'); return; } // signed in already; the codes are shown before moving on
       setError(CODE_ERRORS[d.error] ?? '設定できませんでした');
       if (d.error === 'challenge_expired') backToStart();
     } catch { setError('ネットワークエラーが発生しました'); } finally { setLoading(false); }
@@ -123,11 +158,12 @@ export default function LoginForm() {
 
       const verRes = await fetch('/api/passkeys/auth', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await loginHeaders(),
         body: JSON.stringify({ ...authResp, challengeId })
       });
 
       if (verRes.ok) {
+        await noteResult(verRes);
         redirect();
       } else {
         const d = await verRes.json().catch(() => ({}));
@@ -143,6 +179,10 @@ export default function LoginForm() {
     } finally {
       setPasskeyLoading(false);
     }
+  }
+
+  if (resuming) {
+    return <div className="card p-8 shadow-xl text-center text-sm text-gray-500" role="status">ログインしています…</div>;
   }
 
   return (
@@ -191,6 +231,12 @@ export default function LoginForm() {
             autoComplete="current-password"
           />
         </div>
+        {installed && (
+          <label className="flex items-start gap-2 text-sm text-gray-700">
+            <input type="checkbox" className="mt-1" checked={keepLogin} onChange={e => setKeepLogin(e.target.checked)} />
+            <span>このアプリでログインを維持する<span className="block text-xs text-gray-500">この端末の鍵で確認します。しばらく使わないと、自動でログアウトします。</span></span>
+          </label>
+        )}
         <button
           type="submit"
           className="btn btn-primary w-full justify-center py-2.5"

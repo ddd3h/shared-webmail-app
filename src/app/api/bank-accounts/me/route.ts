@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
-import { getSession, requireAuth } from '@/lib/auth';
+import { getSession, requireAuth, freshLoginRequired } from '@/lib/auth';
 import { logAudit } from '@/lib/audit';
 import { decrypt, encrypt } from '@/lib/crypto';
 import { last4 } from '@/lib/payment';
@@ -41,6 +41,8 @@ export async function GET() {
 export async function PUT(req: NextRequest) {
   const session = await getSession();
   requireAuth(session);
+  const stale = freshLoginRequired(session);
+  if (stale) return stale;
   const parsed = bankAccountSchema.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) return NextResponse.json({ error: 'invalid_body', fields: parsed.error.issues.map(i => i.path[0]) }, { status: 400 });
   const d = parsed.data;

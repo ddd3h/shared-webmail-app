@@ -69,6 +69,7 @@ type SealedPayload = {
   issuedAt?: number; // epoch ms of the login: a session never outlives SECURITY_SESSION_MAX_DAYS, however active
   fp?: string;       // browser + OS of the login (no versions): a cookie replayed from another kind of device is refused
   ip?: string;       // the address of the login: a session is only good from the address it began on
+  resumed?: boolean; // made by the installed app's key (no password was typed): sensitive changes ask for a real login first
 };
 
 // Public type exposed to callers
@@ -82,6 +83,7 @@ export type Session = {
   issuedAt?: number;
   fp?: string;
   ip?: string;
+  resumed?: boolean;
 };
 
 async function sealSession(payload: SealedPayload): Promise<string> {
@@ -155,6 +157,7 @@ export async function getSession(): Promise<Session | null> {
     issuedAt,
     fp: payload.fp,
     ip: dbSession.ip_address,
+    resumed: payload.resumed,
   };
 }
 
@@ -179,6 +182,7 @@ export async function getSessionFromRequest(req: NextRequest): Promise<{ session
       issuedAt: payload.issuedAt,
       fp: payload.fp,
       ip: payload.ip,
+      resumed: payload.resumed,
     },
     token,
   };
@@ -213,7 +217,7 @@ async function trimOldSessions(userId: string): Promise<void> {
 export async function setSessionCookie(
   res: NextResponse,
   data: { userId: string; email: string; role: string },
-  context: { ip: string; userAgent: string; networkType: string; country?: string | null; city?: string | null; deviceId?: string | null }
+  context: { ip: string; userAgent: string; networkType: string; country?: string | null; city?: string | null; deviceId?: string | null; resumed?: boolean }
 ): Promise<void> {
   const sessionId = crypto.randomUUID();
   const expiresAt = Date.now() + getTimeoutMs(context.networkType);
@@ -244,6 +248,7 @@ export async function setSessionCookie(
     issuedAt: Date.now(),
     fp: deviceFingerprint(context.userAgent),
     ip: context.ip,
+    ...(context.resumed ? { resumed: true } : {}),
   };
 
   const token = await sealSession(payload);
@@ -260,7 +265,18 @@ export async function revokeUserSessions(userId: string, exceptSessionId?: strin
   const r = await prisma.sessions.deleteMany({ where: { user_id: userId, ...(exceptSessionId ? { id: { not: exceptSessionId } } : {}) } });
   // the reasons for ending sessions (password changed, account locked, ...) are also reasons to stop trusting browsers for 2FA
   await prisma.known_devices.updateMany({ where: { user_id: userId, mfa_trusted_until: { not: null } }, data: { mfa_trusted_until: null } });
+  // and every installed app that could log in again without a password
+  await prisma.known_devices.updateMany({ where: { user_id: userId, remember_until: { not: null } }, data: { remember_until: null, public_key: null } });
   return r.count;
+}
+
+/**
+ * A session made by the installed app's device key (no password typed) may read and work, but not change who can get in:
+ * password, 2-step login, passkeys, bank account. Returns the refusal to send, or null when it is a real login.
+ */
+export function freshLoginRequired(session: Session): NextResponse | null {
+  if (!session.resumed) return null;
+  return NextResponse.json({ error: 'reauth_required', message: 'この操作は、パスワードまたはパスキーでログインし直してから行ってください（アプリの自動ログインでは行えません）' }, { status: 403 });
 }
 
 export function requireAuth(session: Session | null): asserts session is Session {

@@ -1,5 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
+import { forgetDeviceLogin } from '@/lib/device-key';
 
 export type NavUser = { name: string; isAdmin: boolean; isFinance: boolean; canApprove: boolean };
 const GUEST: NavUser = { name: '', isAdmin: false, isFinance: false, canApprove: false };
@@ -18,5 +19,6 @@ export function useNavUser(): NavUser {
 
 export async function logout() {
   await fetch('/api/auth/logout', { method: 'POST' }).catch(() => {});
+  await forgetDeviceLogin(); // logging out is a decision: the installed app asks for the password next time
   window.location.href = '/login';
 }
