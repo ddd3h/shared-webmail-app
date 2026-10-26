@@ -134,7 +134,7 @@
 | `SECURITY_REQUIRE_2FA` | 設定キー（画面から変更）。`off` で2段階認証ルールを無効化。E2Eは既定で `off` |
 | `SECURITY_BLOCK_BOTS` | 設定キー（画面から変更）。`off` でロボットの遮断を無効化（既定はオン） |
 | `BOT_BLOCK` | `off` でロボットの遮断を、画面の設定に関わらず全体で無効化 |
-| `BOT_ALLOW_UA` | ロボット遮断の例外にする User-Agent の一部（カンマ区切り。監視ツールなど）。E2Eは `Playwright/` |
+| `BOT_ALLOW_UA` | ロボット遮断の例外にする User-Agent の一部（カンマ区切り。監視ツールなど）。E2Eは `Playwright/,HeadlessChrome`（Playwright のAPIクライアントと、手で開くヘッドレスのブラウザ） |
 | `SECURITY_CACHE_TTL_MS` | 設定・ブロック一覧をメモリに覚える時間（既定 10〜15秒） |
 
 ## 限界（知っておいてください）

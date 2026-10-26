@@ -19,7 +19,7 @@ test.describe('ロボットの接続を断る', () => {
   });
 
   test('curl・Python・自動操作ブラウザ・User-Agent なしも断る', async ({ anon }) => {
-    for (const ua of ['curl/8.5.0', 'python-requests/2.31.0', 'Go-http-client/1.1', 'HeadlessChrome/126.0.0.0', 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)', '']) {
+    for (const ua of ['curl/8.5.0', 'python-requests/2.31.0', 'Go-http-client/1.1', 'Mozilla/5.0 PhantomJS/2.1.1', 'Mozilla/5.0 (X11; Linux x86_64) Chrome/126.0.0.0 Selenium', 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)', '']) {
       expect((await anon.get('/login', as(ua))).status(), JSON.stringify(ua)).toBe(403);
     }
   });
