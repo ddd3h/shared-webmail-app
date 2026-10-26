@@ -11,9 +11,9 @@ const ACCOUNT = { bank_name: 'みずほ銀行', bank_code: '0001', branch_name: 
 
 test.describe('スマホ: 受取口座', () => {
   test.use({ storageState: AUTH.sato });
-  test('勤怠・給与の「受取口座」タブが横にはみ出さず、登録できる', async ({ page }) => {
-    await page.goto('/work');
-    await page.getByRole('button', { name: '受取口座', exact: true }).click();
+  test('プロフィールの「受取口座」が横にはみ出さず、登録できる。リンク（#bank）で開く', async ({ page }) => {
+    await page.goto('/profile#bank');
+    await expect(page.getByPlaceholder('みずほ銀行')).toBeVisible(); // the link opened the folded card
     expect(await hasHorizontalOverflow(page)).toBe(false);
     await page.getByPlaceholder('みずほ銀行').fill(ACCOUNT.bank_name);
     await page.getByPlaceholder('0001').fill(ACCOUNT.bank_code);

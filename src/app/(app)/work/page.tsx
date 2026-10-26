@@ -4,7 +4,6 @@ import AttendancePanel from '@/components/work/AttendancePanel';
 import ReportsPanel from '@/components/work/ReportsPanel';
 import PayrollPanel from '@/components/work/PayrollPanel';
 import AdminPanel from '@/components/work/AdminPanel';
-import BankAccountPanel from '@/components/work/BankAccountPanel';
 import { TYPE_LABEL, type WorkerType } from '@/components/work/ui';
 
 type Me = { id: string; name: string; role: string; worker_type: WorkerType };
@@ -16,7 +15,6 @@ function tabsFor(me: Me): Tab[] {
   if (me.worker_type === 'employee') tabs.push({ key: 'attendance', label: '勤怠' });
   if (me.worker_type === 'contractor') tabs.push({ key: 'reports', label: '業務報告' });
   tabs.push({ key: 'payroll', label: me.worker_type === 'employee' ? '給与明細' : '報酬明細' });
-  tabs.push({ key: 'bank', label: '受取口座' });
   if (me.role === 'admin') tabs.push({ key: 'admin', label: '管理' });
   return tabs;
 }
@@ -51,7 +49,6 @@ export default function WorkPage() {
       {tab === 'attendance' && <AttendancePanel />}
       {tab === 'reports' && <ReportsPanel />}
       {tab === 'payroll' && <PayrollPanel noun={me.worker_type === 'employee' ? '給与' : '報酬'} />}
-      {tab === 'bank' && <BankAccountPanel />}
       {tab === 'admin' && <AdminPanel />}
     </div>
   );

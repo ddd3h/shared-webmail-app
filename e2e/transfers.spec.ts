@@ -566,9 +566,8 @@ test.describe('画面', () => {
       await expect(page.locator('header').getByRole('link', { name: /^振込データ/ })).toHaveCount(0);
     });
 
-    test('勤怠・給与の「受取口座」から口座を登録でき、カナ以外はエラーになる', async ({ page }) => {
-      await page.goto('/work');
-      await page.getByRole('button', { name: '受取口座', exact: true }).click();
+    test('プロフィールの「受取口座」から口座を登録でき、カナ以外はエラーになる', async ({ page }) => {
+      await page.goto('/profile#bank');
       await page.getByPlaceholder('みずほ銀行').fill('みずほ銀行');
       await page.getByPlaceholder('0001').fill('0001');
       await page.getByPlaceholder('新宿支店').fill('新宿支店');
@@ -580,9 +579,8 @@ test.describe('画面', () => {
       await page.getByPlaceholder('ヤマダ タロウ').fill('サトウ タロウ');
       await page.getByRole('button', { name: '保存', exact: true }).click();
       await expect(page.getByText('保存しました')).toBeVisible();
-      await expect(page.getByText('確認待ち')).toBeVisible();
-      await page.reload();
-      await page.getByRole('button', { name: '受取口座', exact: true }).click();
+      await expect(page.getByText('確認待ち').locator('visible=true').first()).toBeVisible();
+      await page.goto('/profile#bank');
       await expect(page.getByPlaceholder('1234567')).toHaveValue('1234567');
     });
   });

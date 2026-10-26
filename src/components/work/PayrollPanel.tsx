@@ -1,6 +1,7 @@
 'use client';
 import { useCallback, useEffect, useState } from 'react';
 import { Modal, Notice, Stat, btn, btnPrimary, currentMonth, inp, yen, api, TYPE_LABEL, type WorkerType } from './ui';
+import Link from 'next/link';
 
 type Item = { id?: string; kind: 'earning' | 'deduction'; label: string; amount: number; system?: boolean };
 type LinkedClaim = { id: string; title: string; amount: number; expense_date: string };
@@ -68,6 +69,7 @@ export default function PayrollPanel({ manage = false, members = [], noun = '給
         </div>
       )}
       <Notice msg={msg} />
+      {!manage && <p className="text-xs text-gray-500">振込先の口座は <Link href="/profile#bank" className="text-blue-600 hover:underline">プロフィール › 受取口座</Link> で登録します。</p>}
       {manage && (
         <div className="flex flex-wrap items-center gap-3">
           <select className={`${inp} max-w-56`} value={filter} onChange={e => setFilter(e.target.value)}>

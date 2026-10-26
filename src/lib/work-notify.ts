@@ -204,7 +204,7 @@ export function notifyBankAccountVerified(userId: string) {
   return safely('bank_verified', async () => {
     const u = await prisma.users.findUnique({ where: { id: userId }, select: { id: true, email: true } });
     if (!u) return;
-    await sendDirectMessage(u.id, u.email, `✅ **受取口座が確認されました**\n\n給与などの振込先として使えるようになりました。\n\n${appUrl()}/work`, 'bank_account_verified');
+    await sendDirectMessage(u.id, u.email, `✅ **受取口座が確認されました**\n\n給与などの振込先として使えるようになりました。\n\n${appUrl()}/profile#bank`, 'bank_account_verified');
   });
 }
 

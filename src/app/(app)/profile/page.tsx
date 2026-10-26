@@ -4,6 +4,8 @@ import TwoFactorSection from '@/components/security/TwoFactorSection';
 import { useEffect, useState, useCallback } from 'react';
 import { startRegistration } from '@simplewebauthn/browser';
 import FoldCard from '@/components/mobile/FoldCard';
+import PersonalInfoSection from '@/components/profile/PersonalInfoSection';
+import BankAccountSection from '@/components/profile/BankAccountSection';
 
 type Passkey = {
   id: string;
@@ -312,6 +314,8 @@ function PasskeySection() {
 }
 
 
+const GroupTitle = ({ children }: { children: React.ReactNode }) => <h2 className="px-1 pt-2 text-xs font-semibold tracking-wider text-gray-400">{children}</h2>;
+
 // ── Main page ────────────────────────────────────────────────────────────────
 export default function ProfilePage() {
   const [signature, setSignature] = useState('');
@@ -370,46 +374,18 @@ export default function ProfilePage() {
         <h1 className="text-xl font-bold text-gray-900">プロフィール設定</h1>
       </div>
 
-      {/* Account info */}
-      <FoldCard title="アカウント情報" className="card p-5" bodyClass="space-y-4">
-        <div className="flex items-center gap-4">
-          {/* Avatar */}
-          <div className="shrink-0 w-16 h-16 rounded-full overflow-hidden bg-gray-100 border border-gray-200 flex items-center justify-center text-2xl font-bold text-gray-400">
-            {email && (
-              <img
-                src={`/api/user/avatar?u=${encodeURIComponent(email)}`}
-                alt={name}
-                className="w-full h-full object-cover"
-                onError={(e) => {
-                  e.currentTarget.style.display = 'none';
-                  (e.currentTarget.parentElement as HTMLElement).textContent = name[0]?.toUpperCase() || '?';
-                }}
-              />
-            )}
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 flex-1 text-sm">
-            <div>
-              <div className="text-xs text-gray-500 mb-1">名前</div>
-              <div className="font-medium text-gray-900">{name}</div>
-            </div>
-            <div>
-              <div className="text-xs text-gray-500 mb-1">メールアドレス</div>
-              <div className="font-medium text-gray-900">{email}</div>
-            </div>
-          </div>
-        </div>
-      </FoldCard>
+      <GroupTitle>個人情報と口座</GroupTitle>
+      <PersonalInfoSection />
+      <BankAccountSection />
 
-      {/* Mailboxes */}
-      <MailboxSection />
-
-      {/* Password change */}
+      <GroupTitle>ログインとセキュリティ</GroupTitle>
       <PasswordSection />
-
-      {/* Passkeys */}
       <PasskeySection />
       <TwoFactorSection />
       <SecuritySection />
+
+      <GroupTitle>メール</GroupTitle>
+      <MailboxSection />
 
       {/* Signature */}
       <FoldCard title="メール署名" className="card p-5" bodyClass="space-y-4">

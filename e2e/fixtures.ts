@@ -39,7 +39,8 @@ export const test = base.extend<Fixtures>({
     await Promise.all(made.map(c => c.dispose()));
   },
   anon: async ({}, use) => {
-    const ctx = await pwRequest.newContext({ baseURL: BASE_URL });
+    // an empty jar on purpose: a new context otherwise inherits the storageState of the describe block it runs in
+    const ctx = await pwRequest.newContext({ baseURL: BASE_URL, storageState: { cookies: [], origins: [] } });
     await use(ctx);
     await ctx.dispose();
   },

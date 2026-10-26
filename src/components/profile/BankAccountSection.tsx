@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { Notice, api, btnPrimary, inp } from './ui';
+import FoldCard from '@/components/mobile/FoldCard';
+import { Notice, api, btnPrimary, inp } from '@/components/work/ui';
 import { ACCOUNT_TYPE_LABEL, type AccountType } from '@/lib/payment';
 
 type Account = {
@@ -13,8 +14,8 @@ const errorText = (fields: string[]) => (fields.includes('account_holder') ? HOL
 
 const blank = { bank_name: '', bank_code: '', branch_name: '', branch_code: '', account_type: 'ordinary' as AccountType, account_number: '', account_holder: '' };
 
-// My own receiving account. Salary and reimbursements are sent here by finance staff, so it has to be one that can go into a 全銀 file.
-export default function BankAccountPanel() {
+// My own receiving account (in the profile). Salary and reimbursements are sent here by finance staff, so it has to be one that can go into a 全銀 file.
+export default function BankAccountSection() {
   const [d, setD] = useState(blank);
   const [saved, setSaved] = useState<Account | null>(null);
   const [loaded, setLoaded] = useState(false);
@@ -44,16 +45,16 @@ export default function BankAccountPanel() {
     } finally { setSaving(false); }
   }
 
-  if (!loaded) return <p className="text-sm text-gray-400">読み込み中…</p>;
+  const badge = saved ? (saved.verified ? '経理確認済' : '確認待ち') : '未登録';
   return (
-    <div className="max-w-xl space-y-4">
-      <div className="rounded-xl border border-gray-200 bg-white p-4 space-y-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <h3 className="text-sm font-semibold text-gray-900">受取口座</h3>
-          {saved && (saved.verified
-            ? <span className="rounded-sm bg-emerald-50 px-1.5 py-0.5 text-[10px] text-emerald-700">経理確認済</span>
-            : <span className="rounded-sm bg-amber-50 px-1.5 py-0.5 text-[10px] text-amber-700">確認待ち</span>)}
-        </div>
+    <FoldCard id="bank" title="受取口座" label="受取口座" badge={loaded ? badge : undefined} className="card p-5" bodyClass="space-y-3">
+      {!loaded ? <p className="text-sm text-gray-400">読み込み中…</p> : (
+        <>
+          <div className="flex flex-wrap items-center gap-2">
+            {saved && (saved.verified
+              ? <span className="rounded-sm bg-emerald-50 px-1.5 py-0.5 text-[10px] text-emerald-700">経理確認済</span>
+              : <span className="rounded-sm bg-amber-50 px-1.5 py-0.5 text-[10px] text-amber-700">確認待ち</span>)}
+          </div>
         <p className="text-xs text-gray-500">給与・報酬・経費の立替金を受け取る口座です。登録しておくと、支払日の一括振込にそのまま使われます。口座番号は暗号化して保存され、本人と経理担当だけが見られます。</p>
         <div className="grid grid-cols-[1fr_6rem] gap-2">
           <div><label className="text-xs text-gray-600">銀行名</label><input className={inp} placeholder="みずほ銀行" value={d.bank_name} onChange={set('bank_name')} /></div>
@@ -76,7 +77,8 @@ export default function BankAccountPanel() {
           <button className={btnPrimary} disabled={saving || !d.bank_name.trim() || !d.branch_name.trim() || !d.account_number || !d.account_holder.trim()} onClick={save}>{saving ? '保存中…' : '保存'}</button>
         </div>
         {saved?.verified && <p className="text-[11px] text-gray-400">口座の内容を変えると「確認済」が外れ、経理担当が改めて確認するまで振込の対象になりません。</p>}
-      </div>
-    </div>
+        </>
+      )}
+    </FoldCard>
   );
 }

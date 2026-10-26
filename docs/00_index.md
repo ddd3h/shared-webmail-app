@@ -28,6 +28,7 @@
 | [16_spam_detection.md](./16_spam_detection.md) | 迷惑メール検出システム | 検出パイプライン・MLモデル・ブロックリスト・既知の制限 |
 | [25_todos.md](./25_todos.md) | 共有ToDo | チーム共有のやること・カレンダー表示・権限・通知 |
 | [27_mobile.md](./27_mobile.md) | スマホ表示の方針 | 隠して必要なときに出す・シート・丸い「＋」・画面ごとの見え方 |
+| [28_profile.md](./28_profile.md) | プロフィール | 個人情報・受取口座・セキュリティ・メール署名を1か所に |
 | [26_caching.md](./26_caching.md) | キャッシュの考え方 | Next.js 16 の Cache Components・`use cache`・何をキャッシュするか |
 
 ### 付録
