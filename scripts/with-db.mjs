@@ -56,7 +56,7 @@ async function startDb() {
 
 // Why can't we log in? Asks the database from inside its own container with the user / password of DATABASE_URL.
 function explainLoginFailure(target) {
-  const url = loopbackUrl(process.env.DATABASE_URL);
+  const url = loopbackUrl(process.env.DATABASE_URL).replace(/\?.*$/, ''); // psql does not know Prisma's ?schema=
   const inside = spawnSync('docker', [...COMPOSE, 'exec', '-T', 'db', 'psql', url.replace(/@127\.0\.0\.1:\d+/, '@127.0.0.1:5432'), '-tAc', 'select 1'], { env: composeEnv(target), encoding: 'utf8' });
   console.error('');
   if (inside.status === 0) {
@@ -83,8 +83,14 @@ const finish = code => {
 };
 
 if (migrate) {
-  const m = run('npx', ['prisma', 'migrate', 'deploy']);
-  if (m.status !== 0) { console.error('[db] マイグレーションに失敗しました'); if (started) explainLoginFailure(started); finish(m.status ?? 1); }
+  const m = spawnSync('npx', ['prisma', 'migrate', 'deploy'], { encoding: 'utf8' });
+  process.stdout.write(m.stdout ?? ''); process.stderr.write(m.stderr ?? '');
+  if (m.status !== 0) {
+    console.error('[db] マイグレーションに失敗しました');
+    // only a failed login (P1000) is explained as one; any other error is shown by prisma above as it is
+    if (started && /P1000|Authentication failed/.test(`${m.stdout}${m.stderr}`)) explainLoginFailure(started);
+    finish(m.status ?? 1);
+  }
 }
 
 const child = spawn(command[0], command.slice(1), { stdio: 'inherit' });

@@ -96,6 +96,7 @@ npm run dev
 - すでに自分で PostgreSQL を動かしている（`localhost:5432` が応答する）ときや、接続先が別のホストのときは、何も起動せず、止めもしません。別の端末で `npm run seed:demo` を流しても、動いているDBをそのまま使い、止めません。
 - Docker が使えないときは、その旨を表示して止まります。自分で PostgreSQL を用意する場合は `npm run dev:nodb`（または `DEV_DB=off npm run dev`）。
 - データを全部消してやり直すには `npm run db:reset`。`DATABASE_URL` のパスワードを変えたあとは、一度これで作り直してください（既存のボリュームは最初のパスワードのままです）。
+- 新しいDBは、`prisma/migrations` だけで全部の表が作られます。過去に `prisma db push` で足した表（`sessions`・`login_logs`）や列（`drafts.quote_*`）が履歴に無かったので、`20261027120000_create_sessions_if_missing` と `20261027130000_sync_missing_schema` で補っています（どちらも「無ければ作る」だけなので、既存のDBには何も起きません）。履歴が `schema.prisma` とずれていないかは、空のDBに `prisma migrate deploy` をしてから `prisma migrate diff --from-url <DB> --to-schema-datamodel prisma/schema.prisma --script` で確認できます（出るのは検索用の trgm インデックスだけが正常）。
 - 本番用の `docker-compose.yml` とは別のもの（別のプロジェクト名・ボリューム）です。互いに影響しません。
 
 ### 8. 動作確認
