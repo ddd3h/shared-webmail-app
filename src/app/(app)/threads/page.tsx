@@ -101,7 +101,7 @@ function mailboxColorIndex(id: string): number {
 function mailboxDot(mailboxId: string, name: string) {
   const cls = MAILBOX_COLOR_PALETTE[mailboxColorIndex(mailboxId)];
   return (
-    <span title={name} className={`inline-block w-2 h-2 rounded-full flex-shrink-0 ${cls}`} />
+    <span title={name} className={`inline-block w-2 h-2 rounded-full shrink-0 ${cls}`} />
   );
 }
 
@@ -223,7 +223,7 @@ function ContactSuggestInput({ value, onChange, placeholder }: { value: string; 
     <div className="relative">
       <input type="text" value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder}
         onBlur={() => setTimeout(() => setOpen(false), 150)}
-        className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white" />
+        className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-blue-500 bg-white" />
       {open && (
         <div className="absolute z-20 top-full mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden">
           {suggestions.map((s, i) => (
@@ -255,7 +255,7 @@ type DraftItem = {
 };
 
 const AttachmentClip = () => (
-  <svg className="flex-shrink-0 w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-label="添付あり">
+  <svg className="shrink-0 w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-label="添付あり">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
   </svg>
 );
@@ -650,7 +650,7 @@ function ThreadList() {
       )}
 
       {modernConfirm && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/40 backdrop-blur-[2px]">
+        <div className="fixed inset-0 z-100 flex items-center justify-center p-4 bg-black/40 backdrop-blur-[2px]">
           <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full overflow-hidden animate-in fade-in zoom-in duration-200">
             <div className="p-6">
               <div className="w-12 h-12 rounded-full bg-amber-100 flex items-center justify-center text-amber-600 mb-4">
@@ -670,7 +670,7 @@ function ThreadList() {
               </button>
               <button
                 onClick={() => { modernConfirm.onConfirm(); setModernConfirm(null); }}
-                className="flex-1 px-4 py-2 text-sm font-semibold text-white bg-blue-600 rounded-xl hover:bg-blue-700 transition-colors shadow-sm shadow-blue-200"
+                className="flex-1 px-4 py-2 text-sm font-semibold text-white bg-blue-600 rounded-xl hover:bg-blue-700 transition-colors shadow-xs shadow-blue-200"
               >
                 リクエスト
               </button>
@@ -680,7 +680,7 @@ function ThreadList() {
       )}
 
       {modernAlert && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/40 backdrop-blur-[2px]">
+        <div className="fixed inset-0 z-100 flex items-center justify-center p-4 bg-black/40 backdrop-blur-[2px]">
           <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full overflow-hidden animate-in fade-in zoom-in duration-200">
             <div className="p-6 text-center">
               <div className={`w-12 h-12 rounded-full mx-auto flex items-center justify-center mb-4 ${
@@ -718,10 +718,10 @@ function ThreadList() {
           <div className="flex items-center gap-2">
             <button
               onClick={() => setShowCompose(true)}
-              className="inline-flex items-center gap-2 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 text-white font-semibold shadow-md hover:shadow-lg hover:from-blue-600 hover:to-indigo-700 active:scale-95 transition-all duration-150 px-3 py-2 sm:px-4"
+              className="inline-flex items-center gap-2 rounded-full bg-linear-to-br from-blue-500 to-indigo-600 text-white font-semibold shadow-md hover:shadow-lg hover:from-blue-600 hover:to-indigo-700 active:scale-95 transition-all duration-150 px-3 py-2 sm:px-4"
               title="新規メール作成"
             >
-              <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
               </svg>
               <span className="hidden sm:inline text-sm">新規メール</span>
@@ -764,7 +764,7 @@ function ThreadList() {
                 onChange={(e) => { setSearchInput(e.target.value); setShowHistory(false); }}
                 onFocus={() => { if (!searchInput) { setSearchHistory(getSearchHistory()); setShowHistory(true); } }}
                 onBlur={() => setTimeout(() => setShowHistory(false), 150)}
-                className="w-full pl-9 pr-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
+                className="w-full pl-9 pr-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
               />
               {/* Search history dropdown */}
               {showHistory && searchHistory.length > 0 && (
@@ -780,7 +780,7 @@ function ThreadList() {
                       setSearchInput(h); setSearch(h); setShowHistory(false);
                       setTab(''); setCursorStack([]);
                     }} className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors flex items-center gap-2">
-                      <svg className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <svg className="w-3.5 h-3.5 text-gray-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                       </svg>
                       <span className="truncate">{h}</span>
@@ -843,17 +843,17 @@ function ThreadList() {
                 <div>
                   <label className="block text-xs font-medium text-gray-500 mb-1">BCC (bcc:)</label>
                   <input type="text" value={filterBcc} onChange={e => setFilterBcc(e.target.value)} placeholder="名前またはアドレス"
-                    className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white" />
+                    className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-blue-500 bg-white" />
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-gray-500 mb-1">件名 (subject:)</label>
                   <input type="text" value={filterSubject} onChange={e => setFilterSubject(e.target.value)} placeholder="件名キーワード"
-                    className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white" />
+                    className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-blue-500 bg-white" />
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-gray-500 mb-1">本文 (body:)</label>
                   <input type="text" value={filterBody} onChange={e => setFilterBody(e.target.value)} placeholder="本文キーワード"
-                    className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white" />
+                    className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-blue-500 bg-white" />
                 </div>
               </div>
               {/* Row 3: Mailbox, Status, Assigned */}
@@ -861,12 +861,12 @@ function ThreadList() {
                 <div>
                   <label className="block text-xs font-medium text-gray-500 mb-1">メールボックス (mailbox:)</label>
                   <input type="text" value={filterMailbox} onChange={e => setFilterMailbox(e.target.value)} placeholder="メールボックス名"
-                    className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white" />
+                    className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-blue-500 bg-white" />
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-gray-500 mb-1">ステータス (status:)</label>
                   <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}
-                    className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
+                    className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-blue-500 bg-white">
                     <option value="">指定しない</option>
                     <option value="open">未対応</option>
                     <option value="in_progress">対応中</option>
@@ -877,7 +877,7 @@ function ThreadList() {
                 <div>
                   <label className="block text-xs font-medium text-gray-500 mb-1">担当者 (assigned:)</label>
                   <input type="text" value={filterAssigned} onChange={e => setFilterAssigned(e.target.value)} placeholder="担当者名"
-                    className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white" />
+                    className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-blue-500 bg-white" />
                 </div>
               </div>
               {/* Row 4: Date range */}
@@ -885,17 +885,17 @@ function ThreadList() {
                 <div>
                   <label className="block text-xs font-medium text-gray-500 mb-1">期間（開始）</label>
                   <input type="date" value={filterAfter} onChange={e => setFilterAfter(e.target.value)}
-                    className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white" />
+                    className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-blue-500 bg-white" />
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-gray-500 mb-1">期間（終了）</label>
                   <input type="date" value={filterBefore} onChange={e => setFilterBefore(e.target.value)}
-                    className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white" />
+                    className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-blue-500 bg-white" />
                 </div>
               </div>
               <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
                 <input type="checkbox" checked={filterAttachment} onChange={e => setFilterAttachment(e.target.checked)}
-                  className="w-4 h-4 rounded text-blue-600 border-gray-300" />
+                  className="w-4 h-4 rounded-sm text-blue-600 border-gray-300" />
                 添付ファイルあり
               </label>
             </div>
@@ -909,7 +909,7 @@ function ThreadList() {
                   {CHIP_PREFIX[chip.type] && <span className="opacity-60 text-[10px]">{CHIP_PREFIX[chip.type]}</span>}
                   <span>{chip.value}</span>
                   <button type="button" onClick={() => handleRemoveChip(chip.raw)}
-                    className="ml-0.5 p-0.5 rounded-full hover:bg-black/10 transition-colors flex-shrink-0">
+                    className="ml-0.5 p-0.5 rounded-full hover:bg-black/10 transition-colors shrink-0">
                     <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
                     </svg>
@@ -928,11 +928,11 @@ function ThreadList() {
           onClick={() => switchView('personal')}
           className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 px-2 sm:px-4 rounded-lg text-sm font-semibold transition-all ${
             mailboxView === 'personal'
-              ? 'bg-white shadow-sm text-gray-900'
+              ? 'bg-white shadow-xs text-gray-900'
               : 'text-gray-500 hover:text-gray-700'
           }`}
         >
-          <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
           </svg>
           個人メール
@@ -947,11 +947,11 @@ function ThreadList() {
           onClick={() => switchView('team')}
           className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 px-2 sm:px-4 rounded-lg text-sm font-semibold transition-all ${
             mailboxView === 'team'
-              ? 'bg-white shadow-sm text-gray-900'
+              ? 'bg-white shadow-xs text-gray-900'
               : 'text-gray-500 hover:text-gray-700'
           }`}
         >
-          <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
           </svg>
           共有メール
@@ -970,7 +970,7 @@ function ThreadList() {
             <button
               key={t.id}
               onClick={() => switchTab(t.id)}
-              className={`flex-shrink-0 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
+              className={`shrink-0 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
                 tab === t.id
                   ? 'border-blue-600 text-blue-600'
                   : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
@@ -997,7 +997,7 @@ function ThreadList() {
                   setSelected(new Set(drafts.map(d => d.id)));
                 }
               }}
-              className="w-4 h-4 rounded text-amber-600 border-gray-300 cursor-pointer flex-shrink-0"
+              className="w-4 h-4 rounded-sm text-amber-600 border-gray-300 cursor-pointer shrink-0"
             />
             <span className="text-sm font-medium text-white">{selected.size} 件選択中</span>
             <div className="flex-1" />
@@ -1032,7 +1032,7 @@ function ThreadList() {
               checked={selected.size === threads.length && threads.length > 0}
               ref={el => { if (el) el.indeterminate = !isAllSelected && selected.size > 0 && selected.size < threads.length; }}
               onChange={selectAll}
-              className="w-4 h-4 rounded border-white/50 cursor-pointer accent-white flex-shrink-0"
+              className="w-4 h-4 rounded-sm border-white/50 cursor-pointer accent-white shrink-0"
             />
             <span className="text-sm font-semibold text-white whitespace-nowrap">
               {isAllSelected ? `全 ${totalCount} 件を選択中` : `${selected.size} 件選択`}
@@ -1062,7 +1062,7 @@ function ThreadList() {
                   未読
                 </button>
                 {mailboxView === 'team' && (
-                  <select defaultValue="" onChange={(e) => { if (e.target.value) { bulkSetStatus(e.target.value); e.target.value = ''; } }} disabled={bulkLoading} className="px-2 py-1.5 rounded-lg text-xs font-medium bg-white/15 text-white border border-white/20 cursor-pointer disabled:opacity-50 focus:outline-none" style={{ colorScheme: 'dark' }}>
+                  <select defaultValue="" onChange={(e) => { if (e.target.value) { bulkSetStatus(e.target.value); e.target.value = ''; } }} disabled={bulkLoading} className="px-2 py-1.5 rounded-lg text-xs font-medium bg-white/15 text-white border border-white/20 cursor-pointer disabled:opacity-50 focus:outline-hidden" style={{ colorScheme: 'dark' }}>
                     <option value="" className="text-gray-900 bg-white">ステータス変更…</option>
                     <option value="open" className="text-gray-900 bg-white">未対応</option>
                     <option value="in_progress" className="text-gray-900 bg-white">対応中</option>
@@ -1090,7 +1090,7 @@ function ThreadList() {
 
             <button
               onClick={() => { setSelected(new Set()); setConfirmDelete(false); lastSelectedIndexRef.current = null; }}
-              className="p-1.5 rounded-lg text-white/70 hover:text-white hover:bg-white/15 transition-colors ml-1 flex-shrink-0"
+              className="p-1.5 rounded-lg text-white/70 hover:text-white hover:bg-white/15 transition-colors ml-1 shrink-0"
               title="選択解除"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1105,10 +1105,10 @@ function ThreadList() {
               <span className="flex-1 text-xs text-white/90 font-medium truncate">
                 {mailboxView === 'team' ? '全員から削除。' : `${selected.size}件削除。`}元に戻せません。
               </span>
-              <button onClick={bulkDelete} disabled={bulkLoading} className="flex-shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold bg-white text-red-600 hover:bg-red-50 disabled:opacity-50 transition-colors">
+              <button onClick={bulkDelete} disabled={bulkLoading} className="shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold bg-white text-red-600 hover:bg-red-50 disabled:opacity-50 transition-colors">
                 {bulkLoading ? '削除中…' : '削除する'}
               </button>
-              <button onClick={() => setConfirmDelete(false)} disabled={bulkLoading} className="flex-shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium bg-blue-500 text-white hover:bg-blue-400 border border-white/30 transition-colors">
+              <button onClick={() => setConfirmDelete(false)} disabled={bulkLoading} className="shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium bg-blue-500 text-white hover:bg-blue-400 border border-white/30 transition-colors">
                 戻る
               </button>
             </div>
@@ -1122,7 +1122,7 @@ function ThreadList() {
                 <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-blue-300 border border-blue-600" />
               </button>
               {mailboxView === 'team' && (
-                <select defaultValue="" onChange={(e) => { if (e.target.value) { bulkSetStatus(e.target.value); e.target.value = ''; } }} disabled={bulkLoading} className="w-16 px-1 py-2 rounded-lg text-xs font-medium bg-white/15 text-white border border-white/20 cursor-pointer disabled:opacity-50 focus:outline-none" style={{ colorScheme: 'dark' }}>
+                <select defaultValue="" onChange={(e) => { if (e.target.value) { bulkSetStatus(e.target.value); e.target.value = ''; } }} disabled={bulkLoading} className="w-16 px-1 py-2 rounded-lg text-xs font-medium bg-white/15 text-white border border-white/20 cursor-pointer disabled:opacity-50 focus:outline-hidden" style={{ colorScheme: 'dark' }}>
                   <option value="" className="text-gray-900 bg-white">状態</option>
                   <option value="open" className="text-gray-900 bg-white">未対応</option>
                   <option value="in_progress" className="text-gray-900 bg-white">対応中</option>
@@ -1138,7 +1138,7 @@ function ThreadList() {
       )}
 
       {/* Thread / Draft rows */}
-      <div ref={listRef} className="bg-white rounded-b-xl border-x border-b border-gray-200 overflow-hidden shadow-sm">
+      <div ref={listRef} className="bg-white rounded-b-xl border-x border-b border-gray-200 overflow-hidden shadow-xs">
         {showSpinner ? (
           <div className="py-16 text-center">
             <div className="inline-block w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
@@ -1171,7 +1171,7 @@ function ThreadList() {
                   <div className="flex items-start gap-3 px-4 py-3 sm:hidden">
                     <div
                       onClick={(e) => { e.stopPropagation(); toggleSelect(d.id, drafts.indexOf(d)); }}
-                      className={`flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center cursor-pointer transition-all mt-0.5 ${
+                      className={`shrink-0 w-10 h-10 rounded-full flex items-center justify-center cursor-pointer transition-all mt-0.5 ${
                         isDraftSelected ? 'bg-amber-500 text-white' : 'bg-amber-100 text-amber-600 hover:bg-amber-200'
                       }`}
                     >
@@ -1190,7 +1190,7 @@ function ThreadList() {
                         <span className="flex-1 min-w-0 truncate text-sm text-gray-600">
                           {d.to_raw ? `To: ${d.to_raw.split(/[,;\s]+/)[0]}` : '(宛先なし)'}
                         </span>
-                        <span className="flex-shrink-0 text-xs tabular-nums text-gray-400">{formatDate(d.updated_at)}</span>
+                        <span className="shrink-0 text-xs tabular-nums text-gray-400">{formatDate(d.updated_at)}</span>
                       </div>
                       <div className="flex items-center gap-1.5 mt-0.5">
                         <span className="flex-1 min-w-0 truncate text-sm text-amber-700 font-medium">
@@ -1198,7 +1198,7 @@ function ThreadList() {
                         </span>
                         {d._count?.attachments > 0 && <AttachmentClip />}
                         {d.is_shared && (
-                          <span className="flex-shrink-0 text-xs px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-600 font-medium">共有</span>
+                          <span className="shrink-0 text-xs px-1.5 py-0.5 rounded-sm bg-indigo-50 text-indigo-600 font-medium">共有</span>
                         )}
                       </div>
                     </div>
@@ -1206,37 +1206,37 @@ function ThreadList() {
 
                   {/* ── PCレイアウト (sm+) — 変更前のレイアウト ── */}
                   <div className="hidden sm:flex items-center gap-3 px-4 py-3">
-                    <div className="flex-shrink-0 w-5 flex items-center justify-center">
+                    <div className="shrink-0 w-5 flex items-center justify-center">
                       <input
                         type="checkbox"
                         checked={isDraftSelected}
                         onChange={() => {}}
                         onClick={(e) => { e.stopPropagation(); toggleSelect(d.id, drafts.indexOf(d)); }}
-                        className={`w-4 h-4 rounded text-amber-600 border-gray-300 cursor-pointer transition-opacity ${selectionMode || isDraftSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
+                        className={`w-4 h-4 rounded-sm text-amber-600 border-gray-300 cursor-pointer transition-opacity ${selectionMode || isDraftSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
                       />
                     </div>
-                    <div className="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center bg-amber-100 text-amber-600">
+                    <div className="shrink-0 w-8 h-8 rounded-full flex items-center justify-center bg-amber-100 text-amber-600">
                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                       </svg>
                     </div>
-                    <div className="flex-shrink-0 w-32 truncate text-sm text-gray-600">
+                    <div className="shrink-0 w-32 truncate text-sm text-gray-600">
                       {d.to_raw ? `To: ${d.to_raw.split(/[,;\s]+/)[0]}` : '(宛先なし)'}
                     </div>
                     <div className="flex-1 min-w-0 flex items-center gap-2">
                       <span className="truncate text-sm text-amber-700 font-medium">{d.thread?.subject ? `Re: ${d.thread.subject}` : d.subject || '(件名なし)'}</span>
                       {d._count?.attachments > 0 && <AttachmentClip />}
                       {d.is_shared && (
-                        <span className="flex-shrink-0 text-xs px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-600 font-medium">共有下書き</span>
+                        <span className="shrink-0 text-xs px-1.5 py-0.5 rounded-sm bg-indigo-50 text-indigo-600 font-medium">共有下書き</span>
                       )}
                       {d.mailbox && d.mailbox.type === 'team' && (
-                        <span className="flex-shrink-0 text-xs px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-600 font-medium">チーム</span>
+                        <span className="shrink-0 text-xs px-1.5 py-0.5 rounded-sm bg-indigo-50 text-indigo-600 font-medium">チーム</span>
                       )}
                     </div>
                     {d.is_shared && (
-                      <div className="flex-shrink-0 hidden lg:block w-20 truncate text-xs text-gray-400 text-right">{d.user.name}</div>
+                      <div className="shrink-0 hidden lg:block w-20 truncate text-xs text-gray-400 text-right">{d.user.name}</div>
                     )}
-                    <div className="flex-shrink-0 hidden md:block">
+                    <div className="shrink-0 hidden md:block">
                       {d.mailbox && <span className="text-xs text-gray-400">{d.mailbox.display_name}</span>}
                     </div>
                     {!selectionMode && (
@@ -1248,7 +1248,7 @@ function ThreadList() {
                           await fetch(`/api/drafts/${d.id}`, { method: 'DELETE' });
                           mutateDrafts();
                         }}
-                        className="flex-shrink-0 p-1.5 rounded text-gray-300 hover:text-red-500 hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-all"
+                        className="shrink-0 p-1.5 rounded-sm text-gray-300 hover:text-red-500 hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-all"
                         title="削除"
                       >
                         <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1256,7 +1256,7 @@ function ThreadList() {
                         </svg>
                       </button>
                     )}
-                    <div className="flex-shrink-0 text-xs tabular-nums w-14 text-right text-gray-400">{formatDate(d.updated_at)}</div>
+                    <div className="shrink-0 text-xs tabular-nums w-14 text-right text-gray-400">{formatDate(d.updated_at)}</div>
                   </div>
                 </div>
                 );
@@ -1308,7 +1308,7 @@ function ThreadList() {
                   {/* ── モバイルレイアウト (< sm) ── */}
                   <div className="flex items-start gap-3 px-4 py-3 sm:hidden">
                     {/* アバタータップで選択 */}
-                    <div className="relative flex-shrink-0 mt-0.5">
+                    <div className="relative shrink-0 mt-0.5">
                       <div
                         onClick={(e) => handleCheckboxClick(e, t.id, index)}
                         className={`w-10 h-10 rounded-full flex items-center justify-center transition-all ${
@@ -1334,17 +1334,17 @@ function ThreadList() {
                           {t.from_name || t.from_email?.split('@')[0] || '(不明)'}
                         </span>
                         {t.mailbox_type === 'team' && (
-                          <span className={`flex-shrink-0 inline-flex items-center px-1.5 py-0.5 rounded-full text-[11px] font-medium ring-1 ring-inset ${STATUS_CHIP[t.status] || 'bg-gray-50 text-gray-500 ring-gray-200'}`}>
+                          <span className={`shrink-0 inline-flex items-center px-1.5 py-0.5 rounded-full text-[11px] font-medium ring-1 ring-inset ${STATUS_CHIP[t.status] || 'bg-gray-50 text-gray-500 ring-gray-200'}`}>
                             {STATUS_LABELS[t.status] || t.status}
                           </span>
                         )}
-                        <span className={`flex-shrink-0 text-xs tabular-nums ${isUnread ? 'font-semibold text-gray-700' : 'text-gray-400'}`}>
+                        <span className={`shrink-0 text-xs tabular-nums ${isUnread ? 'font-semibold text-gray-700' : 'text-gray-400'}`}>
                           {formatDate(t.last)}
                         </span>
                       </div>
                       <div className="flex items-center gap-1.5 mt-0.5">
                         {isSearching
-                          ? <span className="flex-shrink-0 inline-flex items-center gap-1 text-[11px] text-gray-500 font-medium">
+                          ? <span className="shrink-0 inline-flex items-center gap-1 text-[11px] text-gray-500 font-medium">
                               {mailboxDot(t.mailbox_id, t.mailbox)}
                               <span className="truncate max-w-[80px]">{t.mailbox}</span>
                             </span>
@@ -1354,27 +1354,27 @@ function ThreadList() {
                           {t.subject || '(件名なし)'}
                         </span>
                         {t.has_mattermost && (
-                          <span className="flex-shrink-0 text-xs px-1.5 py-0.5 rounded bg-purple-50 text-purple-600 font-medium">M</span>
+                          <span className="shrink-0 text-xs px-1.5 py-0.5 rounded-sm bg-purple-50 text-purple-600 font-medium">M</span>
                         )}
                         {t.has_draft && (
-                          <svg className="flex-shrink-0 w-3 h-3 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><title>下書きあり</title>
+                          <svg className="shrink-0 w-3 h-3 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><title>下書きあり</title>
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                           </svg>
                         )}
                       </div>
                       {t.mailbox_type === 'team' && t.readers.length > 0 && (
                         <div className="flex items-center gap-1.5 mt-1.5">
-                          <span className="text-[11px] text-gray-400 flex-shrink-0">既読</span>
+                          <span className="text-[11px] text-gray-400 shrink-0">既読</span>
                           <div className="flex items-center -space-x-1">
                             {t.readers.slice(0, 8).map(r => (
-                              <div key={r.id} title={r.name} className="w-5 h-5 rounded-full border-2 border-white overflow-hidden bg-gray-200 flex items-center justify-center text-[9px] font-bold text-gray-500 flex-shrink-0">
+                              <div key={r.id} title={r.name} className="w-5 h-5 rounded-full border-2 border-white overflow-hidden bg-gray-200 flex items-center justify-center text-[9px] font-bold text-gray-500 shrink-0">
                                 {r.mattermost_user_id ? (
                                   <img src={`/api/users/${r.id}/avatar`} alt={r.name} className="w-full h-full object-cover" onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.parentElement!.textContent = r.name[0]?.toUpperCase() || '?'; }} />
                                 ) : r.name[0]?.toUpperCase() || '?'}
                               </div>
                             ))}
                             {t.readers.length > 8 && (
-                              <div className="w-5 h-5 rounded-full border-2 border-white bg-gray-100 flex items-center justify-center text-[9px] font-bold text-gray-400 flex-shrink-0">+{t.readers.length - 8}</div>
+                              <div className="w-5 h-5 rounded-full border-2 border-white bg-gray-100 flex items-center justify-center text-[9px] font-bold text-gray-400 shrink-0">+{t.readers.length - 8}</div>
                             )}
                           </div>
                         </div>
@@ -1385,7 +1385,7 @@ function ThreadList() {
                   {/* ── PCレイアウト (sm+) — 変更前のレイアウト ── */}
                   <div className="hidden sm:flex items-center gap-3 px-4 py-3">
                     {/* 未読ドット / チェックボックス */}
-                    <div className="flex-shrink-0 w-5 flex items-center justify-center relative">
+                    <div className="shrink-0 w-5 flex items-center justify-center relative">
                       {isUnread && !selectionMode && (
                         <div className="w-2 h-2 rounded-full bg-blue-500 group-hover:opacity-0 transition-opacity" />
                       )}
@@ -1402,13 +1402,13 @@ function ThreadList() {
                     {/* アバター */}
                     <SenderAvatar email={t.from_email} name={t.from_name} size={32} />
                     {/* From */}
-                    <div className={`flex-shrink-0 w-32 truncate text-sm ${isUnread ? 'font-bold text-gray-900' : 'text-gray-600'}`}>
+                    <div className={`shrink-0 w-32 truncate text-sm ${isUnread ? 'font-bold text-gray-900' : 'text-gray-600'}`}>
                       {t.from_name || t.from_email?.split('@')[0] || '(不明)'}
                     </div>
                     {/* 件名 */}
                     <div className="flex-1 min-w-0 flex items-center gap-2">
                       {isSearching
-                        ? <span className="flex-shrink-0 inline-flex items-center gap-1 text-[11px] text-gray-500 font-medium whitespace-nowrap">
+                        ? <span className="shrink-0 inline-flex items-center gap-1 text-[11px] text-gray-500 font-medium whitespace-nowrap">
                             {mailboxDot(t.mailbox_id, t.mailbox)}
                             <span className="truncate max-w-[100px]">{t.mailbox}</span>
                           </span>
@@ -1418,10 +1418,10 @@ function ThreadList() {
                         {t.subject || '(件名なし)'}
                       </span>
                       {t.has_mattermost && (
-                        <span className="flex-shrink-0 text-xs px-1.5 py-0.5 rounded bg-purple-50 text-purple-600 font-medium">M</span>
+                        <span className="shrink-0 text-xs px-1.5 py-0.5 rounded-sm bg-purple-50 text-purple-600 font-medium">M</span>
                       )}
                       {t.has_draft && (
-                        <svg className="flex-shrink-0 w-3.5 h-3.5 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><title>下書きあり</title>
+                        <svg className="shrink-0 w-3.5 h-3.5 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><title>下書きあり</title>
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                         </svg>
                       )}
@@ -1429,7 +1429,7 @@ function ThreadList() {
                     {/* チームメール: 担当 + ステータス + 既読 */}
                     {t.mailbox_type === 'team' && (
                       <>
-                        <div className="flex-shrink-0 hidden md:flex items-center gap-1.5 min-w-0 max-w-[120px]">
+                        <div className="shrink-0 hidden md:flex items-center gap-1.5 min-w-0 max-w-[120px]">
                           {t.assigned ? (
                             <span className="truncate text-xs font-medium text-blue-700 bg-blue-50 border border-blue-200 rounded-full px-2 py-0.5 max-w-full">
                               {t.assigned}
@@ -1438,13 +1438,13 @@ function ThreadList() {
                             <span className="text-xs text-gray-400 italic">未担当</span>
                           )}
                         </div>
-                        <div className="flex-shrink-0 hidden md:block">
+                        <div className="shrink-0 hidden md:block">
                           <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ring-1 ring-inset ${STATUS_CHIP[t.status] || 'bg-gray-50 text-gray-500 ring-gray-200'}`}>
                             {STATUS_LABELS[t.status] || t.status}
                           </span>
                         </div>
                         {t.readers.length > 0 && (
-                          <div className="flex-shrink-0 hidden sm:flex items-center -space-x-1.5">
+                          <div className="shrink-0 hidden sm:flex items-center -space-x-1.5">
                             {t.readers.slice(0, 5).map(r => (
                               <div key={r.id} title={r.name} className="w-5 h-5 rounded-full border border-white overflow-hidden bg-gray-200 flex items-center justify-center text-[9px] font-bold text-gray-500">
                                 {r.mattermost_user_id ? (
@@ -1460,7 +1460,7 @@ function ThreadList() {
                       </>
                     )}
                     {/* 日付 */}
-                    <div className={`flex-shrink-0 text-xs tabular-nums w-14 text-right ${isUnread ? 'font-semibold text-gray-700' : 'text-gray-400'}`}>
+                    <div className={`shrink-0 text-xs tabular-nums w-14 text-right ${isUnread ? 'font-semibold text-gray-700' : 'text-gray-400'}`}>
                       {formatDate(t.last)}
                     </div>
                   </div>

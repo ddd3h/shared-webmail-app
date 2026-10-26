@@ -211,9 +211,9 @@ export default function NotificationsPage() {
             ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
             : 'bg-red-50 text-red-800 border border-red-200'
         }`}>
-          <span className="flex-shrink-0 mt-0.5">{message.type === 'success' ? '✓' : '!'}</span>
+          <span className="shrink-0 mt-0.5">{message.type === 'success' ? '✓' : '!'}</span>
           <span className="flex-1">{message.text}</span>
-          <button onClick={() => setMessage(null)} className="flex-shrink-0 text-current opacity-50 hover:opacity-100">✕</button>
+          <button onClick={() => setMessage(null)} className="shrink-0 text-current opacity-50 hover:opacity-100">✕</button>
         </div>
       )}
 
@@ -232,19 +232,19 @@ export default function NotificationsPage() {
               <p className="text-sm text-gray-600">iPhoneでプッシュ通知を受け取るには、まずホーム画面に追加してください。</p>
               <ol className="space-y-2 text-sm text-gray-700">
                 <li className="flex items-start gap-2">
-                  <span className="flex-shrink-0 w-5 h-5 rounded-full bg-blue-100 text-blue-700 text-xs font-bold flex items-center justify-center mt-0.5">1</span>
+                  <span className="shrink-0 w-5 h-5 rounded-full bg-blue-100 text-blue-700 text-xs font-bold flex items-center justify-center mt-0.5">1</span>
                   <span>Safariの下部にある「共有」ボタン（四角から矢印が出ているアイコン）をタップ</span>
                 </li>
                 <li className="flex items-start gap-2">
-                  <span className="flex-shrink-0 w-5 h-5 rounded-full bg-blue-100 text-blue-700 text-xs font-bold flex items-center justify-center mt-0.5">2</span>
+                  <span className="shrink-0 w-5 h-5 rounded-full bg-blue-100 text-blue-700 text-xs font-bold flex items-center justify-center mt-0.5">2</span>
                   <span>「ホーム画面に追加」をタップ</span>
                 </li>
                 <li className="flex items-start gap-2">
-                  <span className="flex-shrink-0 w-5 h-5 rounded-full bg-blue-100 text-blue-700 text-xs font-bold flex items-center justify-center mt-0.5">3</span>
+                  <span className="shrink-0 w-5 h-5 rounded-full bg-blue-100 text-blue-700 text-xs font-bold flex items-center justify-center mt-0.5">3</span>
                   <span>右上の「追加」をタップして完了</span>
                 </li>
                 <li className="flex items-start gap-2">
-                  <span className="flex-shrink-0 w-5 h-5 rounded-full bg-blue-100 text-blue-700 text-xs font-bold flex items-center justify-center mt-0.5">4</span>
+                  <span className="shrink-0 w-5 h-5 rounded-full bg-blue-100 text-blue-700 text-xs font-bold flex items-center justify-center mt-0.5">4</span>
                   <span>ホーム画面のアイコンからアプリを開き、この画面で通知を有効にする</span>
                 </li>
               </ol>
@@ -267,11 +267,11 @@ export default function NotificationsPage() {
               ) : (
                 <ol className="space-y-2 text-sm text-gray-700">
                   <li className="flex items-start gap-2">
-                    <span className="flex-shrink-0 w-5 h-5 rounded-full bg-blue-100 text-blue-700 text-xs font-bold flex items-center justify-center mt-0.5">1</span>
+                    <span className="shrink-0 w-5 h-5 rounded-full bg-blue-100 text-blue-700 text-xs font-bold flex items-center justify-center mt-0.5">1</span>
                     <span>Chromeの右上メニュー（⋮）をタップ</span>
                   </li>
                   <li className="flex items-start gap-2">
-                    <span className="flex-shrink-0 w-5 h-5 rounded-full bg-blue-100 text-blue-700 text-xs font-bold flex items-center justify-center mt-0.5">2</span>
+                    <span className="shrink-0 w-5 h-5 rounded-full bg-blue-100 text-blue-700 text-xs font-bold flex items-center justify-center mt-0.5">2</span>
                     <span>「ホーム画面に追加」または「アプリをインストール」をタップ</span>
                   </li>
                 </ol>
@@ -287,7 +287,7 @@ export default function NotificationsPage() {
 
       {installState === 'already-installed' && (
         <div className="card p-4 flex items-center gap-3">
-          <span className="w-8 h-8 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-600 flex-shrink-0">
+          <span className="w-8 h-8 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-600 shrink-0">
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
             </svg>
@@ -325,7 +325,7 @@ export default function NotificationsPage() {
                     <p className="text-xs text-gray-500 mt-2">ブラウザの設定から通知を許可してください。</p>
                   )}
                 </div>
-                <div className="flex-shrink-0">
+                <div className="shrink-0">
                   {permission === 'granted' ? (
                     <button className="btn-danger btn-sm btn" onClick={unsubscribe} disabled={loading}>
                       無効にする
@@ -343,7 +343,7 @@ export default function NotificationsPage() {
               <div className="flex items-center justify-between">
                 <p className="text-xs text-gray-500">担当メールへの新着・返信で通知が届きます。</p>
                 <button
-                  className="btn btn-secondary btn-sm flex-shrink-0"
+                  className="btn btn-secondary btn-sm shrink-0"
                   onClick={sendTestPush}
                   disabled={loading}
                 >
@@ -366,14 +366,14 @@ export default function NotificationsPage() {
           <div className="space-y-2">
             {devices.map(dev => (
               <div key={dev.id} className="flex items-center gap-3 p-3 rounded-xl bg-gray-50 border border-gray-100">
-                <div className="flex-shrink-0 w-9 h-9 rounded-full bg-white border border-gray-200 flex items-center justify-center">
+                <div className="shrink-0 w-9 h-9 rounded-full bg-white border border-gray-200 flex items-center justify-center">
                   {platformIcon(dev.platform)}
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
                     <span className="text-sm font-medium text-gray-900">{platformLabel(dev.platform)}</span>
                     {!dev.is_active && (
-                      <span className="text-xs text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded">無効</span>
+                      <span className="text-xs text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded-sm">無効</span>
                     )}
                   </div>
                   <p className="text-xs text-gray-500 mt-0.5">
@@ -382,7 +382,7 @@ export default function NotificationsPage() {
                 </div>
                 <button
                   onClick={() => removeDevice(dev.id)}
-                  className="flex-shrink-0 p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+                  className="shrink-0 p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors"
                   title="削除"
                 >
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

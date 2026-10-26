@@ -31,8 +31,8 @@ export default function BlocksPanel({ blocks, onChanged }: { blocks: Overview['b
           {blocks.map(b => (
             <li key={b.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2 text-sm">
               <span className="font-mono text-gray-900">{b.ip}</span>
-              <span className={`rounded px-1.5 py-0.5 text-[11px] ${b.source === 'auto' ? 'bg-red-50 text-red-700' : 'bg-gray-100 text-gray-600'}`}>{b.source === 'auto' ? '自動' : '手動'}</span>
-              <span className="min-w-[10rem] flex-1 text-xs text-gray-500">{b.reason}</span>
+              <span className={`rounded-sm px-1.5 py-0.5 text-[11px] ${b.source === 'auto' ? 'bg-red-50 text-red-700' : 'bg-gray-100 text-gray-600'}`}>{b.source === 'auto' ? '自動' : '手動'}</span>
+              <span className="min-w-40 flex-1 text-xs text-gray-500">{b.reason}</span>
               <span className="text-xs text-gray-400">{b.expires_at ? `${when(b.expires_at)} まで` : '解除するまで'}</span>
               <button onClick={() => lift(b.id)} className="btn btn-secondary btn-sm" aria-label={`${b.ip}のブロックを解除`}>解除</button>
             </li>

@@ -65,9 +65,9 @@ export default function AdminPanel() {
               <tbody className="divide-y divide-gray-100">
                 {members.map(m => (
                   <tr key={m.id}>
-                    <td className="px-3 py-2"><div className="font-medium text-gray-900">{m.name}{m.role === 'admin' && <span className="ml-1 rounded bg-blue-50 px-1 text-[10px] text-blue-700">管理者</span>}</div><div className="text-xs text-gray-400">{m.email}</div></td>
+                    <td className="px-3 py-2"><div className="font-medium text-gray-900">{m.name}{m.role === 'admin' && <span className="ml-1 rounded-sm bg-blue-50 px-1 text-[10px] text-blue-700">管理者</span>}</div><div className="text-xs text-gray-400">{m.email}</div></td>
                     <td className="px-3 py-2">
-                      <select className={`${inp} max-w-[9rem]`} value={m.worker_type} onChange={e => setType(m.id, e.target.value as WorkerType)} aria-label={`${m.name}の区分`}>
+                      <select className={`${inp} max-w-36`} value={m.worker_type} onChange={e => setType(m.id, e.target.value as WorkerType)} aria-label={`${m.name}の区分`}>
                         {(Object.keys(TYPE_LABEL) as WorkerType[]).map(t => <option key={t} value={t}>{TYPE_LABEL[t]}</option>)}
                       </select>
                     </td>

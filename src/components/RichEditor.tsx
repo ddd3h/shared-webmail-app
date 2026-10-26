@@ -128,7 +128,7 @@ const RichEditor = forwardRef<RichEditorHandle, Props>(
       onUpdate: () => onInput?.(),
       editorProps: {
         attributes: {
-          class: 'prose prose-sm max-w-none focus:outline-none leading-relaxed',
+          class: 'prose prose-sm max-w-none focus:outline-hidden leading-relaxed',
           style: `min-height: ${minHeight}px; color: #111827; padding: 12px;`,
           'data-placeholder': placeholder ?? '',
         },
@@ -269,7 +269,7 @@ const RichEditor = forwardRef<RichEditorHandle, Props>(
         type="button"
         onMouseDown={(e) => { e.preventDefault(); onClick(); }}
         title={title}
-        className={`flex-shrink-0 px-2 py-1 rounded text-sm transition-colors select-none ${
+        className={`shrink-0 px-2 py-1 rounded text-sm transition-colors select-none ${
           active ? 'bg-blue-100 text-blue-700' : 'text-gray-600 hover:bg-gray-200 hover:text-gray-900'
         }`}
       >
@@ -294,7 +294,7 @@ const RichEditor = forwardRef<RichEditorHandle, Props>(
             <span className="line-through">S</span>
           </ToolBtn>
 
-          <div className="w-px h-5 bg-gray-300 mx-1 flex-shrink-0" />
+          <div className="w-px h-5 bg-gray-300 mx-1 shrink-0" />
 
           {/* Font size */}
           <select
@@ -303,19 +303,19 @@ const RichEditor = forwardRef<RichEditorHandle, Props>(
               editor.chain().focus().setFontSize(`${e.target.value}pt`).run();
             }}
             onMouseDown={(e) => e.stopPropagation()}
-            className="flex-shrink-0 text-xs border border-gray-200 rounded px-1.5 py-1 bg-white text-gray-600 cursor-pointer hover:border-gray-300 focus:outline-none focus:border-blue-400"
+            className="shrink-0 text-xs border border-gray-200 rounded-sm px-1.5 py-1 bg-white text-gray-600 cursor-pointer hover:border-gray-300 focus:outline-hidden focus:border-blue-400"
             title="フォントサイズ (pt)"
           >
             {FONT_SIZES.map(pt => <option key={pt} value={pt}>{pt}pt</option>)}
           </select>
 
           {/* Text color */}
-          <div className="relative group flex-shrink-0">
+          <div className="relative group shrink-0">
             <button
               type="button"
               onMouseDown={(e) => e.preventDefault()}
               title="文字色"
-              className="flex items-center gap-0.5 px-2 py-1 rounded text-sm text-gray-600 hover:bg-gray-200 select-none"
+              className="flex items-center gap-0.5 px-2 py-1 rounded-sm text-sm text-gray-600 hover:bg-gray-200 select-none"
             >
               <span className="font-bold leading-none" style={{ borderBottom: '3px solid #ef4444' }}>A</span>
               <svg className="w-2 h-2 ml-0.5" viewBox="0 0 8 6" fill="currentColor"><path d="M4 6L0 0h8z" /></svg>
@@ -342,7 +342,7 @@ const RichEditor = forwardRef<RichEditorHandle, Props>(
                 <p className="text-xs text-gray-400 mb-1">カスタム</p>
                 <input
                   type="color"
-                  className="w-full h-7 rounded cursor-pointer border border-gray-200"
+                  className="w-full h-7 rounded-sm cursor-pointer border border-gray-200"
                   defaultValue="#000000"
                   onMouseDown={(e) => e.stopPropagation()}
                   onChange={(e) => { editor.chain().focus().setColor(e.target.value).run(); onInput?.(); }}
@@ -351,7 +351,7 @@ const RichEditor = forwardRef<RichEditorHandle, Props>(
             </div>
           </div>
 
-          <div className="w-px h-5 bg-gray-300 mx-1 flex-shrink-0" />
+          <div className="w-px h-5 bg-gray-300 mx-1 shrink-0" />
 
           <ToolBtn onClick={() => editor.chain().focus().setTextAlign('left').run()} title="左揃え" active={editor.isActive({ textAlign: 'left' })}>
             <svg className="w-3.5 h-3.5" viewBox="0 0 16 16" fill="currentColor"><path d="M2 4h12v1.5H2zm0 3h8v1.5H2zm0 3h12v1.5H2zm0 3h8v1.5H2z" /></svg>
@@ -360,7 +360,7 @@ const RichEditor = forwardRef<RichEditorHandle, Props>(
             <svg className="w-3.5 h-3.5" viewBox="0 0 16 16" fill="currentColor"><path d="M2 4h12v1.5H2zm2 3h8v1.5H4zm-2 3h12v1.5H2zm2 3h8v1.5H4z" /></svg>
           </ToolBtn>
 
-          <div className="w-px h-5 bg-gray-300 mx-1 flex-shrink-0" />
+          <div className="w-px h-5 bg-gray-300 mx-1 shrink-0" />
 
           <ToolBtn onClick={() => editor.chain().focus().toggleBlockquote().run()} title="引用を挿入" active={editor.isActive('blockquote')}>
             <svg className="w-3.5 h-3.5" viewBox="0 0 16 16" fill="currentColor"><path d="M3.5 5C2.67 5 2 5.67 2 6.5v2C2 9.33 2.67 10 3.5 10H5v.5c0 .83-.67 1.5-1.5 1.5H3v1.5h.5c1.66 0 3-1.34 3-3V6.5C6.5 5.67 5.83 5 5 5H3.5zm7 0C9.67 5 9 5.67 9 6.5v2c0 .83.67 1.5 1.5 1.5H12v.5c0 .83-.67 1.5-1.5 1.5H10v1.5h.5c1.66 0 3-1.34 3-3V6.5c0-.83-.67-1.5-1.5-1.5h-1.5z" /></svg>
@@ -379,7 +379,7 @@ const RichEditor = forwardRef<RichEditorHandle, Props>(
             <svg className="w-3.5 h-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M6.5 9.5a3.5 3.5 0 005 0l2-2a3.5 3.5 0 00-5-5l-1 1" /><path d="M9.5 6.5a3.5 3.5 0 00-5 0l-2 2a3.5 3.5 0 005 5l1-1" /></svg>
           </ToolBtn>
 
-          <div className="w-px h-5 bg-gray-300 mx-1 flex-shrink-0" />
+          <div className="w-px h-5 bg-gray-300 mx-1 shrink-0" />
 
           <ToolBtn onClick={() => editor.chain().focus().unsetAllMarks().clearNodes().run()} title="書式をクリア">
             <svg className="w-3.5 h-3.5" viewBox="0 0 16 16" fill="currentColor"><path d="M3.27 1L2 2.27l5.11 5.11L4 13h2.5l1.64-3.89L13.73 15 15 13.73 3.27 1zm1.15 2.38L12 11l-1.5 2H8l1.5-3.5-5.08-4.12z" /></svg>

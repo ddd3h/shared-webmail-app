@@ -56,14 +56,14 @@ export default function ReportsPanel({ admin = false, userId }: { admin?: boolea
           <div key={r.id} className="rounded-xl border border-gray-200 bg-white p-3">
             <button className="w-full text-left" onClick={() => setOpen(open === r.id ? null : r.id)}>
               <div className="flex items-center gap-2 text-xs text-gray-500">
-                <span>{dateLabel(r.report_date)}</span>{admin && r.user && <span className="rounded bg-gray-100 px-1.5 py-0.5">{r.user.name}</span>}
+                <span>{dateLabel(r.report_date)}</span>{admin && r.user && <span className="rounded-sm bg-gray-100 px-1.5 py-0.5">{r.user.name}</span>}
                 {r.hours !== null && <span>{r.hours}h</span>}
               </div>
               <div className="text-sm font-medium text-gray-900 mt-0.5">{r.title}</div>
             </button>
             {open === r.id && (
               <div className="mt-2 border-t border-gray-100 pt-2">
-                <p className="whitespace-pre-wrap break-words text-sm text-gray-700">{r.content}</p>
+                <p className="whitespace-pre-wrap wrap-break-word text-sm text-gray-700">{r.content}</p>
                 <div className="mt-2 flex gap-3 text-xs">
                   {!admin && <button className="text-blue-600 hover:underline" onClick={() => setDraft({ id: r.id, report_date: r.report_date, title: r.title, content: r.content, hours: r.hours === null ? '' : String(r.hours) })}>編集</button>}
                   <button className="text-red-600 hover:underline" onClick={() => remove(r.id)}>削除</button>

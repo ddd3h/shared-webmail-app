@@ -79,14 +79,14 @@ export default function ScheduledSendsPage() {
         <div className={`flex items-center gap-2 text-sm rounded-lg px-3 py-2 ${msg.type === 'success' ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-600'}`}>
           <span className="flex-1">{msg.text}</span>
           {msg.href && (
-            <button onClick={() => router.push(msg.href!)} className="font-medium underline hover:no-underline flex-shrink-0">
+            <button onClick={() => router.push(msg.href!)} className="font-medium underline hover:no-underline shrink-0">
               {msg.linkLabel}
             </button>
           )}
         </div>
       )}
 
-      <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+      <div className="bg-white rounded-xl border border-gray-200 shadow-xs overflow-hidden">
         {loading ? (
           <div className="py-16 text-center">
             <div className="inline-block w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
@@ -102,14 +102,14 @@ export default function ScheduledSendsPage() {
           <div className="divide-y divide-gray-100">
             {items.map(item => (
               <div key={item.id} className="flex items-center gap-3 px-4 py-3 hover:bg-gray-50 transition-colors">
-                <span className="badge bg-blue-100 text-blue-700 flex-shrink-0">{MODE_LABEL[item.mode] || item.mode}</span>
+                <span className="badge bg-blue-100 text-blue-700 shrink-0">{MODE_LABEL[item.mode] || item.mode}</span>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium text-gray-900 truncate">{item.subject || '(件名なし)'}</p>
                   <p className="text-xs text-gray-500 truncate">
                     宛先: {item.to}{item.mailbox ? ` ・ 差出人: ${item.mailbox.display_name}` : ''}
                   </p>
                 </div>
-                <div className="flex-shrink-0 text-right">
+                <div className="shrink-0 text-right">
                   <p className="text-xs font-medium text-gray-700">{formatDateTime(item.scheduled_at)}</p>
                   <button
                     onClick={() => cancel(item.id)}

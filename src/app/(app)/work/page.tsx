@@ -37,7 +37,7 @@ export default function WorkPage() {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-end gap-3">
-        <div className="flex-1 min-w-[10rem]">
+        <div className="flex-1 min-w-40">
           <h1 className="text-xl font-bold text-gray-900">勤怠・給与</h1>
           <p className="text-xs text-gray-500 mt-0.5">{me.name} さん（{TYPE_LABEL[me.worker_type]}）</p>
         </div>

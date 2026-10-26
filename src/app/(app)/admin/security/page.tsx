@@ -58,9 +58,9 @@ export default function SecurityAdminPage() {
         <ul className="divide-y divide-gray-100">
           {data.people.map(p => (
             <li key={p.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2 text-sm">
-              <span className="min-w-[8rem] flex-1">{p.name}<span className="ml-2 text-xs text-gray-400">{p.email}</span></span>
-              <span className={`rounded px-1.5 py-0.5 text-[11px] ${p.mfa ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>{p.mfa ? '2段階認証 有効' : '2段階認証 未設定'}</span>
-              <span className={`rounded px-1.5 py-0.5 text-[11px] ${p.passkeys > 0 ? 'bg-blue-50 text-blue-700' : 'bg-gray-100 text-gray-500'}`}>パスキー {p.passkeys}</span>
+              <span className="min-w-32 flex-1">{p.name}<span className="ml-2 text-xs text-gray-400">{p.email}</span></span>
+              <span className={`rounded-sm px-1.5 py-0.5 text-[11px] ${p.mfa ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>{p.mfa ? '2段階認証 有効' : '2段階認証 未設定'}</span>
+              <span className={`rounded-sm px-1.5 py-0.5 text-[11px] ${p.passkeys > 0 ? 'bg-blue-50 text-blue-700' : 'bg-gray-100 text-gray-500'}`}>パスキー {p.passkeys}</span>
               {p.mfa && <button onClick={() => resetMfa(p.id, p.name)} className="btn btn-secondary btn-sm" aria-label={`${p.name}の2段階認証をリセット`}>リセット</button>}
             </li>
           ))}
@@ -73,7 +73,7 @@ export default function SecurityAdminPage() {
           <ul className="divide-y divide-gray-100">
             {data.events.map(e => (
               <li key={e.id} className="flex flex-wrap items-center gap-x-3 gap-y-0.5 py-2 text-sm">
-                <span className={`rounded px-1.5 py-0.5 text-[11px] font-medium ${SEVERITY_STYLE[e.severity]}`}>{SEVERITY_LABEL[e.severity]}</span>
+                <span className={`rounded-sm px-1.5 py-0.5 text-[11px] font-medium ${SEVERITY_STYLE[e.severity]}`}>{SEVERITY_LABEL[e.severity]}</span>
                 <span className="text-gray-900">{EVENT_LABEL[e.type] ?? e.type}</span>
                 {e.ip && <span className="font-mono text-xs text-gray-500">{e.ip}</span>}
                 {e.email && <span className="text-xs text-gray-500">{e.email}</span>}
@@ -93,7 +93,7 @@ export default function SecurityAdminPage() {
           <tbody className="divide-y divide-gray-100">
             {data.recent_logins.map(l => (
               <tr key={l.id}><td className="py-1.5 whitespace-nowrap text-gray-600">{when(l.at)}</td><td className="py-1.5">{l.name ?? l.email}</td>
-                <td className="py-1.5"><span className={`rounded px-1.5 py-0.5 text-[11px] ${l.success ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'}`}>{l.success ? '成功' : `失敗${l.reason ? `（${reasonLabel(l.reason)}）` : ''}`}</span></td>
+                <td className="py-1.5"><span className={`rounded-sm px-1.5 py-0.5 text-[11px] ${l.success ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'}`}>{l.success ? '成功' : `失敗${l.reason ? `（${reasonLabel(l.reason)}）` : ''}`}</span></td>
                 <td className="py-1.5 text-gray-600"><span className="font-mono text-xs">{l.ip}</span> {l.place}</td><td className="py-1.5 text-gray-500">{l.device}</td></tr>
             ))}
           </tbody></table></div>

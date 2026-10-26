@@ -33,7 +33,7 @@ export default function PositionsPanel({ data, onChanged }: { data: OrgData; onC
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">
-        <p className="flex-1 min-w-[12rem] text-xs text-gray-500">役職ごとに権限を決めます。権限は、その人が<b>部署長になっている部署（配下を含む）</b>に対して効きます。</p>
+        <p className="flex-1 min-w-48 text-xs text-gray-500">役職ごとに権限を決めます。権限は、その人が<b>部署長になっている部署（配下を含む）</b>に対して効きます。</p>
         {data.positions.length === 0 && <button className={btn} onClick={addDefaults}>標準の役職を作成</button>}
         <button className={btnPrimary} onClick={() => setDraft({ name: '', level: '0', permissions: [] })}>＋ 役職を追加</button>
       </div>
@@ -50,7 +50,7 @@ export default function PositionsPanel({ data, onChanged }: { data: OrgData; onC
               <button className="text-sm text-red-600 hover:underline" onClick={() => remove(p)}>削除</button>
             </div>
             <div className="mt-1.5 flex flex-wrap gap-1.5">
-              {p.permissions.length === 0 ? <span className="text-xs text-gray-400">権限なし</span> : p.permissions.map(c => <span key={c} className="rounded bg-blue-50 px-1.5 py-0.5 text-[11px] text-blue-700">{ORG_CAPABILITIES[c].label}</span>)}
+              {p.permissions.length === 0 ? <span className="text-xs text-gray-400">権限なし</span> : p.permissions.map(c => <span key={c} className="rounded-sm bg-blue-50 px-1.5 py-0.5 text-[11px] text-blue-700">{ORG_CAPABILITIES[c].label}</span>)}
             </div>
           </li>
         ))}

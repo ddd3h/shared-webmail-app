@@ -40,7 +40,7 @@ export default function VendorsPanel({ admin, onChanged }: { admin: boolean; onC
             {!v.is_active && <p className="text-xs text-gray-400">無効（新しい申請では選べません）</p>}
             {admin && (
               <div className="flex flex-wrap gap-3 text-xs">
-                {!v.verified && <button className="rounded bg-emerald-600 px-2 py-1 text-white hover:bg-emerald-700" onClick={() => verify(v)}>口座を確認済にする</button>}
+                {!v.verified && <button className="rounded-sm bg-emerald-600 px-2 py-1 text-white hover:bg-emerald-700" onClick={() => verify(v)}>口座を確認済にする</button>}
                 <button className="text-blue-600 hover:underline" onClick={() => setForm(draftFromVendor(v))}>編集</button>
                 <button className="text-red-600 hover:underline" onClick={() => remove(v)}>削除</button>
               </div>

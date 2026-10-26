@@ -173,12 +173,12 @@ function CalendarView() {
     if (res.ok) { setDraft(null); load(); } else flash('error', '削除に失敗しました');
   }
 
-  const inp = 'w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500';
+  const inp = 'w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-hidden focus:ring-2 focus:ring-blue-500';
 
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-3">
-        <div className="flex-1 min-w-[10rem]">
+        <div className="flex-1 min-w-40">
           <h1 className="text-xl font-bold text-gray-900">カレンダー</h1>
           <p className="text-xs text-gray-500 mt-0.5">共有メールアカウントごとのチームカレンダー</p>
         </div>
@@ -218,7 +218,7 @@ function CalendarView() {
       {ready && <>
       <div className="flex items-center gap-2">
         <button onClick={() => setCursor(new Date(cursor.getFullYear(), cursor.getMonth() - 1, 1))} className="px-3 py-1.5 rounded-lg border border-gray-300 text-sm" aria-label="前の月">‹</button>
-        <div className="text-base font-semibold text-gray-900 min-w-[7rem] text-center">{cursor.getFullYear()}年{cursor.getMonth() + 1}月</div>
+        <div className="text-base font-semibold text-gray-900 min-w-28 text-center">{cursor.getFullYear()}年{cursor.getMonth() + 1}月</div>
         <button onClick={() => setCursor(new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1))} className="px-3 py-1.5 rounded-lg border border-gray-300 text-sm" aria-label="次の月">›</button>
         <button onClick={() => { const n = new Date(); setCursor(new Date(n.getFullYear(), n.getMonth(), 1)); setSelected(n); }} className="ml-1 px-3 py-1.5 rounded-lg border border-gray-300 text-sm">今日</button>
         {loading && <span className="text-xs text-gray-400">読み込み中…</span>}
@@ -236,11 +236,11 @@ function CalendarView() {
               const isSel = ymd(d) === ymd(selected);
               return (
                 <button key={d.toISOString()} onClick={() => setSelected(d)}
-                  className={`flex flex-col items-stretch justify-start min-h-[4.5rem] md:min-h-[6rem] border-t border-l border-gray-100 p-1 text-left align-top ${inMonth ? 'bg-white' : 'bg-gray-50/70'} ${isSel ? 'ring-2 ring-inset ring-blue-500' : ''}`}>
+                  className={`flex flex-col items-stretch justify-start min-h-18 md:min-h-24 border-t border-l border-gray-100 p-1 text-left align-top ${inMonth ? 'bg-white' : 'bg-gray-50/70'} ${isSel ? 'ring-2 ring-inset ring-blue-500' : ''}`}>
                   <div className={`text-xs mb-0.5 ${ymd(d) === today ? 'flex h-5 w-5 items-center justify-center rounded-full bg-blue-600 text-white' : inMonth ? 'text-gray-700' : 'text-gray-400'}`}>{d.getDate()}</div>
                   <div className="space-y-0.5">
                     {list.slice(0, 3).map(e => (
-                      <div key={e.id} className="truncate rounded px-1 text-[10px] md:text-[11px] leading-4 text-white" style={{ background: colorOf(e.owner?.id ?? null) }}>{e.title}</div>
+                      <div key={e.id} className="truncate rounded-sm px-1 text-[10px] md:text-[11px] leading-4 text-white" style={{ background: colorOf(e.owner?.id ?? null) }}>{e.title}</div>
                     ))}
                     {list.length > 3 && <div className="text-[10px] text-gray-500">+{list.length - 3}件</div>}
                   </div>
@@ -261,8 +261,8 @@ function CalendarView() {
               <li key={e.id}>
                 <button onClick={() => openEvent(e)} className="w-full text-left rounded-lg border border-gray-100 p-2 hover:bg-gray-50" style={{ borderLeft: `4px solid ${colorOf(e.owner?.id ?? null)}` }}>
                   <div className="text-xs text-gray-500">{timeLabel(e)} ・ {e.owner?.name ?? 'チーム全体'}</div>
-                  <div className="text-sm font-medium text-gray-900 break-words">{e.title}{e.renamed && <span className="ml-1 text-[10px] text-gray-400">(名称変更済)</span>}</div>
-                  {e.location && <div className="text-xs text-gray-500 break-words">📍 {e.location}</div>}
+                  <div className="text-sm font-medium text-gray-900 wrap-break-word">{e.title}{e.renamed && <span className="ml-1 text-[10px] text-gray-400">(名称変更済)</span>}</div>
+                  {e.location && <div className="text-xs text-gray-500 wrap-break-word">📍 {e.location}</div>}
                 </button>
               </li>
             ))}
@@ -283,7 +283,7 @@ function CalendarView() {
               <p className="text-xs text-gray-500">誰の予定: {people.find(p => p.id === draft.owner)?.name ?? 'チーム全体'}</p>
               {draft.original_title && <p className="text-xs text-gray-500">元のタイトル: {draft.original_title}</p>}
               {draft.location && <p className="text-xs text-gray-500">場所: {draft.location}</p>}
-              {draft.description && <p className="text-xs text-gray-500 whitespace-pre-wrap break-words">{draft.description}</p>}
+              {draft.description && <p className="text-xs text-gray-500 whitespace-pre-wrap wrap-break-word">{draft.description}</p>}
             </div>
           ) : (
             <div className="space-y-3">
@@ -323,7 +323,7 @@ function CalendarView() {
 
 function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
   return (
-    <div className="fixed inset-0 z-[70] flex items-end md:items-center justify-center bg-black/40 p-0 md:p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-70 flex items-end md:items-center justify-center bg-black/40 p-0 md:p-4" onClick={onClose}>
       <div className="w-full md:max-w-lg max-h-[90vh] overflow-y-auto rounded-t-2xl md:rounded-2xl bg-white p-4 shadow-xl" onClick={e => e.stopPropagation()}>
         <h3 className="text-base font-semibold text-gray-900 mb-3">{title}</h3>
         {children}
@@ -388,7 +388,7 @@ function GoogleSettings({ mailboxId, links, configured, focusLink, onClose, onCh
                     <input className={inp} defaultValue={l.busy_label} onBlur={e => e.target.value.trim() && e.target.value !== l.busy_label && patch(l.id, { busy_label: e.target.value })} /></div>
                 )}
                 <div className="text-xs text-gray-500">誰の予定: {l.linked_by.name} ・ 最終同期: {l.last_synced_at ? new Date(l.last_synced_at).toLocaleString('ja-JP') : '未同期'}</div>
-                {l.last_error && <div className="text-xs text-red-600 break-words">エラー: {l.last_error}</div>}
+                {l.last_error && <div className="text-xs text-red-600 wrap-break-word">エラー: {l.last_error}</div>}
                 <div className="flex gap-3 text-xs">
                   <button onClick={() => sync(l.id)} className="text-blue-600 hover:underline">今すぐ同期</button>
                   <button onClick={() => unlink(l.id)} className="text-red-600 hover:underline">連携解除</button>

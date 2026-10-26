@@ -50,9 +50,9 @@ export default function AccountsReview({ meId }: { meId: string }) {
               ) : <div className="mt-0.5 text-xs text-gray-400">口座が登録されていません</div>}
             </div>
             {a && (a.verified
-              ? <span className="rounded bg-emerald-50 px-1.5 py-0.5 text-[11px] text-emerald-700">確認済</span>
+              ? <span className="rounded-sm bg-emerald-50 px-1.5 py-0.5 text-[11px] text-emerald-700">確認済</span>
               : <button className={btnPrimary} onClick={() => verify(user.id, a.revision)}>確認済にする</button>)}
-            {!a && <span className="rounded bg-amber-50 px-1.5 py-0.5 text-[11px] text-amber-700">未登録</span>}
+            {!a && <span className="rounded-sm bg-amber-50 px-1.5 py-0.5 text-[11px] text-amber-700">未登録</span>}
           </div>
         ))}
       </div>

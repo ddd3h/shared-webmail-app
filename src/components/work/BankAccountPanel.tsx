@@ -51,8 +51,8 @@ export default function BankAccountPanel() {
         <div className="flex flex-wrap items-center gap-2">
           <h3 className="text-sm font-semibold text-gray-900">受取口座</h3>
           {saved && (saved.verified
-            ? <span className="rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] text-emerald-700">経理確認済</span>
-            : <span className="rounded bg-amber-50 px-1.5 py-0.5 text-[10px] text-amber-700">確認待ち</span>)}
+            ? <span className="rounded-sm bg-emerald-50 px-1.5 py-0.5 text-[10px] text-emerald-700">経理確認済</span>
+            : <span className="rounded-sm bg-amber-50 px-1.5 py-0.5 text-[10px] text-amber-700">確認待ち</span>)}
         </div>
         <p className="text-xs text-gray-500">給与・報酬・経費の立替金を受け取る口座です。登録しておくと、支払日の一括振込にそのまま使われます。口座番号は暗号化して保存され、本人と経理担当だけが見られます。</p>
         <div className="grid grid-cols-[1fr_6rem] gap-2">

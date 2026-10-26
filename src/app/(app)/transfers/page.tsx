@@ -27,7 +27,7 @@ export default function TransfersPage() {
         <h1 className="text-xl font-bold text-gray-900">振込データ</h1>
         <p className="text-xs text-gray-500 mt-0.5">給与・取引先への支払を、全銀フォーマットのファイルにまとめて銀行の一括振込に使います</p>
       </div>
-      <div className="flex gap-1 border-b border-gray-200 overflow-x-auto [scrollbar-width:none]">
+      <div className="flex gap-1 border-b border-gray-200 overflow-x-auto scrollbar-none">
         {tabs.map(t => (
           <button key={t.k} onClick={() => setTab(t.k)} className={`px-4 py-2 text-sm font-medium -mb-px border-b-2 whitespace-nowrap ${tab === t.k ? 'border-blue-600 text-blue-700' : 'border-transparent text-gray-500 hover:text-gray-800'}`}>{t.l}</button>
         ))}

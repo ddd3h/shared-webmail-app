@@ -35,7 +35,7 @@ export default function SendingOverlay({ onConfirm, onCancel }: Props) {
   const progress = (DELAY_MS - remaining) / DELAY_MS;
 
   return (
-    <div className="fixed inset-0 z-[300] flex flex-col items-center justify-center bg-white/95 backdrop-blur-sm">
+    <div className="fixed inset-0 z-300 flex flex-col items-center justify-center bg-white/95 backdrop-blur-xs">
       {/* Paper plane flight lane */}
       <div className="relative w-full h-24 overflow-hidden mb-8 flex items-center">
         <div className="animate-plane-fly absolute left-0 top-1/2 -translate-y-1/2">

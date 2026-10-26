@@ -27,9 +27,9 @@ export function TripHeader({ t, showUser }: { t: Trip; showUser?: boolean }) {
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-1.5 text-xs text-gray-500">
           <span>{periodLabel(t.start_date, t.end_date)}</span><span>{t.days}日{t.nights > 0 ? `（${t.nights}泊）` : '（日帰り）'}</span>
-          {showUser && <span className="rounded bg-gray-100 px-1.5 py-0.5 text-gray-700">{t.user.name}</span>}
+          {showUser && <span className="rounded-sm bg-gray-100 px-1.5 py-0.5 text-gray-700">{t.user.name}</span>}
         </div>
-        <div className="mt-0.5 text-sm font-medium text-gray-900 break-words">✈ {t.destination}</div>
+        <div className="mt-0.5 text-sm font-medium text-gray-900 wrap-break-word">✈ {t.destination}</div>
       </div>
       <StatusBadge s={t.status} />
       <div className="text-right"><div className="text-[10px] text-gray-400">手当</div><div className="text-base font-bold tabular-nums">{yen(t.allowance_total)}</div></div>
@@ -45,7 +45,7 @@ export function LinesTable({ lines }: { lines: { name: string; kind: string; uni
     <div className="rounded-lg border border-gray-100 text-sm">
       {lines.map((l, i) => (
         <div key={i} className="flex items-center justify-between gap-2 px-3 py-1.5 border-b border-gray-100 last:border-0">
-          <span className="min-w-0 break-words">{l.name}<span className="ml-2 text-[11px] text-gray-400">{yen(l.rate)} × {l.quantity}{unitWord(l.unit)}</span></span>
+          <span className="min-w-0 wrap-break-word">{l.name}<span className="ml-2 text-[11px] text-gray-400">{yen(l.rate)} × {l.quantity}{unitWord(l.unit)}</span></span>
           <span className="tabular-nums whitespace-nowrap">{yen(l.amount)}</span>
         </div>
       ))}
@@ -57,7 +57,7 @@ export function LinesTable({ lines }: { lines: { name: string; kind: string; uni
 export function TripDetail({ t }: { t: Trip }) {
   return (
     <div className="space-y-3 text-sm">
-      <div><div className="text-xs font-semibold text-gray-500 mb-0.5">業務内容</div><p className="whitespace-pre-wrap break-words text-gray-700">{t.purpose}</p></div>
+      <div><div className="text-xs font-semibold text-gray-500 mb-0.5">業務内容</div><p className="whitespace-pre-wrap wrap-break-word text-gray-700">{t.purpose}</p></div>
       <div><div className="text-xs font-semibold text-gray-500 mb-1">日当・加算金</div><LinesTable lines={t.allowances} /></div>
       <div>
         <div className="text-xs font-semibold text-gray-500 mb-1">この出張の経費（{t.expenses.length}件）</div>
@@ -65,7 +65,7 @@ export function TripDetail({ t }: { t: Trip }) {
           <div className="rounded-lg border border-gray-100">
             {t.expenses.map(e => (
               <div key={e.id} className="flex items-center justify-between gap-2 px-3 py-1.5 border-b border-gray-100 last:border-0">
-                <span className="min-w-0 break-words text-xs">{e.expense_date.slice(5).replace('-', '/')} {e.title}<span className="ml-2 text-[11px] text-gray-400">{e.payment_method === 'personal' ? '立替' : '会社負担'}</span></span>
+                <span className="min-w-0 wrap-break-word text-xs">{e.expense_date.slice(5).replace('-', '/')} {e.title}<span className="ml-2 text-[11px] text-gray-400">{e.payment_method === 'personal' ? '立替' : '会社負担'}</span></span>
                 <span className="tabular-nums whitespace-nowrap">{yen(e.amount)}</span>
               </div>
             ))}

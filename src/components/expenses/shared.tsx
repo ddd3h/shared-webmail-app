@@ -28,7 +28,7 @@ export function StatusBadge({ c }: { c: Claim }) {
 }
 
 export function PaymentBadge({ m }: { m: Claim['payment_method'] }) {
-  return <span className={`rounded px-1.5 py-0.5 text-[11px] ${m === 'personal' ? 'bg-violet-50 text-violet-700' : 'bg-gray-100 text-gray-600'}`}>{m === 'personal' ? '立替' : '会社負担'}</span>;
+  return <span className={`rounded-sm px-1.5 py-0.5 text-[11px] ${m === 'personal' ? 'bg-violet-50 text-violet-700' : 'bg-gray-100 text-gray-600'}`}>{m === 'personal' ? '立替' : '会社負担'}</span>;
 }
 
 export function ReceiptLinks({ receipts }: { receipts: Receipt[] }) {
@@ -48,7 +48,7 @@ export function ClaimDetail({ c }: { c: Claim }) {
   return (
     <div className="space-y-2 text-sm">
       {c.trip && <p className="text-xs text-sky-700">出張: {c.trip.destination}（{c.trip.start_date.slice(5).replace('-', '/')}〜{c.trip.end_date.slice(5).replace('-', '/')}）</p>}
-      {c.description && <p className="whitespace-pre-wrap break-words text-gray-700">{c.description}</p>}
+      {c.description && <p className="whitespace-pre-wrap wrap-break-word text-gray-700">{c.description}</p>}
       <ReceiptLinks receipts={c.receipts} />
       {c.review_comment && (
         <p className={`rounded-lg px-3 py-2 text-xs ${c.status === 'rejected' ? 'bg-red-50 text-red-700' : 'bg-gray-50 text-gray-600'}`}>
@@ -68,11 +68,11 @@ export function ClaimHeader({ c, showUser }: { c: Claim; showUser?: boolean }) {
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-1.5 text-xs text-gray-500">
-          <span>{dateLabel(c.expense_date)}</span><span>{c.category}</span>{showUser && <span className="rounded bg-gray-100 px-1.5 py-0.5 text-gray-700">{c.user.name}</span>}
+          <span>{dateLabel(c.expense_date)}</span><span>{c.category}</span>{showUser && <span className="rounded-sm bg-gray-100 px-1.5 py-0.5 text-gray-700">{c.user.name}</span>}
           <PaymentBadge m={c.payment_method} />
-          {c.trip && <span className="rounded bg-sky-50 px-1.5 py-0.5 text-[11px] text-sky-700">✈ {c.trip.destination}</span>}
+          {c.trip && <span className="rounded-sm bg-sky-50 px-1.5 py-0.5 text-[11px] text-sky-700">✈ {c.trip.destination}</span>}
         </div>
-        <div className="mt-0.5 text-sm font-medium text-gray-900 break-words">{c.title}</div>
+        <div className="mt-0.5 text-sm font-medium text-gray-900 wrap-break-word">{c.title}</div>
       </div>
       <StatusBadge c={c} />
       <div className="text-right text-base font-bold tabular-nums">{yen(c.amount)}</div>

@@ -4,7 +4,7 @@ import type { ReactNode } from 'react';
 export type WorkerType = 'executive' | 'employee' | 'contractor';
 export const TYPE_LABEL: Record<WorkerType, string> = { executive: '役員', employee: '従業員', contractor: '業務委託' };
 
-export const inp = 'w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50';
+export const inp = 'w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-hidden focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50';
 export const btn = 'rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50';
 export const btnPrimary = 'rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50';
 
@@ -44,7 +44,7 @@ export function MonthNav({ month, onChange }: { month: string; onChange: (m: str
   return (
     <div className="flex items-center gap-2">
       <button onClick={() => onChange(shiftMonth(month, -1))} className="px-3 py-1.5 rounded-lg border border-gray-300 text-sm" aria-label="前の月">‹</button>
-      <div className="text-base font-semibold text-gray-900 min-w-[7rem] text-center">{month.slice(0, 4)}年{Number(month.slice(5))}月</div>
+      <div className="text-base font-semibold text-gray-900 min-w-28 text-center">{month.slice(0, 4)}年{Number(month.slice(5))}月</div>
       <button onClick={() => onChange(shiftMonth(month, 1))} className="px-3 py-1.5 rounded-lg border border-gray-300 text-sm" aria-label="次の月">›</button>
       <button onClick={() => onChange(currentMonth())} className="ml-1 px-3 py-1.5 rounded-lg border border-gray-300 text-sm">今月</button>
     </div>
@@ -63,7 +63,7 @@ export function Stat({ label, value, sub }: { label: string; value: string; sub?
 
 export function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
   return (
-    <div className="fixed inset-0 z-[70] flex items-end md:items-center justify-center bg-black/40 p-0 md:p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-70 flex items-end md:items-center justify-center bg-black/40 p-0 md:p-4" onClick={onClose}>
       <div className="w-full md:max-w-xl max-h-[90vh] overflow-y-auto rounded-t-2xl md:rounded-2xl bg-white p-4 shadow-xl" onClick={e => e.stopPropagation()}>
         <h3 className="text-base font-semibold text-gray-900 mb-3">{title}</h3>
         {children}

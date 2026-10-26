@@ -42,7 +42,7 @@ export default function UnitsPanel({ data, onChanged }: { data: OrgData; onChang
       <ul className="space-y-1.5">
         {tree.map(({ unit, depth }) => (
           <li key={unit.id} style={{ marginLeft: `${Math.min(depth, 5) * 1.25}rem` }} className="flex flex-wrap items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2">
-            <span className="flex-1 min-w-[8rem] text-sm font-medium text-gray-900">{unit.name}<span className="ml-2 text-xs font-normal text-gray-500">部署長: {data.members.find(m => m.id === unit.head_user_id)?.name ?? '未設定'}</span></span>
+            <span className="flex-1 min-w-32 text-sm font-medium text-gray-900">{unit.name}<span className="ml-2 text-xs font-normal text-gray-500">部署長: {data.members.find(m => m.id === unit.head_user_id)?.name ?? '未設定'}</span></span>
             <button className="text-sm text-blue-600 hover:underline" onClick={() => setDraft({ id: unit.id, name: unit.name, parent_id: unit.parent_id ?? '', head_user_id: unit.head_user_id ?? '' })}>編集</button>
             <button className="text-sm text-red-600 hover:underline" onClick={() => remove(unit)}>削除</button>
           </li>

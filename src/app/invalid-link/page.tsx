@@ -58,7 +58,7 @@ function InvalidLinkContent() {
 export default function InvalidLinkPage() {
   return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
-      <div className="card p-10 w-full max-w-sm shadow-xl bg-white rounded-[2rem]">
+      <div className="card p-10 w-full max-w-sm shadow-xl bg-white rounded-4xl">
         <Suspense fallback={<div className="text-center text-sm text-gray-400">読み込み中…</div>}>
           <InvalidLinkContent />
         </Suspense>

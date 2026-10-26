@@ -47,10 +47,10 @@ export default function DesktopNav({ user }: { user: NavUser }) {
   const accountItems = user.isAdmin ? [...ACCOUNT_ITEMS, ADMIN_ITEM, SECURITY_ITEM] : ACCOUNT_ITEMS;
 
   return (
-    <header className="hidden md:block sticky top-0 z-50 bg-white border-b border-gray-200 shadow-sm">
+    <header className="hidden md:block sticky top-0 z-50 bg-white border-b border-gray-200 shadow-xs">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <div className="flex h-14 items-center gap-2">
-          <div className="flex items-center gap-2 flex-shrink-0 mr-3">
+          <div className="flex items-center gap-2 shrink-0 mr-3">
             <div className="h-7 w-7 rounded-lg bg-blue-600 flex items-center justify-center"><span className="text-white text-xs font-bold">M</span></div>
             <span className="font-semibold text-gray-900 text-sm hidden xl:block">共有メールワークスペース</span>
           </div>

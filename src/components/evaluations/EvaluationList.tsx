@@ -24,7 +24,7 @@ export default function EvaluationList({ scope, cycleId, refreshKey = 0, onChang
         {rows.map(r => (
           <li key={r.id}>
             <button onClick={() => setOpenId(r.id)} className="flex w-full flex-wrap items-center gap-x-3 gap-y-1 rounded-xl border border-gray-200 bg-white p-3 text-left hover:bg-gray-50">
-              <div className="min-w-[10rem] flex-1">
+              <div className="min-w-40 flex-1">
                 <div className="text-sm font-medium text-gray-900">{scope === 'mine' ? r.cycle.name : r.user.name}</div>
                 <div className="text-xs text-gray-500">{scope === 'mine' ? `評価者: ${r.evaluator?.name ?? '未設定'}` : `${r.cycle.name} ・ 評価者: ${r.evaluator?.name ?? '未設定'}`}</div>
               </div>

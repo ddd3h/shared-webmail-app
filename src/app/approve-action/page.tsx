@@ -125,7 +125,7 @@ function ApproveActionForm() {
           <span className="text-gray-400 font-medium text-[10px] uppercase tracking-wider block mb-2">対象メールアカウント</span>
           <div className="space-y-2 max-h-32 overflow-y-auto pr-1 custom-scrollbar">
             {(request.affectedMailboxes as AffectedMailbox[] || []).map((mb, i) => (
-              <div key={i} className="flex justify-between items-start gap-3 bg-white p-2 rounded-lg border border-gray-200/50 shadow-sm">
+              <div key={i} className="flex justify-between items-start gap-3 bg-white p-2 rounded-lg border border-gray-200/50 shadow-xs">
                 <div className="min-w-0">
                   <p className="text-xs font-bold text-gray-800 truncate">{mb.name}</p>
                   <p className="text-[10px] text-gray-400 truncate">{mb.email}</p>
@@ -176,7 +176,7 @@ function ApproveActionForm() {
 export default function ApproveActionPage() {
   return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
-      <div className="card p-8 w-full max-w-sm shadow-xl bg-white rounded-[2rem]">
+      <div className="card p-8 w-full max-w-sm shadow-xl bg-white rounded-4xl">
         <Suspense fallback={<div className="text-center text-sm text-gray-400">読み込み中…</div>}>
           <ApproveActionForm />
         </Suspense>

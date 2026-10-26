@@ -23,8 +23,8 @@ export const StatusBadge = ({ s }: { s: PaymentStatus }) => <span className={`ro
 
 export const VerifiedBadge = ({ v }: { v: Pick<Vendor, 'verified'> }) =>
   v.verified
-    ? <span className="rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] text-emerald-700">口座確認済</span>
-    : <span className="rounded bg-amber-50 px-1.5 py-0.5 text-[10px] text-amber-700">口座未確認</span>;
+    ? <span className="rounded-sm bg-emerald-50 px-1.5 py-0.5 text-[10px] text-emerald-700">口座確認済</span>
+    : <span className="rounded-sm bg-amber-50 px-1.5 py-0.5 text-[10px] text-amber-700">口座未確認</span>;
 
 export function RequestHeader({ r, showUser }: { r: Request; showUser?: boolean }) {
   const overdue = r.status === 'approved' && r.due_date < todayJst();
@@ -33,10 +33,10 @@ export function RequestHeader({ r, showUser }: { r: Request; showUser?: boolean 
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-1.5 text-xs text-gray-500">
           <span>期日 {dateLabel(r.due_date)}</span>
-          {overdue && <span className="rounded bg-red-50 px-1.5 py-0.5 text-red-600">期日超過</span>}
-          {showUser && <span className="rounded bg-gray-100 px-1.5 py-0.5 text-gray-700">{r.user.name}</span>}
+          {overdue && <span className="rounded-sm bg-red-50 px-1.5 py-0.5 text-red-600">期日超過</span>}
+          {showUser && <span className="rounded-sm bg-gray-100 px-1.5 py-0.5 text-gray-700">{r.user.name}</span>}
         </div>
-        <div className="mt-0.5 text-sm font-medium text-gray-900 break-words">{r.vendor.name} <span className="text-gray-400 font-normal">宛</span> {r.title}</div>
+        <div className="mt-0.5 text-sm font-medium text-gray-900 wrap-break-word">{r.vendor.name} <span className="text-gray-400 font-normal">宛</span> {r.title}</div>
       </div>
       <StatusBadge s={r.status} />
       <div className="text-right"><div className="text-[10px] text-gray-400">振込額</div><div className="text-base font-bold tabular-nums">{yen(r.transfer_amount)}</div></div>
@@ -89,7 +89,7 @@ export function RequestDetail({ r }: { r: Request }) {
       <Breakdown r={r} />
       {(r.invoice_number || r.invoice_date) && <p className="text-xs text-gray-500">請求書: {r.invoice_number ?? '番号なし'}{r.invoice_date ? `（${r.invoice_date}）` : ''}</p>}
       {r.fee_bearer && <p className="text-[11px] text-gray-400">振込手数料: {FEE_BEARER_LABEL[r.fee_bearer]}</p>}
-      {r.description && <p className="whitespace-pre-wrap break-words text-gray-700">{r.description}</p>}
+      {r.description && <p className="whitespace-pre-wrap wrap-break-word text-gray-700">{r.description}</p>}
       <DocLinks docs={r.documents} />
       {r.review_comment && (
         <p className={`rounded-lg px-3 py-2 text-xs ${r.status === 'rejected' ? 'bg-red-50 text-red-700' : 'bg-gray-50 text-gray-600'}`}>{r.reviewer ?? '管理者'} のコメント: {r.review_comment}</p>

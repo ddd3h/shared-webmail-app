@@ -65,7 +65,7 @@ export default function TwoFactorSection() {
 
       {mode === 'idle' && (
         <div className="flex flex-wrap items-center gap-3">
-          <span className={`rounded px-2 py-0.5 text-xs font-medium ${status.enabled ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>{status.enabled ? '有効' : '未設定'}</span>
+          <span className={`rounded-sm px-2 py-0.5 text-xs font-medium ${status.enabled ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>{status.enabled ? '有効' : '未設定'}</span>
           {status.enabled && <span className="text-xs text-gray-500">回復コードの残り {status.recovery_remaining} 個{status.recovery_remaining <= 2 ? '（少なくなっています）' : ''}</span>}
           {!status.enabled && status.required && status.passkeys === 0 && <span className="text-xs text-amber-700">未設定のままでも、次回のログイン時に設定を求められます</span>}
           <div className="flex-1" />

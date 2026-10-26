@@ -42,7 +42,7 @@ export function SetupStep({ qr, secret, onSubmit, onCancel, busy, error }: { qr:
       <details className="text-xs text-gray-500">
         <summary className="cursor-pointer">QRコードを読み取れないとき</summary>
         <p className="mt-1">アプリに次のキーを手入力してください（時間ベース）。</p>
-        <code className="mt-1 block break-all rounded bg-gray-50 px-2 py-1.5 font-mono text-sm text-gray-800" aria-label="設定キー">{secret.replace(/(.{4})/g, '$1 ').trim()}</code>
+        <code className="mt-1 block break-all rounded-sm bg-gray-50 px-2 py-1.5 font-mono text-sm text-gray-800" aria-label="設定キー">{secret.replace(/(.{4})/g, '$1 ').trim()}</code>
       </details>
       {error && <div className="rounded-lg bg-red-50 border border-red-200 p-3 text-sm text-red-700" role="alert">{error}</div>}
       <div>

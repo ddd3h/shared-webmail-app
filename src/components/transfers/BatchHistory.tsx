@@ -52,7 +52,7 @@ export default function BatchHistory({ refreshKey }: { refreshKey: number }) {
       {items.map(b => (
         <div key={b.id} className="rounded-xl border border-gray-200 bg-white p-3 space-y-2">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[11px] text-gray-700">{CATEGORY_LABEL[b.category_code] ?? b.category_code}</span>
+            <span className="rounded-sm bg-gray-100 px-1.5 py-0.5 text-[11px] text-gray-700">{CATEGORY_LABEL[b.category_code] ?? b.category_code}</span>
             <span className="text-sm font-medium text-gray-900">{b.kind === 'payroll' ? '給与' : '支払'} {b.item_count}件</span>
             <span className="text-sm font-bold tabular-nums">{yen(b.total_amount)}</span>
             <div className="flex-1" />

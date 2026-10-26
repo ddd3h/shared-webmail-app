@@ -42,7 +42,7 @@ export default function HrActions({ detail, onChanged, setMsg, preview }: { deta
       <h4 className="text-xs font-semibold text-violet-800">人事の操作</h4>
       <div className="flex flex-wrap items-center gap-2">
         <label className="text-xs text-gray-600">評価者</label>
-        <select className={`${inp} max-w-[12rem]`} aria-label="評価者" value={detail.evaluator?.id ?? ''} onChange={e => call('evaluator', 'PUT', { evaluator_id: e.target.value || null }, '評価者を変更しました')}>
+        <select className={`${inp} max-w-48`} aria-label="評価者" value={detail.evaluator?.id ?? ''} onChange={e => call('evaluator', 'PUT', { evaluator_id: e.target.value || null }, '評価者を変更しました')}>
           <option value="">（未設定）</option>
           {candidates.filter(c => c.id !== detail.user.id).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
         </select>
@@ -53,7 +53,7 @@ export default function HrActions({ detail, onChanged, setMsg, preview }: { deta
         <div className="space-y-2">
           <div className="flex flex-wrap items-center gap-2">
             <label className="text-xs text-gray-600">確定する等級</label>
-            <select className={`${inp} max-w-[14rem]`} aria-label="確定する等級" value={grade} onChange={e => setGrade(e.target.value as Grade | '')}>
+            <select className={`${inp} max-w-56`} aria-label="確定する等級" value={grade} onChange={e => setGrade(e.target.value as Grade | '')}>
               <option value="">{computed ? `自動（${computed}）` : '自動'}</option>
               {GRADES.map(g => <option key={g} value={g}>{g}: {GRADE_LABEL[g]}</option>)}
             </select>

@@ -42,7 +42,7 @@ function ContactModal({ contact, onClose, onSave }: {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={onClose} />
+      <div className="absolute inset-0 bg-black/30 backdrop-blur-xs" onClick={onClose} />
       <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md">
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200">
           <h2 className="font-semibold text-gray-900">{contact?.id ? '連絡先を編集' : '連絡先を追加'}</h2>
@@ -195,7 +195,7 @@ export default function ContactsPage() {
       </form>
 
       {/* Contact list */}
-      <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+      <div className="bg-white rounded-xl border border-gray-200 shadow-xs overflow-hidden">
         {showSpinner || loading ? (
           <div className="py-16 text-center">
             <div className="inline-block w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
@@ -212,7 +212,7 @@ export default function ContactsPage() {
             {contacts.map(c => (
               <div key={c.id} className="flex items-center gap-3 px-4 py-3 hover:bg-gray-50 transition-colors group">
                 {/* Avatar */}
-                <div className={`flex-shrink-0 w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold ${avatarColor(c.name)}`}>
+                <div className={`shrink-0 w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold ${avatarColor(c.name)}`}>
                   {initials(c.name)}
                 </div>
 
@@ -221,7 +221,7 @@ export default function ContactsPage() {
                   <div className="flex items-center gap-2">
                     <span className="text-sm font-medium text-gray-900 truncate">{c.name}</span>
                     {c.source === 'google' && (
-                      <span className="flex-shrink-0 text-xs px-1.5 py-0.5 rounded bg-blue-50 text-blue-600 font-medium">G</span>
+                      <span className="shrink-0 text-xs px-1.5 py-0.5 rounded-sm bg-blue-50 text-blue-600 font-medium">G</span>
                     )}
                   </div>
                   <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-0.5">
@@ -242,7 +242,7 @@ export default function ContactsPage() {
                 </div>
 
                 {/* Actions */}
-                <div className="flex-shrink-0 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                <div className="shrink-0 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                   <button
                     onClick={() => setEditing(c)}
                     className="p-1.5 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
@@ -253,8 +253,8 @@ export default function ContactsPage() {
                   {deleteConfirm === c.id ? (
                     <div className="flex items-center gap-1">
                       <span className="text-xs text-red-600">削除？</span>
-                      <button onClick={() => deleteContact(c.id)} className="text-xs px-2 py-1 rounded bg-red-600 text-white hover:bg-red-700">はい</button>
-                      <button onClick={() => setDeleteConfirm(null)} className="text-xs px-2 py-1 rounded bg-gray-100 text-gray-600 hover:bg-gray-200">いいえ</button>
+                      <button onClick={() => deleteContact(c.id)} className="text-xs px-2 py-1 rounded-sm bg-red-600 text-white hover:bg-red-700">はい</button>
+                      <button onClick={() => setDeleteConfirm(null)} className="text-xs px-2 py-1 rounded-sm bg-gray-100 text-gray-600 hover:bg-gray-200">いいえ</button>
                     </div>
                   ) : (
                     <button

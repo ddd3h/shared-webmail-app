@@ -28,9 +28,9 @@ export default function ApprovalsPage() {
   const empty = data.expenses.length === 0 && data.trips.length === 0;
   const row = (t: Target, title: string, who: string, detail: string, amount?: number) => (
     <li key={`${t.kind}-${t.id}`} className="flex flex-wrap items-center gap-3 rounded-xl border border-gray-200 bg-white p-3">
-      <div className="min-w-[12rem] flex-1">
+      <div className="min-w-48 flex-1">
         <div className="text-xs text-gray-500">{who}</div>
-        <div className="text-sm font-medium text-gray-900 break-words">{title}</div>
+        <div className="text-sm font-medium text-gray-900 wrap-break-word">{title}</div>
         <div className="text-xs text-gray-500">{detail}</div>
       </div>
       {amount !== undefined && <div className="text-base font-bold tabular-nums">{yen(amount)}</div>}

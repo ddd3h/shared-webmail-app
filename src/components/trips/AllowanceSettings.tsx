@@ -42,7 +42,7 @@ export default function AllowanceSettings({ onChanged }: { onChanged: () => void
           <tbody className="divide-y divide-gray-100">
             {items.map(t => (
               <tr key={t.id} className={t.is_active ? '' : 'text-gray-400'}>
-                <td className="px-3 py-2 whitespace-normal min-w-[10rem]"><div className="font-medium">{t.name}</div>{t.description && <div className="text-[11px] text-gray-400">{t.description}</div>}</td>
+                <td className="px-3 py-2 whitespace-normal min-w-40"><div className="font-medium">{t.name}</div>{t.description && <div className="text-[11px] text-gray-400">{t.description}</div>}</td>
                 <td className="px-3 py-2">{KIND_LABEL[t.kind]}</td>
                 <td className="px-3 py-2 text-right tabular-nums">{yen(t.amount)}</td>
                 <td className="px-3 py-2">{UNIT_LABEL[t.unit]}</td>

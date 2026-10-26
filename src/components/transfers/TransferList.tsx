@@ -81,11 +81,11 @@ export default function TransferList({ kind, onCreated }: { kind: 'payment' | 'p
               <label key={l.id} className={`flex items-start gap-3 rounded-xl border bg-white p-3 ${l.blocker ? 'border-amber-200' : 'border-gray-200'}`}>
                 <input type="checkbox" className="mt-1 h-4 w-4" checked={selected.has(l.id)} disabled={!!l.blocker} onChange={() => toggle(l.id)} aria-label={`${l.who} ${l.title}`} />
                 <div className="min-w-0 flex-1">
-                  <div className="text-sm font-medium text-gray-900 break-words">{l.who} <span className="font-normal text-gray-400">/</span> {l.title}</div>
+                  <div className="text-sm font-medium text-gray-900 wrap-break-word">{l.who} <span className="font-normal text-gray-400">/</span> {l.title}</div>
                   <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs text-gray-500">
                     <span>{l.sub}</span>
-                    {l.blocker && <span className="rounded bg-amber-50 px-1.5 py-0.5 text-amber-700">{l.blocker}</span>}
-                    {l.batched && <span className="rounded bg-gray-100 px-1.5 py-0.5 text-gray-600">全銀データ作成済み</span>}
+                    {l.blocker && <span className="rounded-sm bg-amber-50 px-1.5 py-0.5 text-amber-700">{l.blocker}</span>}
+                    {l.batched && <span className="rounded-sm bg-gray-100 px-1.5 py-0.5 text-gray-600">全銀データ作成済み</span>}
                   </div>
                 </div>
                 <div className="text-base font-bold tabular-nums">{yen(l.amount)}</div>

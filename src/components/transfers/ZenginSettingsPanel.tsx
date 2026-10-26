@@ -24,7 +24,7 @@ export default function ZenginSettingsPanel({ admin }: { admin: boolean }) {
   return (
     <div className="max-w-xl rounded-xl border border-gray-200 bg-white p-4 space-y-3">
       <div className="flex items-center gap-2"><h3 className="text-sm font-semibold text-gray-900">委託者情報（振込元）</h3>
-        {configured ? <span className="rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] text-emerald-700">設定済み</span> : <span className="rounded bg-amber-50 px-1.5 py-0.5 text-[10px] text-amber-700">未設定</span>}</div>
+        {configured ? <span className="rounded-sm bg-emerald-50 px-1.5 py-0.5 text-[10px] text-emerald-700">設定済み</span> : <span className="rounded-sm bg-amber-50 px-1.5 py-0.5 text-[10px] text-amber-700">未設定</span>}</div>
       <p className="text-xs text-gray-500">全銀データのヘッダに入る、会社側の情報です。委託者コードは銀行と総合振込・給与振込の契約をしたときに割り当てられる10桁の番号です。</p>
       <div className="grid grid-cols-2 gap-2">
         <div><label className="text-xs text-gray-600">委託者コード（10桁）</label><input className={inp} inputMode="numeric" maxLength={10} value={d.client_code} onChange={set('client_code')} /></div>

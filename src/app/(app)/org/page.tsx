@@ -26,7 +26,7 @@ export default function OrgPage() {
         <p className="text-xs text-gray-500 mt-0.5">{data.me.is_admin ? '部署・役職・権限を登録します。承認や人事評価の担当は、ここから決まります' : '部署と、所属しているメンバー'}</p>
       </div>
       {tabs.length > 1 && (
-        <div className="flex gap-1 border-b border-gray-200 overflow-x-auto [scrollbar-width:none]">
+        <div className="flex gap-1 border-b border-gray-200 overflow-x-auto scrollbar-none">
           {tabs.map(t => (
             <button key={t.k} onClick={() => setTab(t.k)} className={`px-4 py-2 text-sm font-medium -mb-px border-b-2 whitespace-nowrap ${tab === t.k ? 'border-blue-600 text-blue-700' : 'border-transparent text-gray-500 hover:text-gray-800'}`}>{t.l}</button>
           ))}

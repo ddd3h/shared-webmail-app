@@ -20,7 +20,7 @@ export default function EvaluationsPage() {
         <p className="text-xs text-gray-500 mt-0.5">自己評価 → 上長の評価 → 人事が確定、の順で進みます。結果は確定後に本人へ公開されます</p>
       </div>
       {tabs.length > 1 && (
-        <div className="flex gap-1 border-b border-gray-200 overflow-x-auto [scrollbar-width:none]">
+        <div className="flex gap-1 border-b border-gray-200 overflow-x-auto scrollbar-none">
           {tabs.map(t => <button key={t.k} onClick={() => setTab(t.k)} className={`px-4 py-2 text-sm font-medium -mb-px border-b-2 whitespace-nowrap ${tab === t.k ? 'border-blue-600 text-blue-700' : 'border-transparent text-gray-500 hover:text-gray-800'}`}>{t.l}</button>)}
         </div>
       )}

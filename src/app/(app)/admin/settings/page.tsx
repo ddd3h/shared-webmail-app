@@ -661,7 +661,7 @@ function AdminSettingsContent() {
 
       {/* Sticky save bar for system settings */}
       {tab === 'system' && (
-        <div className="fixed bottom-[calc(env(safe-area-inset-bottom)+96px)] md:bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur border-t border-gray-200 shadow-[0_-4px_12px_rgba(0,0,0,0.06)]">
+        <div className="fixed bottom-[calc(env(safe-area-inset-bottom)+96px)] md:bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-sm border-t border-gray-200 shadow-[0_-4px_12px_rgba(0,0,0,0.06)]">
           <div className="max-w-2xl mx-auto px-4 py-3 flex items-center gap-4">
             <p className="text-xs text-gray-400 hidden sm:block flex-1">一部の設定（NEXT_PUBLIC_APP_URL など）はサーバー再起動・再ビルド後に反映されます</p>
             <button onClick={save} className="btn btn-primary px-6 w-full md:w-auto md:ml-auto">設定を保存</button>
@@ -754,7 +754,7 @@ function AdminSettingsContent() {
                   </div>
                   <div className="pt-6">
                     <label className="flex items-center gap-2 cursor-pointer">
-                      <input type="checkbox" checked={getVal('NEXT_PUBLIC_DEFAULT_IMAP_SECURE') === 'true'} onChange={e => setVal('NEXT_PUBLIC_DEFAULT_IMAP_SECURE', String(e.target.checked))} className="h-4 w-4 rounded border-gray-300 text-blue-600" />
+                      <input type="checkbox" checked={getVal('NEXT_PUBLIC_DEFAULT_IMAP_SECURE') === 'true'} onChange={e => setVal('NEXT_PUBLIC_DEFAULT_IMAP_SECURE', String(e.target.checked))} className="h-4 w-4 rounded-sm border-gray-300 text-blue-600" />
                       <span className="text-xs">SSL/TLS</span>
                     </label>
                   </div>
@@ -773,7 +773,7 @@ function AdminSettingsContent() {
                   </div>
                   <div className="pt-6">
                     <label className="flex items-center gap-2 cursor-pointer">
-                      <input type="checkbox" checked={getVal('NEXT_PUBLIC_DEFAULT_SMTP_SECURE') === 'true'} onChange={e => setVal('NEXT_PUBLIC_DEFAULT_SMTP_SECURE', String(e.target.checked))} className="h-4 w-4 rounded border-gray-300 text-blue-600" />
+                      <input type="checkbox" checked={getVal('NEXT_PUBLIC_DEFAULT_SMTP_SECURE') === 'true'} onChange={e => setVal('NEXT_PUBLIC_DEFAULT_SMTP_SECURE', String(e.target.checked))} className="h-4 w-4 rounded-sm border-gray-300 text-blue-600" />
                       <span className="text-xs">SSL/TLS</span>
                     </label>
                   </div>
@@ -797,7 +797,7 @@ function AdminSettingsContent() {
               </div>
               <div className="flex items-center gap-2">
                 <label className="flex items-center gap-2 cursor-pointer">
-                  <input type="checkbox" checked={getVal('NOTIFY_SMTP_SECURE') === 'true'} onChange={e => setVal('NOTIFY_SMTP_SECURE', String(e.target.checked))} className="h-4 w-4 rounded border-gray-300 text-blue-600" />
+                  <input type="checkbox" checked={getVal('NOTIFY_SMTP_SECURE') === 'true'} onChange={e => setVal('NOTIFY_SMTP_SECURE', String(e.target.checked))} className="h-4 w-4 rounded-sm border-gray-300 text-blue-600" />
                   <span className="text-sm">SSL/TLS</span>
                 </label>
               </div>
@@ -959,7 +959,7 @@ function AdminSettingsContent() {
                   key={iconTs}
                   src={`/icon-192.png?t=${iconTs}`}
                   alt="現在のPWAアイコン"
-                  className="w-20 h-20 rounded-2xl border border-gray-200 shadow-sm object-cover bg-gray-50"
+                  className="w-20 h-20 rounded-2xl border border-gray-200 shadow-xs object-cover bg-gray-50"
                 />
               </div>
               {iconPreview && (
@@ -968,7 +968,7 @@ function AdminSettingsContent() {
                   <img
                     src={iconPreview}
                     alt="新アイコンプレビュー"
-                    className="w-20 h-20 rounded-2xl border-2 border-blue-400 shadow-sm object-cover"
+                    className="w-20 h-20 rounded-2xl border-2 border-blue-400 shadow-xs object-cover"
                   />
                 </div>
               )}
@@ -1019,7 +1019,7 @@ function AdminSettingsContent() {
                   key={badgeTs}
                   src={`/icon-badge.png?t=${badgeTs}`}
                   alt="現在の通知バッジアイコン"
-                  className="w-20 h-20 rounded-2xl border border-gray-200 shadow-sm object-contain bg-gray-800 p-2"
+                  className="w-20 h-20 rounded-2xl border border-gray-200 shadow-xs object-contain bg-gray-800 p-2"
                 />
               </div>
               {badgePreview && (
@@ -1028,7 +1028,7 @@ function AdminSettingsContent() {
                   <img
                     src={badgePreview}
                     alt="新バッジアイコンプレビュー"
-                    className="w-20 h-20 rounded-2xl border-2 border-blue-400 shadow-sm object-contain bg-gray-800 p-2"
+                    className="w-20 h-20 rounded-2xl border-2 border-blue-400 shadow-xs object-contain bg-gray-800 p-2"
                   />
                 </div>
               )}
@@ -1108,7 +1108,7 @@ function AdminSettingsContent() {
                     <div className="p-4">
                       {/* Header row */}
                       <div className="flex items-start gap-3 flex-wrap">
-                        <div className="flex items-center gap-2 flex-shrink-0 mt-0.5">
+                        <div className="flex items-center gap-2 shrink-0 mt-0.5">
                           <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${statusColor}`}>
                             {status === 'running' && <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse mr-1.5" />}
                             {statusLabel}
@@ -1123,16 +1123,16 @@ function AdminSettingsContent() {
                           {mb.credentials?.imap_host && (
                             <p className="text-xs text-gray-400">IMAP: {mb.credentials.imap_host}</p>
                           )}
-                          <span className={`inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded font-medium ${mb.sync_mode === 'idle' ? 'bg-blue-50 text-blue-600' : 'bg-gray-100 text-gray-500'}`}>
+                          <span className={`inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded-sm font-medium ${mb.sync_mode === 'idle' ? 'bg-blue-50 text-blue-600' : 'bg-gray-100 text-gray-500'}`}>
                             {mb.sync_mode === 'idle' ? (
                               <><span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse" />IDLE</>
                             ) : 'ポーリング'}
                           </span>
                         </div>
                         {/* Action buttons */}
-                        <div className="flex items-center gap-1.5 flex-shrink-0 flex-wrap">
+                        <div className="flex items-center gap-1.5 shrink-0 flex-wrap">
                           {tr && (
-                            <span className={`text-xs px-2 py-0.5 rounded ${tr.ok ? 'text-emerald-600 bg-emerald-50' : 'text-red-600 bg-red-50'}`}>
+                            <span className={`text-xs px-2 py-0.5 rounded-sm ${tr.ok ? 'text-emerald-600 bg-emerald-50' : 'text-red-600 bg-red-50'}`}>
                               {tr.msg}
                             </span>
                           )}
@@ -1162,7 +1162,7 @@ function AdminSettingsContent() {
 
                       {/* Error */}
                       {ss?.last_error && (
-                        <div className="mt-2 px-3 py-2 bg-red-50 border border-red-100 rounded text-xs text-red-600 font-mono break-all">
+                        <div className="mt-2 px-3 py-2 bg-red-50 border border-red-100 rounded-sm text-xs text-red-600 font-mono break-all">
                           {ss.last_error}
                         </div>
                       )}
@@ -1170,7 +1170,7 @@ function AdminSettingsContent() {
                       {/* Personal: owner assignment */}
                       {mb.type === 'personal' && (
                         <div className="mt-3 flex items-center gap-2">
-                          <span className="text-xs text-gray-500 flex-shrink-0">担当ユーザー:</span>
+                          <span className="text-xs text-gray-500 shrink-0">担当ユーザー:</span>
                           <select
                             className="select text-sm py-1 flex-1 max-w-xs"
                             value={mb.owner_user_id ?? ''}
@@ -1233,7 +1233,7 @@ function AdminSettingsContent() {
                                           ...prev,
                                           [u.id]: { ...prev[u.id], [key]: e.target.checked }
                                         }))}
-                                        className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                                        className="w-4 h-4 rounded-sm border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
                                       />
                                     </label>
                                   </div>
@@ -1409,7 +1409,7 @@ function AdminSettingsContent() {
               <button
                 key={t}
                 onClick={() => setSpamTab(t)}
-                className={`px-4 py-1.5 text-sm font-medium rounded-md transition-colors ${spamTab === t ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                className={`px-4 py-1.5 text-sm font-medium rounded-md transition-colors ${spamTab === t ? 'bg-white text-gray-900 shadow-xs' : 'text-gray-500 hover:text-gray-700'}`}
               >
                 {t === 'blocklist' ? 'ブロックリスト' : 'ホワイトリスト'}
               </button>
@@ -1479,7 +1479,7 @@ function AdminSettingsContent() {
                           <td className="px-4 py-3 text-right whitespace-nowrap">
                             <button
                               onClick={() => handleSpamDelete(item.id)}
-                              className="text-xs text-red-500 hover:text-red-700 hover:bg-red-50 px-2 py-1 rounded transition-colors"
+                              className="text-xs text-red-500 hover:text-red-700 hover:bg-red-50 px-2 py-1 rounded-sm transition-colors"
                             >
                               削除
                             </button>
@@ -1518,7 +1518,7 @@ function AdminSettingsContent() {
             {/* Step 2: Local training instruction */}
             <div className="border border-gray-100 rounded-lg p-3 space-y-1">
               <p className="text-xs font-medium text-gray-600">ステップ 2 — ローカルPCで学習</p>
-              <pre className="text-xs bg-gray-50 rounded px-3 py-2 text-gray-700 overflow-x-auto">python3 scripts/train-spam-model.py training-data.json.gz</pre>
+              <pre className="text-xs bg-gray-50 rounded-sm px-3 py-2 text-gray-700 overflow-x-auto">python3 scripts/train-spam-model.py training-data.json.gz</pre>
               <p className="text-xs text-gray-400">→ model.json が生成されます</p>
             </div>
 
@@ -1557,7 +1557,7 @@ function AdminSettingsContent() {
           <div className="card p-5 space-y-3">
             <div className="flex items-center justify-between">
               <h2 className="font-semibold text-gray-900 text-sm">アクティブセッション</h2>
-              <button onClick={loadActiveSessions} className="text-xs text-gray-500 hover:text-gray-700 px-2 py-1 rounded hover:bg-gray-100">更新</button>
+              <button onClick={loadActiveSessions} className="text-xs text-gray-500 hover:text-gray-700 px-2 py-1 rounded-sm hover:bg-gray-100">更新</button>
             </div>
             {sessionsLoading ? (
               <p className="text-xs text-gray-400 py-4 text-center">読み込み中…</p>
@@ -1605,7 +1605,7 @@ function AdminSettingsContent() {
                             <button
                               onClick={() => revokeSession(s.id)}
                               disabled={revokingSession === s.id}
-                              className="text-xs text-red-500 hover:text-red-700 hover:bg-red-50 px-2 py-1 rounded transition-colors disabled:opacity-50"
+                              className="text-xs text-red-500 hover:text-red-700 hover:bg-red-50 px-2 py-1 rounded-sm transition-colors disabled:opacity-50"
                             >
                               {revokingSession === s.id ? '処理中…' : '遮断'}
                             </button>
@@ -1681,7 +1681,7 @@ function AdminSettingsContent() {
                               <span className="inline-flex items-center gap-1 text-xs text-red-600 font-medium">
                                 <span className="w-1.5 h-1.5 rounded-full bg-red-500 inline-block" />失敗
                                 {log.failure_reason && (
-                                  <span className="ml-1 text-xs bg-red-50 text-red-600 px-1.5 py-0.5 rounded">
+                                  <span className="ml-1 text-xs bg-red-50 text-red-600 px-1.5 py-0.5 rounded-sm">
                                     {failureLabels[log.failure_reason] ?? log.failure_reason}
                                   </span>
                                 )}
@@ -1721,7 +1721,7 @@ function AdminSettingsContent() {
 
       {/* Mailbox Settings Modal */}
       {showMbModal && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-70 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/50" onClick={() => setShowMbModal(false)} />
           <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
             <div className="sticky top-0 bg-white border-b border-gray-100 px-6 py-4 flex items-center justify-between rounded-t-2xl">
@@ -1801,7 +1801,7 @@ function AdminSettingsContent() {
                     </div>
                     <div className="flex items-end pb-2">
                       <label className="flex items-center gap-2 cursor-pointer">
-                        <input type="checkbox" checked={mbForm.imap_secure} onChange={e => setMbForm(f => ({ ...f, imap_secure: e.target.checked }))} className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
+                        <input type="checkbox" checked={mbForm.imap_secure} onChange={e => setMbForm(f => ({ ...f, imap_secure: e.target.checked }))} className="h-4 w-4 rounded-sm border-gray-300 text-blue-600 focus:ring-blue-500" />
                         <span className="text-sm text-gray-700">SSL/TLS</span>
                       </label>
                     </div>
@@ -1820,7 +1820,7 @@ function AdminSettingsContent() {
                     </div>
                     <div className="flex items-end pb-2">
                       <label className="flex items-center gap-2 cursor-pointer">
-                        <input type="checkbox" checked={mbForm.smtp_secure} onChange={e => setMbForm(f => ({ ...f, smtp_secure: e.target.checked }))} className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
+                        <input type="checkbox" checked={mbForm.smtp_secure} onChange={e => setMbForm(f => ({ ...f, smtp_secure: e.target.checked }))} className="h-4 w-4 rounded-sm border-gray-300 text-blue-600 focus:ring-blue-500" />
                         <span className="text-sm text-gray-700">SSL/TLS</span>
                       </label>
                     </div>

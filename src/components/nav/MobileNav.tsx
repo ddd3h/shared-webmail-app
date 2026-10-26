@@ -88,7 +88,7 @@ export default function MobileNav({ user }: { user: NavUser }) {
       </nav>
 
       {sheet.mounted && (
-        <div className="md:hidden fixed inset-0 z-[60] flex flex-col justify-end">
+        <div className="md:hidden fixed inset-0 z-60 flex flex-col justify-end">
           <div className={`absolute inset-0 bg-black/40 transition-opacity duration-300 ${sheet.shown ? 'opacity-100' : 'opacity-0'}`} onClick={sheet.close} />
           <div
             ref={sheet.sheetRef} {...sheet.touch}

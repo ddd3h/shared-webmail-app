@@ -99,7 +99,7 @@ export default function AdminExpenses({ meId }: { meId: string }) {
           <button key={f.k} onClick={() => { setFilter(f.k); setUserId(''); }} className={`rounded-full px-3 py-1.5 text-sm ${filter === f.k ? 'bg-gray-900 text-white' : 'bg-white border border-gray-200 text-gray-700'}`}>{f.l}</button>
         ))}
         <div className="flex-1" />
-        <select className={`${inp} max-w-[12rem]`} value={userId} onChange={e => setUserId(e.target.value)} aria-label="申請者で絞り込み">
+        <select className={`${inp} max-w-48`} value={userId} onChange={e => setUserId(e.target.value)} aria-label="申請者で絞り込み">
           <option value="">全員</option>{people.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
         </select>
       </div>

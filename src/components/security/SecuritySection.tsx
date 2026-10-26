@@ -45,8 +45,8 @@ export default function SecuritySection() {
         <ul className="space-y-2">
           {sessions.map(s => (
             <li key={s.id} className={`flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl border px-3 py-2.5 ${s.current ? 'border-blue-200 bg-blue-50/50' : 'border-gray-200'}`}>
-              <div className="min-w-[12rem] flex-1">
-                <div className="text-sm font-medium text-gray-900">{s.device}{s.current && <span className="ml-2 rounded bg-blue-100 px-1.5 py-0.5 text-[10px] font-semibold text-blue-700">この端末</span>}</div>
+              <div className="min-w-48 flex-1">
+                <div className="text-sm font-medium text-gray-900">{s.device}{s.current && <span className="ml-2 rounded-sm bg-blue-100 px-1.5 py-0.5 text-[10px] font-semibold text-blue-700">この端末</span>}</div>
                 <div className="text-xs text-gray-500">{s.place ?? '場所不明'} ・ {s.ip}{NETWORK[s.network_type] ? ` ・ ${NETWORK[s.network_type]}` : ''}</div>
                 <div className="text-xs text-gray-400">最後の操作 {when(s.last_activity_at)} ・ ログイン {when(s.created_at)}</div>
               </div>
@@ -64,7 +64,7 @@ export default function SecuritySection() {
           <ul className="divide-y divide-gray-100 text-sm">
             {history.map(l => (
               <li key={l.id} className="flex flex-wrap items-center gap-x-3 gap-y-0.5 py-2">
-                <span className={`rounded px-1.5 py-0.5 text-[11px] font-medium ${l.success ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'}`}>{l.success ? '成功' : '失敗'}</span>
+                <span className={`rounded-sm px-1.5 py-0.5 text-[11px] font-medium ${l.success ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'}`}>{l.success ? '成功' : '失敗'}</span>
                 <span className="text-gray-700">{when(l.at)}</span>
                 <span className="text-gray-500">{l.device}</span>
                 <span className="text-gray-400">{l.place ?? '場所不明'} ・ {l.ip}</span>

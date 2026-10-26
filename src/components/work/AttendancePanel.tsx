@@ -69,7 +69,7 @@ export default function AttendancePanel({ userId }: { userId?: string }) {
       {!userId && t && (
         <div className="rounded-xl border border-gray-200 bg-white p-4">
           <div className="flex flex-wrap items-center gap-4">
-            <div className="min-w-[10rem]">
+            <div className="min-w-40">
               <div className="text-xs text-gray-500">{now ? now.toLocaleDateString('ja-JP', { timeZone: 'Asia/Tokyo', month: 'long', day: 'numeric', weekday: 'short' }) : ''}</div>
               <div className="text-3xl font-bold tabular-nums text-gray-900">{now ? now.toLocaleTimeString('ja-JP', { timeZone: 'Asia/Tokyo', hourCycle: 'h23', hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '--:--:--'}</div>
               <span className={`mt-1 inline-block rounded-full px-2 py-0.5 text-xs font-medium ${statusColor}`}>{status}</span>
@@ -116,7 +116,7 @@ export default function AttendancePanel({ userId }: { userId?: string }) {
                     <td className="px-3 py-2 text-right tabular-nums">{r.clock_in_at && !r.clock_out_at ? <span className="text-emerald-600">勤務中</span> : fmtTime(r.clock_out_at)}</td>
                     <td className="px-3 py-2 text-right tabular-nums">{r.break_minutes ? `${r.break_minutes}分` : '–'}</td>
                     <td className="px-3 py-2 text-right tabular-nums font-medium">{fmtMin(r.worked_minutes)}</td>
-                    <td className="px-3 py-2 text-xs text-gray-500 whitespace-normal min-w-[8rem]">{r.edited && <span className="mr-1 rounded bg-amber-50 px-1 text-amber-700">修正済</span>}{r.note}</td>
+                    <td className="px-3 py-2 text-xs text-gray-500 whitespace-normal min-w-32">{r.edited && <span className="mr-1 rounded-sm bg-amber-50 px-1 text-amber-700">修正済</span>}{r.note}</td>
                     {userId && (
                       <td className="px-3 py-2 whitespace-nowrap text-right text-xs">
                         <button className="text-blue-600 hover:underline mr-2" onClick={() => setEdit({ id: r.id, work_date: r.work_date, in: toJstInput(r.clock_in_at), out: toJstInput(r.clock_out_at), brk: String(r.break_minutes), note: r.note || '' })}>修正</button>

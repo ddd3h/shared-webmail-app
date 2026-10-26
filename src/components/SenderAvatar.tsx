@@ -42,7 +42,7 @@ export default function SenderAvatar({ email, name, size = 32, className = '' }:
 
   return (
     <div
-      className={`relative flex-shrink-0 rounded-full overflow-hidden flex items-center justify-center select-none ${loaded ? 'bg-white ring-1 ring-zinc-200' : bg} ${className}`}
+      className={`relative shrink-0 rounded-full overflow-hidden flex items-center justify-center select-none ${loaded ? 'bg-white ring-1 ring-zinc-200' : bg} ${className}`}
       style={{ width: size, height: size }}
       aria-hidden="true"
     >

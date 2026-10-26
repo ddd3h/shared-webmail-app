@@ -100,7 +100,7 @@ export default function AdminPayments({ meId, onVendorsChanged }: { meId: string
                     {!r.vendor.verified && (
                       <div className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800 flex flex-wrap items-center gap-2">
                         <span>この口座は未確認です。請求書の記載と照合してから確認済にしてください。</span>
-                        <button className="rounded bg-emerald-600 px-2 py-1 text-white hover:bg-emerald-700" onClick={() => verify(r.vendor.id)}>口座を確認済にする</button>
+                        <button className="rounded-sm bg-emerald-600 px-2 py-1 text-white hover:bg-emerald-700" onClick={() => verify(r.vendor.id)}>口座を確認済にする</button>
                       </div>
                     )}
                     <div className="flex flex-wrap items-center gap-2">

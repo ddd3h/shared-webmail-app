@@ -29,15 +29,15 @@ export default function MembersPanel({ data, onChanged }: { data: OrgData; onCha
           <tbody className="divide-y divide-gray-100">
             {data.members.map(m => (
               <tr key={m.id}>
-                <td className="px-3 py-2"><div className="font-medium text-gray-900">{m.name}{m.role === 'admin' && <span className="ml-1 rounded bg-blue-50 px-1 text-[10px] text-blue-700">システム管理者</span>}</div><div className="text-xs text-gray-400">{m.email}</div></td>
+                <td className="px-3 py-2"><div className="font-medium text-gray-900">{m.name}{m.role === 'admin' && <span className="ml-1 rounded-sm bg-blue-50 px-1 text-[10px] text-blue-700">システム管理者</span>}</div><div className="text-xs text-gray-400">{m.email}</div></td>
                 <td className="px-3 py-2">
-                  <select className={`${inp} min-w-[9rem]`} aria-label={`${m.name}の部署`} value={current(m).org_unit_id ?? ''} onChange={e => change(m, { org_unit_id: e.target.value || null })}>
+                  <select className={`${inp} min-w-36`} aria-label={`${m.name}の部署`} value={current(m).org_unit_id ?? ''} onChange={e => change(m, { org_unit_id: e.target.value || null })}>
                     <option value="">（未所属）</option>
                     {units.map(({ unit, depth }) => <option key={unit.id} value={unit.id}>{'　'.repeat(depth)}{unit.name}</option>)}
                   </select>
                 </td>
                 <td className="px-3 py-2">
-                  <select className={`${inp} min-w-[8rem]`} aria-label={`${m.name}の役職`} value={current(m).position_id ?? ''} onChange={e => change(m, { position_id: e.target.value || null })}>
+                  <select className={`${inp} min-w-32`} aria-label={`${m.name}の役職`} value={current(m).position_id ?? ''} onChange={e => change(m, { position_id: e.target.value || null })}>
                     <option value="">（なし）</option>
                     {data.positions.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                   </select>
