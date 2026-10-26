@@ -627,9 +627,12 @@ test.describe('画面', () => {
     test('許可ネットワークに自分のアドレスがないと保存できず、理由が出る', async ({ page }) => {
       await page.goto('/admin/security');
       const policy = page.getByLabel('アクセスの条件', { exact: true });
-      await policy.locator('textarea').fill('192.0.2.0/24');
-      await policy.getByRole('button', { name: '保存' }).click();
-      await expect(policy.getByRole('status')).toContainText('あなた自身がログインできなくなります');
+      // the panel fills the form with the saved settings a moment after it opens, which would wipe what was typed too early: type again until it sticks
+      await expect(async () => {
+        await policy.locator('textarea').fill('192.0.2.0/24');
+        await policy.getByRole('button', { name: '保存' }).click();
+        await expect(policy.getByRole('status')).toContainText('あなた自身がログインできなくなります', { timeout: 2000 });
+      }).toPass({ timeout: 15000 });
     });
 
     test('メニューの「セキュリティ」から開ける', async ({ page }) => {

@@ -2,7 +2,9 @@
 import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Modal from '@/components/Modal';
+import TimeGrid, { type GridEvent, type GridTodo } from '@/components/calendar/TimeGrid';
 import TodoModal from '@/components/todos/TodoModal';
+import { VIEWS, addDays, isView, parseYmd, shiftAnchor, viewTitle, visibleDays, type CalendarView } from '@/lib/calendar-view';
 import { canTick, setDone, type Todo } from '@/components/todos/types';
 
 type Mailbox = { id: string; display_name: string; type: string; email_address: string };
@@ -56,6 +58,8 @@ function CalendarView() {
   const sp = useSearchParams();
   const [mailboxes, setMailboxes] = useState<Mailbox[]>([]);
   const [mailboxId, setMailboxId] = useState(sp.get('mailbox') || '');
+  // which of the three views is open (day / week / month); remembered for next time unless the address says otherwise
+  const [view, setView] = useState<CalendarView>(() => (isView(sp.get('view')) ? (sp.get('view') as CalendarView) : 'month'));
   const [cursor, setCursor] = useState(() => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1); });
   const [selected, setSelected] = useState(() => new Date());
   // "Today" differs between server (UTC) and browser, so only render dates after mount.
@@ -83,9 +87,11 @@ function CalendarView() {
   }
 
   useEffect(() => {
-    const n = new Date();
+    const dateParam = sp.get('date');
+    const n = dateParam && /^\d{4}-\d{2}-\d{2}$/.test(dateParam) ? parseYmd(dateParam) : new Date();
     setCursor(new Date(n.getFullYear(), n.getMonth(), 1));
     setSelected(n);
+    if (!isView(sp.get('view'))) { try { const saved = localStorage.getItem('calendar-view'); if (isView(saved)) setView(saved); } catch { /* private mode etc. */ } }
     setReady(true);
     const err = sp.get('google_error');
     if (err) flash('error', `Google連携に失敗しました (${err})`);
@@ -96,17 +102,27 @@ function CalendarView() {
     }).catch(() => {});
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Grid always starts on Sunday and covers 6 weeks.
-  const gridStart = useMemo(() => new Date(cursor.getFullYear(), cursor.getMonth(), 1 - cursor.getDay()), [cursor]);
-  const days = useMemo(() => Array.from({ length: 42 }, (_, i) => new Date(gridStart.getFullYear(), gridStart.getMonth(), gridStart.getDate() + i)), [gridStart]);
+  // The days on screen: the 6-week grid of the month, the 7 days of the week, or the one day.
+  const anchor = view === 'month' ? cursor : selected;
+  const days = useMemo(() => visibleDays(view, anchor), [view, ymd(anchor)]); // eslint-disable-line react-hooks/exhaustive-deps
+  const gridStart = days[0];
+
+  // The address says which view and day are open, so a view can be shared or reloaded as it is
+  useEffect(() => {
+    if (!ready) return;
+    const q = new URLSearchParams(window.location.search);
+    q.set('view', view); q.set('date', ymd(selected));
+    window.history.replaceState(null, '', `${window.location.pathname}?${q}`);
+    try { localStorage.setItem('calendar-view', view); } catch { /* private mode etc. */ }
+  }, [ready, view, selected]);
 
   const load = useCallback(async () => {
     if (!mailboxId || !ready) return;
     setLoading(true);
     try {
-      const from = new Date(gridStart.getTime() - 86400_000).toISOString();
-      const to = new Date(gridStart.getFullYear(), gridStart.getMonth(), gridStart.getDate() + 43).toISOString();
       const lastDay = days[days.length - 1];
+      const from = addDays(gridStart, -1).toISOString();
+      const to = addDays(lastDay, 2).toISOString();
       const [res, todoRes] = await Promise.all([
         fetch(`/api/calendar/events?mailboxId=${mailboxId}&from=${from}&to=${to}`),
         fetch(`/api/todos?mailboxId=${mailboxId}&from=${ymd(gridStart)}&to=${ymd(lastDay)}`),
@@ -135,12 +151,43 @@ function CalendarView() {
   const todosOn = (d: Date) => showTodos ? todos.filter(t => t.due_date === ymd(d) && (!shown || shown.has(t.assignee?.id ?? TEAM))) : [];
   const selectedEvents = dayEvents(selected);
   const selectedTodos = todosOn(selected);
+  const unit = { day: '日', week: '週', month: '月' }[view];
+  const todayDate = () => new Date();
+  function step(dir: -1 | 1) {
+    if (view === 'month') { setCursor(shiftAnchor('month', cursor, dir)); return; }
+    const next = shiftAnchor(view, selected, dir);
+    setSelected(next); setCursor(new Date(next.getFullYear(), next.getMonth(), 1));
+  }
+  function goToday() { const n = todayDate(); setCursor(new Date(n.getFullYear(), n.getMonth(), 1)); setSelected(n); }
+  function changeView(next: CalendarView) {
+    if (next === view) return;
+    // from the month grid into a week or a day: stay on the chosen day if it is in that month, otherwise open the 1st
+    if (view === 'month' && (selected.getFullYear() !== cursor.getFullYear() || selected.getMonth() !== cursor.getMonth())) setSelected(cursor);
+    if (next === 'month') setCursor(new Date(selected.getFullYear(), selected.getMonth(), 1));
+    setView(next);
+  }
+  function openDay(d: Date) { setSelected(d); setCursor(new Date(d.getFullYear(), d.getMonth(), 1)); setView('day'); }
+  const todayYmd = ymd(new Date());
+
+  // what the hour-by-hour views draw
+  const gridEvents: GridEvent[] = events.filter(isShown).map(e => ({
+    id: e.id, allDay: e.all_day, start: e.all_day ? evStart(e) : new Date(e.start_at), end: e.all_day ? evEndExclusive(e) : new Date(e.end_at),
+    title: e.title, sub: [e.owner?.name ?? 'チーム全体', e.location].filter(Boolean).join(' ・ '), color: colorOf(e.owner?.id ?? null), open: () => openEvent(e),
+  }));
+  const gridTodos = (d: Date): GridTodo[] => todosOn(d).map(t => ({ id: t.id, title: t.title, done: t.done, overdue: t.overdue, open: () => setTodoModal({ todo: t }) }));
+
   async function tick(t: Todo) { if (await setDone(t.id, !t.done)) load(); else flash('error', '更新できませんでした'); }
   const today = ymd(new Date());
 
   function newDraft(day: Date): Draft {
     const d = ymd(day);
     return { owner: TEAM, title: '', description: '', location: '', all_day: false, start: `${d}T09:00`, end: `${d}T10:00` };
+  }
+
+  // a click on an empty hour of a day column: a new event that starts there and lasts an hour
+  function newDraftAt(day: Date, minutes: number): Draft {
+    const at = (m: number) => `${ymd(day)}T${pad(Math.floor(m / 60) % 24)}:${pad(m % 60)}`;
+    return { ...newDraft(day), start: at(minutes), end: minutes + 60 >= 1440 ? `${ymd(day)}T23:59` : at(minutes + 60) };
   }
 
   function openEvent(e: CalEvent) {
@@ -234,18 +281,32 @@ function CalendarView() {
       )}
 
       {ready && <>
-      <div className="flex items-center gap-2">
-        <button onClick={() => setCursor(new Date(cursor.getFullYear(), cursor.getMonth() - 1, 1))} className="px-3 py-1.5 rounded-lg border border-gray-300 text-sm" aria-label="前の月">‹</button>
-        <div className="text-base font-semibold text-gray-900 min-w-28 text-center">{cursor.getFullYear()}年{cursor.getMonth() + 1}月</div>
-        <button onClick={() => setCursor(new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1))} className="px-3 py-1.5 rounded-lg border border-gray-300 text-sm" aria-label="次の月">›</button>
-        <button onClick={() => { const n = new Date(); setCursor(new Date(n.getFullYear(), n.getMonth(), 1)); setSelected(n); }} className="ml-1 px-3 py-1.5 rounded-lg border border-gray-300 text-sm">今日</button>
-        {loading && <span className="text-xs text-gray-400">読み込み中…</span>}
-        <label className="ml-auto flex items-center gap-1.5 text-xs text-gray-600">
+      {/* On a phone the arrows and the heading take a row of their own (order), on a wide screen everything is in one line */}
+      <div className="flex flex-wrap items-center gap-2">
+        <div role="group" aria-label="表示の切り替え" className="order-1 flex overflow-hidden rounded-lg border border-gray-300 text-sm sm:order-none">
+          {VIEWS.map(v => (
+            <button key={v.key} onClick={() => changeView(v.key)} aria-pressed={view === v.key}
+              className={`px-3 py-1.5 ${view === v.key ? 'bg-gray-900 font-medium text-white' : 'bg-white text-gray-700 hover:bg-gray-50'}`}>{v.label}</button>
+          ))}
+        </div>
+        <div className="order-3 flex w-full items-center gap-2 sm:order-none sm:w-auto">
+          <button onClick={() => step(-1)} className="px-3 py-1.5 rounded-lg border border-gray-300 text-sm" aria-label={`前の${unit}`}>‹</button>
+          <div aria-live="polite" className="min-w-0 flex-1 text-center text-base font-semibold text-gray-900 sm:min-w-28 sm:flex-none">{viewTitle(view, anchor)}</div>
+          <button onClick={() => step(1)} className="px-3 py-1.5 rounded-lg border border-gray-300 text-sm" aria-label={`次の${unit}`}>›</button>
+        </div>
+        <button onClick={goToday} className="order-2 px-3 py-1.5 rounded-lg border border-gray-300 text-sm sm:order-none sm:ml-1">今日</button>
+        {loading && <span className="order-4 text-xs text-gray-400 sm:order-none">読み込み中…</span>}
+        <label className="order-2 ml-auto flex items-center gap-1.5 text-xs text-gray-600 sm:order-none">
           <input type="checkbox" checked={showTodos} onChange={e => setShowTodos(e.target.checked)} />ToDoも表示
         </label>
       </div>
 
-      <div className="grid md:grid-cols-[1fr_20rem] gap-4">
+      {ready && view !== 'month' && (
+        <TimeGrid days={days} events={gridEvents} todosOn={gridTodos} today={todayYmd} canEdit={perm.can_edit}
+          onCreate={(day, minutes) => setDraft(newDraftAt(day, minutes))} onPickDay={openDay} />
+      )}
+
+      {view === 'month' && <div className="grid md:grid-cols-[1fr_20rem] gap-4">
         <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
           <div className="grid grid-cols-7 bg-gray-50 text-center text-xs text-gray-500">
             {WEEK.map((w, i) => <div key={w} className={`py-1.5 ${i === 0 ? 'text-red-500' : i === 6 ? 'text-blue-500' : ''}`}>{w}</div>)}
@@ -261,7 +322,7 @@ function CalendarView() {
               const inMonth = d.getMonth() === cursor.getMonth();
               const isSel = ymd(d) === ymd(selected);
               return (
-                <button key={d.toISOString()} onClick={() => setSelected(d)}
+                <button key={d.toISOString()} data-date={ymd(d)} onClick={() => setSelected(d)}
                   className={`flex flex-col items-stretch justify-start min-h-18 md:min-h-24 border-t border-l border-gray-100 p-1 text-left align-top ${inMonth ? 'bg-white' : 'bg-gray-50/70'} ${isSel ? 'ring-2 ring-inset ring-blue-500' : ''}`}>
                   <div className={`text-xs mb-0.5 ${ymd(d) === today ? 'flex h-5 w-5 items-center justify-center rounded-full bg-blue-600 text-white' : inMonth ? 'text-gray-700' : 'text-gray-400'}`}>{d.getDate()}</div>
                   <div className="space-y-0.5">
@@ -314,7 +375,7 @@ function CalendarView() {
             </div>
           )}
         </aside>
-      </div>
+      </div>}
       </>}
 
       {draft && (
@@ -343,8 +404,8 @@ function CalendarView() {
                 <input type="checkbox" checked={draft.all_day} disabled={!perm.can_edit} onChange={e => setDraft({ ...draft, all_day: e.target.checked, start: draft.start.slice(0, 10) + (e.target.checked ? '' : 'T09:00'), end: draft.end.slice(0, 10) + (e.target.checked ? '' : 'T10:00') })} />終日
               </label>
               <div className="grid grid-cols-2 gap-2">
-                <div><label className="text-xs text-gray-600">開始</label><input className={inp} type={draft.all_day ? 'date' : 'datetime-local'} value={draft.start} disabled={!perm.can_edit} onChange={e => setDraft({ ...draft, start: e.target.value, end: e.target.value > draft.end ? e.target.value : draft.end })} /></div>
-                <div><label className="text-xs text-gray-600">終了</label><input className={inp} type={draft.all_day ? 'date' : 'datetime-local'} value={draft.end} min={draft.start} disabled={!perm.can_edit} onChange={e => setDraft({ ...draft, end: e.target.value })} /></div>
+                <div><label className="text-xs text-gray-600" htmlFor="event-start">開始</label><input id="event-start" className={inp} type={draft.all_day ? 'date' : 'datetime-local'} value={draft.start} disabled={!perm.can_edit} onChange={e => setDraft({ ...draft, start: e.target.value, end: e.target.value > draft.end ? e.target.value : draft.end })} /></div>
+                <div><label className="text-xs text-gray-600" htmlFor="event-end">終了</label><input id="event-end" className={inp} type={draft.all_day ? 'date' : 'datetime-local'} value={draft.end} min={draft.start} disabled={!perm.can_edit} onChange={e => setDraft({ ...draft, end: e.target.value })} /></div>
               </div>
               <input className={inp} placeholder="場所" value={draft.location} disabled={!perm.can_edit} onChange={e => setDraft({ ...draft, location: e.target.value })} />
               <textarea className={inp} rows={3} placeholder="メモ" value={draft.description} disabled={!perm.can_edit} onChange={e => setDraft({ ...draft, description: e.target.value })} />
