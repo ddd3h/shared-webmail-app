@@ -37,7 +37,7 @@ export default function TodoModal({ mailboxId, people, me, todo, defaultDue, can
   return (
     <Modal title={todo ? 'ToDoを編集' : 'ToDoを追加'} onClose={onClose}>
       <div className="space-y-3">
-        <input className={inp} aria-label="ToDoの内容" placeholder="やること" value={title} disabled={!canEdit} onChange={e => setTitle(e.target.value)} autoFocus />
+        <input className={inp} aria-label="ToDoの内容" placeholder="やること" value={title} disabled={!canEdit} onChange={e => setTitle(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) save(); }} autoFocus enterKeyHint="done" />
         <div className="grid grid-cols-2 gap-2">
           <div><label className="text-xs text-gray-600" htmlFor="todo-due">期限（カレンダーに表示）</label>
             <input id="todo-due" className={inp} type="date" value={due} disabled={!canEdit} onChange={e => setDue(e.target.value)} /></div>

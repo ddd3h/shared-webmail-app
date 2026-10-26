@@ -2,6 +2,8 @@
 import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Modal from '@/components/Modal';
+import ChoiceList from '@/components/mobile/ChoiceList';
+import Fab from '@/components/mobile/Fab';
 import TimeGrid, { type GridEvent, type GridTodo } from '@/components/calendar/TimeGrid';
 import TodoModal from '@/components/todos/TodoModal';
 import { VIEWS, addDays, isView, parseYmd, shiftAnchor, viewTitle, visibleDays, type CalendarView } from '@/lib/calendar-view';
@@ -79,6 +81,8 @@ function CalendarView() {
   const [showTodos, setShowTodos] = useState(true);
   const [todoModal, setTodoModal] = useState<{ todo?: Todo; due?: string } | null>(null);
   const [showSettings, setShowSettings] = useState(!!sp.get('link'));
+  // phone only: what is open in a sheet (the mailbox list, the display settings, or the "add" choices)
+  const [sheet, setSheet] = useState<'mailbox' | 'display' | 'add' | null>(null);
   const [msg, setMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   function flash(type: 'success' | 'error', text: string) {
@@ -151,6 +155,7 @@ function CalendarView() {
   const todosOn = (d: Date) => showTodos ? todos.filter(t => t.due_date === ymd(d) && (!shown || shown.has(t.assignee?.id ?? TEAM))) : [];
   const selectedEvents = dayEvents(selected);
   const selectedTodos = todosOn(selected);
+  const filtered = !!shown && shown.size < people.length + 1; // somebody is hidden
   const unit = { day: '日', week: '週', month: '月' }[view];
   const todayDate = () => new Date();
   function step(dir: -1 | 1) {
@@ -238,31 +243,40 @@ function CalendarView() {
   const inp = 'w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-hidden focus:ring-2 focus:ring-blue-500';
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="flex-1 min-w-40">
+    <div className="space-y-3 md:space-y-4">
+      <div className="flex items-center gap-3">
+        <div className="min-w-0 flex-1">
           <h1 className="text-xl font-bold text-gray-900">カレンダー</h1>
-          <p className="text-xs text-gray-500 mt-0.5">共有メールアカウントごとのチームカレンダー</p>
+          <p className="hidden md:block text-xs text-gray-500 mt-0.5">共有メールアカウントごとのチームカレンダー</p>
+          {/* phone: the account name, tap to pick another (only when there is a choice) */}
+          {mailboxes.length > 1
+            ? <button onClick={() => setSheet('mailbox')} className="md:hidden mt-0.5 flex max-w-full items-center gap-1 text-xs text-gray-500"><span className="truncate">{mailboxes.find(m => m.id === mailboxId)?.display_name ?? ''}</span><span aria-hidden>▾</span></button>
+            : <p className="md:hidden mt-0.5 truncate text-xs text-gray-500">{mailboxes[0]?.display_name ?? ''}</p>}
         </div>
-        <select value={mailboxId} onChange={e => setMailboxId(e.target.value)} className="rounded-lg border border-gray-300 px-3 py-2 text-sm bg-white">
+        <select aria-label="メールアカウント" value={mailboxId} onChange={e => setMailboxId(e.target.value)} className="hidden md:block rounded-lg border border-gray-300 px-3 py-2 text-sm bg-white">
           {mailboxes.map(m => <option key={m.id} value={m.id}>{m.display_name}</option>)}
         </select>
         {perm.can_edit && (
-          <button onClick={() => setShowSettings(true)} className="rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50">Google連携</button>
+          <button onClick={() => setShowSettings(true)} className="hidden md:block rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50">Google連携</button>
         )}
         {perm.can_edit && (
-          <button onClick={() => setDraft(newDraft(selected))} className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700">＋ 予定</button>
+          <button onClick={() => setDraft(newDraft(selected))} className="hidden md:block rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700">＋ 予定</button>
         )}
         {perm.can_edit && (
-          <button onClick={() => setTodoModal({ due: ymd(selected) })} className="rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50">＋ ToDo</button>
+          <button onClick={() => setTodoModal({ due: ymd(selected) })} className="hidden md:block rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50">＋ ToDo</button>
         )}
+        {/* phone: everything about what is shown lives behind this one button */}
+        <button onClick={() => setSheet('display')} aria-label="表示の設定" className="md:hidden relative flex h-10 w-10 items-center justify-center rounded-lg border border-gray-300 bg-white text-gray-700">
+          <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M4 6h10m4 0h2M4 12h2m4 0h10M4 18h12m4 0h0M14 4v4M8 10v4M16 16v4" /></svg>
+          {(filtered || !showTodos) && <span aria-label="絞り込み中" className="absolute right-1 top-1 h-2.5 w-2.5 rounded-full bg-blue-600" />}
+        </button>
       </div>
 
       {msg && <div className={`text-sm rounded-lg px-3 py-2 ${msg.type === 'success' ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-600'}`}>{msg.text}</div>}
       {!mailboxId && !loading && <p className="text-sm text-gray-500">閲覧できるメールアカウントがありません。</p>}
 
       {ready && people.length > 0 && (
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="hidden md:flex flex-wrap items-center gap-2">
           <span className="text-xs text-gray-500">表示する人:</span>
           {[{ id: TEAM, name: 'チーム全体' }, ...people].map(p => {
             const on = !shown || shown.has(p.id);
@@ -296,7 +310,7 @@ function CalendarView() {
         </div>
         <button onClick={goToday} className="order-2 px-3 py-1.5 rounded-lg border border-gray-300 text-sm sm:order-none sm:ml-1">今日</button>
         {loading && <span className="order-4 text-xs text-gray-400 sm:order-none">読み込み中…</span>}
-        <label className="order-2 ml-auto flex items-center gap-1.5 text-xs text-gray-600 sm:order-none">
+        <label className="hidden md:flex ml-auto items-center gap-1.5 text-xs text-gray-600">
           <input type="checkbox" checked={showTodos} onChange={e => setShowTodos(e.target.checked)} />ToDoも表示
         </label>
       </div>
@@ -323,9 +337,14 @@ function CalendarView() {
               const isSel = ymd(d) === ymd(selected);
               return (
                 <button key={d.toISOString()} data-date={ymd(d)} onClick={() => setSelected(d)}
-                  className={`flex flex-col items-stretch justify-start min-h-18 md:min-h-24 border-t border-l border-gray-100 p-1 text-left align-top ${inMonth ? 'bg-white' : 'bg-gray-50/70'} ${isSel ? 'ring-2 ring-inset ring-blue-500' : ''}`}>
+                  className={`flex flex-col items-stretch justify-start min-h-12 md:min-h-24 border-t border-l border-gray-100 p-1 text-left align-top ${inMonth ? 'bg-white' : 'bg-gray-50/70'} ${isSel ? 'ring-2 ring-inset ring-blue-500' : ''}`}>
                   <div className={`text-xs mb-0.5 ${ymd(d) === today ? 'flex h-5 w-5 items-center justify-center rounded-full bg-blue-600 text-white' : inMonth ? 'text-gray-700' : 'text-gray-400'}`}>{d.getDate()}</div>
-                  <div className="space-y-0.5">
+                  {/* phone: small dots (one per event, a square for to-dos); the day's list is below the grid */}
+                  <div className="md:hidden flex flex-wrap gap-0.5 px-0.5">
+                    {list.slice(0, 4).map(e => <span key={e.id} className="h-1.5 w-1.5 rounded-full" style={{ background: colorOf(e.owner?.id ?? null) }} />)}
+                    {dayTodos.length > 0 && <span className="h-1.5 w-1.5 rounded-xs border border-amber-500" />}
+                  </div>
+                  <div className="hidden md:block space-y-0.5">
                     {shownEvents.map(e => (
                       <div key={e.id} className="truncate rounded-sm px-1 text-[10px] md:text-[11px] leading-4 text-white" style={{ background: colorOf(e.owner?.id ?? null) }}>{e.title}</div>
                     ))}
@@ -343,7 +362,7 @@ function CalendarView() {
         <aside className="rounded-xl border border-gray-200 bg-white p-3 h-fit">
           <div className="flex items-center justify-between mb-2">
             <h2 className="text-sm font-semibold text-gray-900">{selected.getMonth() + 1}月{selected.getDate()}日（{WEEK[selected.getDay()]}）</h2>
-            {perm.can_edit && <button onClick={() => setDraft(newDraft(selected))} className="text-xs text-blue-600 hover:underline">追加</button>}
+            {perm.can_edit && <button onClick={() => setDraft(newDraft(selected))} className="hidden md:block text-xs text-blue-600 hover:underline">追加</button>}
           </div>
           {selectedEvents.length === 0 && <p className="text-xs text-gray-400">予定はありません</p>}
           <ul className="space-y-2">
@@ -416,6 +435,57 @@ function CalendarView() {
             <div className="flex-1" />
             <button onClick={() => setDraft(null)} className="rounded-lg border border-gray-300 px-3 py-2 text-sm">閉じる</button>
             {perm.can_edit && <button onClick={save} className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700">保存</button>}
+          </div>
+        </Modal>
+      )}
+
+      {perm.can_edit && <Fab label="追加" onClick={() => setSheet('add')} />}
+
+      {sheet === 'mailbox' && (
+        <Modal title="メールアカウント" onClose={() => setSheet(null)}>
+          <ChoiceList value={mailboxId} onPick={v => { setMailboxId(v); setSheet(null); }} choices={mailboxes.map(m => ({ value: m.id, label: m.display_name }))} />
+        </Modal>
+      )}
+
+      {sheet === 'add' && (
+        <Modal title="追加する" onClose={() => setSheet(null)}>
+          <ChoiceList onPick={v => { setSheet(null); if (v === 'event') setDraft(newDraft(selected)); else setTodoModal({ due: ymd(selected) }); }}
+            choices={[{ value: 'event', label: '予定', hint: `${selected.getMonth() + 1}月${selected.getDate()}日に予定を入れる` }, { value: 'todo', label: 'ToDo', hint: `${selected.getMonth() + 1}月${selected.getDate()}日が期限のやること` }]} />
+        </Modal>
+      )}
+
+      {sheet === 'display' && (
+        <Modal title="表示の設定" onClose={() => setSheet(null)}>
+          <div className="space-y-5">
+            {people.length > 0 && (
+              <section aria-label="表示する人">
+                <div className="mb-1 flex items-center gap-3">
+                  <h4 className="flex-1 text-sm font-semibold text-gray-800">表示する人</h4>
+                  <button onClick={() => setShown(new Set([TEAM, ...people.map(p => p.id)]))} className="text-sm text-blue-600">全員</button>
+                  <button onClick={() => setShown(new Set([me]))} className="text-sm text-blue-600">自分のみ</button>
+                </div>
+                <ul className="-mx-1 divide-y divide-gray-100">
+                  {[{ id: TEAM, name: 'チーム全体' }, ...people].map(p => {
+                    const on = !shown || shown.has(p.id);
+                    return (
+                      <li key={p.id}>
+                        <button onClick={() => toggle(p.id)} role="checkbox" aria-checked={on} className="flex w-full items-center gap-3 rounded-lg px-3 py-3 text-left active:bg-gray-100">
+                          <span className="h-3 w-3 rounded-full" style={{ background: on ? (p.id === TEAM ? TEAM_COLOR : colorOf(p.id)) : '#d1d5db' }} />
+                          <span className={`flex-1 text-base ${on ? 'text-gray-900' : 'text-gray-400'}`}>{p.name}{p.id === me ? '（自分）' : ''}</span>
+                          <span aria-hidden className={`flex h-5 w-5 items-center justify-center rounded-sm border text-xs ${on ? 'border-blue-600 bg-blue-600 text-white' : 'border-gray-300'}`}>{on ? '✓' : ''}</span>
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </section>
+            )}
+            <button onClick={() => setShowTodos(v => !v)} role="switch" aria-checked={showTodos} className="flex w-full items-center gap-3 rounded-lg px-1 py-2 text-left">
+              <span className="flex-1 text-base text-gray-900">ToDoも表示</span>
+              <span aria-hidden className={`relative h-6 w-10 rounded-full transition-colors ${showTodos ? 'bg-blue-600' : 'bg-gray-300'}`}><span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-all ${showTodos ? 'left-[1.15rem]' : 'left-0.5'}`} /></span>
+            </button>
+            {perm.can_edit && <button onClick={() => { setSheet(null); setShowSettings(true); }} className="w-full rounded-lg border border-gray-300 px-3 py-3 text-base text-gray-800">Google連携の設定</button>}
+            <button onClick={() => setSheet(null)} className="w-full rounded-lg bg-gray-900 px-3 py-3 text-base font-medium text-white">閉じる</button>
           </div>
         </Modal>
       )}

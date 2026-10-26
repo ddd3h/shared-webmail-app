@@ -311,6 +311,10 @@ function ThreadList() {
   const [filterBefore, setFilterBefore] = useState('');
   const [filterAttachment, setFilterAttachment] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
+  // phone: the search bar stays folded away until the magnifier is tapped (it also opens by itself while a search is active)
+  const [searchOpen, setSearchOpen] = useState(false);
+  const searchRef = useRef<HTMLInputElement>(null);
+  useEffect(() => { if (searchOpen) searchRef.current?.focus(); }, [searchOpen]);
   const [showHistory, setShowHistory] = useState(false);
   const [searchHistory, setSearchHistory] = useState<string[]>([]);
   const [showCompose, setShowCompose] = useState(false);
@@ -718,6 +722,14 @@ function ThreadList() {
           <h1 className="text-xl font-bold text-gray-900">メール</h1>
           <div className="flex items-center gap-2">
             <button
+              onClick={() => setSearchOpen(v => !v)} aria-expanded={searchOpen || !!search} aria-label="検索を開く"
+              className={`sm:hidden p-2 rounded-lg border ${searchOpen || search ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-gray-300 text-gray-600'}`}
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+            </button>
+            <button
               onClick={() => setShowCompose(true)}
               className="inline-flex items-center gap-2 rounded-full bg-linear-to-br from-blue-500 to-indigo-600 text-white font-semibold shadow-md hover:shadow-lg hover:from-blue-600 hover:to-indigo-700 active:scale-95 transition-all duration-150 px-3 py-2 sm:px-4"
               title="新規メール作成"
@@ -752,14 +764,14 @@ function ThreadList() {
         </div>
 
         {/* Search bar */}
-        <form onSubmit={handleSearch} className="space-y-2">
+        <form onSubmit={handleSearch} className={`space-y-2 ${searchOpen || search || showFilters ? "" : "hidden sm:block"}`}>
           <div className="flex gap-2">
             <div className="relative flex-1">
               <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
               </svg>
               <input
-                type="search"
+                type="search" ref={searchRef}
                 placeholder="検索… (from: to: cc: subject: body: mailbox: status: assigned:)"
                 value={searchInput}
                 onChange={(e) => { setSearchInput(e.target.value); setShowHistory(false); }}

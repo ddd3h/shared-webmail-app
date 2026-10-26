@@ -18,7 +18,13 @@ export default function TimeGrid({ days, events, todosOn, today, canEdit, onCrea
   onCreate: (day: Date, minutes: number) => void; onPickDay: (day: Date) => void;
 }) {
   const body = useRef<HTMLDivElement>(null);
+  const scroller = useRef<HTMLDivElement>(null);
   useEffect(() => { if (body.current) body.current.scrollTop = 8 * HOUR_PX - 8; }, [days.length]); // start the view at 8:00
+  // on a phone the week is wider than the screen: start with today's column in view (the hour labels stay put)
+  useEffect(() => {
+    const box = scroller.current, col = box?.querySelector<HTMLElement>(`[data-testid=day-column][data-date="${today}"]`);
+    if (box && col) box.scrollLeft = Math.max(0, col.offsetLeft - box.clientWidth / 2 + col.offsetWidth / 2);
+  }, [days, today]);
   const cols = { gridTemplateColumns: `${LABEL_W} repeat(${days.length}, minmax(0, 1fr))` };
   const timed = events.filter(e => !e.allDay);
   const allDay = (d: Date) => {
@@ -29,10 +35,10 @@ export default function TimeGrid({ days, events, todosOn, today, canEdit, onCrea
   const nowMin = now.getHours() * 60 + now.getMinutes();
 
   return (
-    <div data-testid="time-grid" className="rounded-xl border border-gray-200 bg-white overflow-x-auto">
+    <div ref={scroller} data-testid="time-grid" className="rounded-xl border border-gray-200 bg-white overflow-x-auto">
       <div className={days.length > 1 ? 'min-w-[44rem]' : ''}>
         <div className="grid border-b border-gray-200 bg-gray-50 text-center text-xs text-gray-500" style={cols}>
-          <div />
+          <div className="sticky left-0 z-20 bg-gray-50" />
           {days.map(d => {
             const isToday = ymd(d) === today;
             return (
@@ -46,7 +52,7 @@ export default function TimeGrid({ days, events, todosOn, today, canEdit, onCrea
         </div>
 
         <div className="grid border-b border-gray-200" style={cols} aria-label="終日の予定とToDo">
-          <div className="flex items-start justify-end px-1 pt-1 text-[10px] text-gray-400">終日</div>
+          <div className="sticky left-0 z-20 flex items-start justify-end bg-white px-1 pt-1 text-[10px] text-gray-400">終日</div>
           {days.map(d => (
             <div key={ymd(d)} className="min-h-7 space-y-0.5 border-l border-gray-100 p-0.5">
               {allDay(d).map(e => (
@@ -62,7 +68,7 @@ export default function TimeGrid({ days, events, todosOn, today, canEdit, onCrea
 
         <div ref={body} className="max-h-[36rem] overflow-y-auto">
           <div className="relative grid" style={{ ...cols, height: HOUR_PX * 24 }}>
-            <div className="relative">
+            <div className="sticky left-0 z-20 bg-white">
               {Array.from({ length: 23 }, (_, i) => i + 1).map(h => (
                 <div key={h} className="absolute right-1 -translate-y-1/2 text-[10px] text-gray-400" style={{ top: h * HOUR_PX }}>{pad(h)}:00</div>
               ))}
