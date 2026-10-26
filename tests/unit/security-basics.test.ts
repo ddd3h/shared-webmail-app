@@ -90,13 +90,16 @@ describe('パスワードのルール', () => {
 
 describe('セキュリティ設定の読み込み', () => {
   it('空なら制限なし・セッション14日・新しい端末の通知あり', () => {
-    expect(parsePolicy({ cidrs: null, countries: null, days: null, alert: null })).toEqual({ allowedRules: [], allowedCountries: [], sessionMaxDays: 14, newDeviceAlert: true, deviceBinding: true });
+    expect(parsePolicy({ cidrs: null, countries: null, days: null, alert: null })).toEqual({ allowedRules: [], allowedCountries: [], sessionMaxDays: 14, newDeviceAlert: true, deviceBinding: true, require2fa: true, mfaTrustDays: 30 });
   });
   it('不正なルールは捨て、範囲外の日数は既定に戻す', () => {
     const p = parsePolicy({ cidrs: '1.2.3.4\nbad\n10.0.0.0/8', countries: 'Japan, United States', days: '500', alert: 'off' });
-    expect(p).toEqual({ allowedRules: ['1.2.3.4', '10.0.0.0/8'], allowedCountries: ['Japan', 'United States'], sessionMaxDays: 14, newDeviceAlert: false, deviceBinding: true });
+    expect(p).toEqual({ allowedRules: ['1.2.3.4', '10.0.0.0/8'], allowedCountries: ['Japan', 'United States'], sessionMaxDays: 14, newDeviceAlert: false, deviceBinding: true, require2fa: true, mfaTrustDays: 30 });
     expect(parsePolicy({ cidrs: null, countries: null, days: '7', alert: 'on' }).sessionMaxDays).toBe(7);
     expect(parsePolicy({ cidrs: null, countries: null, days: null, alert: null, binding: 'off' }).deviceBinding).toBe(false);
+    expect(parsePolicy({ cidrs: null, countries: null, days: null, alert: null, twofa: 'off' }).require2fa).toBe(false);
+    expect(parsePolicy({ cidrs: null, countries: null, days: null, alert: null, trust: '0' }).mfaTrustDays).toBe(0);
+    expect(parsePolicy({ cidrs: null, countries: null, days: null, alert: null, trust: '999' }).mfaTrustDays).toBe(30);
   });
 });
 
@@ -170,5 +173,65 @@ describe('スイープ（総当たりの探索）の検知', () => {
     expect(noteAccountTried(ip, 'another@example.com', now)).toBe(LIMITS.distinctEmails + 1);
     expect(noteAccountTried(ip, 'another@example.com', now)).toBe(LIMITS.distinctEmails + 1); // the same account again is not new
     expect(noteAccountTried(ip, 'x@example.com', now + 11 * 60_000)).toBe(1); // the window ended
+  });
+});
+
+import { base32Decode, base32Encode, codeForStep, generateRecoveryCode, generateSecret, looksLikeRecoveryCode, normalizeRecoveryCode, otpauthUri, stepAt, verifyCode } from '@/lib/totp';
+
+describe('TOTP（認証アプリのワンタイムパスワード）', () => {
+  const rfcSecret = Buffer.from('12345678901234567890'); // the test key of RFC 6238
+  it('RFC 6238 の公式テストベクタと一致する（8桁の値の下6桁）', () => {
+    const vectors: [number, string][] = [[59, '287082'], [1111111109, '081804'], [1111111111, '050471'], [1234567890, '005924'], [2000000000, '279037'], [20000000000, '353130']];
+    for (const [seconds, code] of vectors) expect(codeForStep(rfcSecret, stepAt(seconds * 1000)), String(seconds)).toBe(code);
+  });
+  it('Base32の変換が往復できる', () => {
+    expect(base32Encode(Buffer.from('foobar'))).toBe('MZXW6YTBOI');
+    expect(base32Decode('MZXW6YTBOI')!.toString()).toBe('foobar');
+    expect(base32Decode('mzxw 6ytb-oi')!.toString()).toBe('foobar');
+    for (const bad of ['', '1', 'abc!', 'MZXW6YTB0I']) expect(base32Decode(bad), bad).toBeNull();
+    const s = generateSecret();
+    expect(s).toMatch(/^[A-Z2-7]{32}$/);
+    expect(base32Encode(base32Decode(s)!)).toBe(s);
+  });
+  const secret = base32Encode(rfcSecret);
+  const now = 1_700_000_000_000;
+  const at = (offset: number) => codeForStep(rfcSecret, stepAt(now) + offset);
+  it('今の30秒の前後1つまで受け付ける（時計のずれ）が、それ以上は拒否', () => {
+    expect(verifyCode(secret, at(0), { now })).toBe(stepAt(now));
+    expect(verifyCode(secret, at(-1), { now })).toBe(stepAt(now) - 1);
+    expect(verifyCode(secret, at(1), { now })).toBe(stepAt(now) + 1);
+    expect(verifyCode(secret, at(-2), { now })).toBeNull();
+    expect(verifyCode(secret, at(2), { now })).toBeNull();
+  });
+  it('一度使った30秒（やそれ以前）のコードは再利用できない', () => {
+    const step = stepAt(now);
+    expect(verifyCode(secret, at(0), { now, lastStep: step })).toBeNull();
+    expect(verifyCode(secret, at(-1), { now, lastStep: step })).toBeNull();
+    expect(verifyCode(secret, at(1), { now, lastStep: step })).toBe(step + 1);
+    expect(verifyCode(secret, at(0), { now, lastStep: step - 1 })).toBe(step);
+  });
+  it('空白入りは許し、6桁の数字でないもの・壊れた秘密鍵は拒否', () => {
+    expect(verifyCode(secret, `${at(0).slice(0, 3)} ${at(0).slice(3)}`, { now })).toBe(stepAt(now));
+    for (const bad of ['', '12345', '1234567', 'abcdef', '12 34', '１２３４５６']) expect(verifyCode(secret, bad, { now }), bad).toBeNull();
+    expect(verifyCode('not base32!', at(0), { now })).toBeNull();
+  });
+  it('QRコードに入るURIに、鍵・発行元・アカウント・桁数・周期が入る', () => {
+    const uri = otpauthUri({ secret: 'ABCDEF234567', account: 'taro@example.com', issuer: '共有メールワークスペース' });
+    expect(uri.startsWith('otpauth://totp/')).toBe(true);
+    expect(uri).toContain('secret=ABCDEF234567');
+    expect(uri).toContain(`issuer=${encodeURIComponent('共有メールワークスペース')}`);
+    expect(uri).toContain(encodeURIComponent('taro@example.com'));
+    expect(uri).toContain('digits=6');
+    expect(uri).toContain('period=30');
+  });
+  it('回復コードは「xxxxx-xxxxx」形式で、見間違えやすい文字を含まず、毎回違う', () => {
+    const codes = new Set(Array.from({ length: 200 }, generateRecoveryCode));
+    expect(codes.size).toBe(200);
+    for (const c of codes) expect(c).toMatch(/^[a-hjkmnp-z2-9]{5}-[a-hjkmnp-z2-9]{5}$/);
+  });
+  it('回復コードの入力は、大文字・空白・ダッシュの有無を問わない', () => {
+    expect(normalizeRecoveryCode(' ABCDE-fghjk ')).toBe('abcdefghjk');
+    expect(looksLikeRecoveryCode('abcde fghjk')).toBe(true);
+    expect(looksLikeRecoveryCode('123456')).toBe(false);
   });
 });

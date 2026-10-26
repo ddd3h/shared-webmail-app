@@ -92,6 +92,10 @@ model users {
   login_logs                 login_logs[]
   last_login_at              DateTime?
   locked_at                  DateTime? // an admin locked the account: no login, sessions revoked
+  totp_secret_enc            String?   // authenticator-app secret (AES-GCM); set once the person confirmed a code
+  totp_enabled_at            DateTime?
+  totp_last_step             Int?      // the last accepted 30-second step: a code can't be used twice
+  recovery_codes             recovery_codes[]
   known_devices              known_devices[]
   worker_type                WorkerType               @default(employee)
   attendance_records         attendance_records[]
@@ -1179,6 +1183,7 @@ model known_devices {
   city          String?
   first_seen_at DateTime @default(now())
   last_seen_at  DateTime @default(now())
+  mfa_trusted_until DateTime? // "trust this browser": the second step is skipped until then
 
   user users @relation(fields: [user_id], references: [id], onDelete: Cascade)
 
@@ -1211,4 +1216,17 @@ model security_events {
 
   @@index([created_at])
   @@index([type])
+}
+
+// One-time codes for when the authenticator app is unavailable. Only hashes are stored.
+model recovery_codes {
+  id         String    @id @default(cuid())
+  user_id    String
+  code_hash  String
+  used_at    DateTime?
+  created_at DateTime  @default(now())
+
+  user users @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@index([user_id])
 }

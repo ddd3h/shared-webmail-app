@@ -267,3 +267,24 @@ export function notifyLoginLockout(userId: string, ip: string) {
       `⚠️ **ログインに繰り返し失敗しています**\n\nあなたのアカウントに、${mmText(ip, 45)} から何度もログインが試みられ、一時的に制限しました。ご自身でない場合は、パスワードを変更してください。\n${appUrl()}/profile`, 'security_lockout');
   });
 }
+
+export function notifyRecoveryCodeUsed(userId: string, ip: string) {
+  return safely('mfa_recovery_used', async () => {
+    const u = await prisma.users.findUnique({ where: { id: userId }, select: { id: true, email: true } });
+    if (!u) return;
+    await sendDirectMessage(u.id, u.email, `🔐 **2段階認証の回復コードが使われました**\n\n${mmText(ip, 45)} から、回復コードでログインしました。ご自身でない場合は、すぐにパスワードを変更してください。\n${appUrl()}/profile`, 'security_recovery_used');
+  });
+}
+
+// what changed about the second factor (never the secret or the codes)
+export function notifyMfaChanged(userId: string, what: 'enabled' | 'disabled' | 'reset' | 'codes_regenerated') {
+  const text = {
+    enabled: '2段階認証が有効になりました。', disabled: '2段階認証が無効になりました。',
+    reset: '管理者が、あなたの2段階認証をリセットしました。次回のログインで、あらためて設定してください。', codes_regenerated: '回復コードが再発行されました。古いコードは使えません。',
+  }[what];
+  return safely('mfa_changed', async () => {
+    const u = await prisma.users.findUnique({ where: { id: userId }, select: { id: true, email: true } });
+    if (!u) return;
+    await sendDirectMessage(u.id, u.email, `🔐 **${text}**\n\n心当たりがない場合は、すぐに管理者に連絡し、パスワードを変更してください。\n${appUrl()}/profile`, `security_mfa_${what}`);
+  });
+}

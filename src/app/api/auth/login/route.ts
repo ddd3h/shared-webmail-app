@@ -4,7 +4,8 @@ import { logAudit } from '@/lib/audit';
 import { sendDosAlert } from '@/lib/dos-alert';
 import { lookupIp, type IpInfo } from '@/lib/ip-lookup';
 import { DEVICE_COOKIE, isKnownDeviceFor } from '@/lib/known-device';
-import { countryAllowed, finishLogin } from '@/lib/login-flow';
+import { countryAllowed } from '@/lib/login-flow';
+import { continueAfterPassword } from '@/lib/login-second-step';
 import { gateLogin, normalizeEmail, type Verdict } from '@/lib/login-guard';
 import { logLoginAttempt } from '@/lib/login-log';
 import { hashPassword, verifyPassword } from '@/lib/password';
@@ -81,5 +82,5 @@ export async function POST(req: NextRequest) {
 
   resetRateLimit(`login:pair:${email}|${attempt.ip}`);
   resetRateLimit(`login:email:${email}`);
-  return finishLogin(req, { id: user.id, email: user.email, role: user.role }, { method: 'password', ip: attempt.ip, ipInfo });
+  return continueAfterPassword(req, user, { ip: attempt.ip, ipInfo });
 }

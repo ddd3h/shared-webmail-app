@@ -1,5 +1,6 @@
 'use client';
 import SecuritySection from '@/components/security/SecuritySection';
+import TwoFactorSection from '@/components/security/TwoFactorSection';
 import { useEffect, useState, useCallback } from 'react';
 import { startRegistration } from '@simplewebauthn/browser';
 
@@ -410,6 +411,7 @@ export default function ProfilePage() {
 
       {/* Passkeys */}
       <PasskeySection />
+      <TwoFactorSection />
       <SecuritySection />
 
       {/* Signature */}

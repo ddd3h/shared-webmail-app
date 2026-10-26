@@ -9,7 +9,7 @@ import { loadSecurityPolicy } from '@/lib/security-settings';
 import { recordSecurityEvent } from '@/lib/security-events';
 import { judgeAuthenticated, judgeUnauthenticated, type Verdict } from '@/lib/sweep-guard';
 
-const PUBLIC_PATHS = ['/login', '/reset-password', '/api/auth/login', '/api/auth/logout', '/api/cron/', '/api/passkeys/auth-options', '/api/passkeys/auth'];
+const PUBLIC_PATHS = ['/login', '/reset-password', '/api/auth/login', '/api/auth/mfa/', '/api/auth/logout', '/api/cron/', '/api/passkeys/auth-options', '/api/passkeys/auth'];
 const isStatic = (p: string) =>
   p.startsWith('/_next') || p.startsWith('/manifest') || p.startsWith('/sw.js') ||
   p.startsWith('/icon') || // icon-192.png, icon-512.png, icon-badge.png — must be fetchable unauthenticated (push notifications fetch these in the background, without a session cookie)

@@ -24,6 +24,11 @@ export default function SecurityAdminPage() {
   const load = useCallback(async () => { const r = await fetch('/api/admin/security/overview'); if (r.ok) setData(await r.json()); }, []);
   useEffect(() => { load(); }, [load]);
 
+  async function resetMfa(id: string, name: string) {
+    if (!confirm(`${name} さんの2段階認証をリセットします。ログイン中の端末はすべてログアウトされ、次回のログインで設定し直します。よろしいですか？`)) return;
+    await fetch(`/api/admin/security/users/${id}/mfa-reset`, { method: 'POST' });
+    load();
+  }
   async function unlock(id: string) { await fetch(`/api/admin/security/users/${id}/lock`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ locked: false }) }); load(); }
 
   if (!data) return <p className="text-sm text-gray-400">読み込み中…</p>;
@@ -46,6 +51,21 @@ export default function SecurityAdminPage() {
           <ul className="divide-y divide-gray-100">{data.locked.map(u => <li key={u.id} className="flex items-center gap-3 py-2 text-sm"><span className="flex-1">{u.name}<span className="ml-2 text-xs text-gray-400">{u.email}</span></span><button onClick={() => unlock(u.id)} className="btn btn-secondary btn-sm" aria-label={`${u.name}のロックを解除`}>解除</button></li>)}</ul>
         </section>
       )}
+
+      <section className="card p-5 space-y-2" aria-label="ログイン方法">
+        <h2 className="font-semibold text-gray-900">ログイン方法（2段階認証・パスキー）</h2>
+        <p className="text-xs text-gray-500">パスワードでログインするには2段階認証が必要です。どちらもない人は、次回のログイン時に2段階認証を設定します。</p>
+        <ul className="divide-y divide-gray-100">
+          {data.people.map(p => (
+            <li key={p.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2 text-sm">
+              <span className="min-w-[8rem] flex-1">{p.name}<span className="ml-2 text-xs text-gray-400">{p.email}</span></span>
+              <span className={`rounded px-1.5 py-0.5 text-[11px] ${p.mfa ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>{p.mfa ? '2段階認証 有効' : '2段階認証 未設定'}</span>
+              <span className={`rounded px-1.5 py-0.5 text-[11px] ${p.passkeys > 0 ? 'bg-blue-50 text-blue-700' : 'bg-gray-100 text-gray-500'}`}>パスキー {p.passkeys}</span>
+              {p.mfa && <button onClick={() => resetMfa(p.id, p.name)} className="btn btn-secondary btn-sm" aria-label={`${p.name}の2段階認証をリセット`}>リセット</button>}
+            </li>
+          ))}
+        </ul>
+      </section>
 
       <section className="card p-5 space-y-2" aria-label="セキュリティイベント">
         <h2 className="font-semibold text-gray-900">検知したできごと</h2>

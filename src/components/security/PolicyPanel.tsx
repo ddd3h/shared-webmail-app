@@ -10,7 +10,7 @@ export default function PolicyPanel() {
 
   async function save() {
     if (!p) return;
-    const res = await fetch('/api/admin/security/policy', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ allowed_cidrs: p.allowed_cidrs, allowed_countries: p.allowed_countries, session_max_days: Number(p.session_max_days), new_device_alert: p.new_device_alert, device_binding: p.device_binding }) });
+    const res = await fetch('/api/admin/security/policy', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ allowed_cidrs: p.allowed_cidrs, allowed_countries: p.allowed_countries, session_max_days: Number(p.session_max_days), new_device_alert: p.new_device_alert, device_binding: p.device_binding, require_2fa: p.require_2fa, mfa_trust_days: Number(p.mfa_trust_days) }) });
     const e = await res.json().catch(() => ({}));
     setMsg(res.ok ? { ok: true, text: '保存しました' } : { ok: false, text: e.message ?? '保存できませんでした。入力を確認してください' });
   }
@@ -27,6 +27,11 @@ export default function PolicyPanel() {
       <div>
         <label className="label text-xs">ログインを許可する国（英語名をカンマ区切り。空なら制限なし）</label>
         <input className="input" placeholder="Japan" value={p.allowed_countries} onChange={e => setP({ ...p, allowed_countries: e.target.value })} />
+      </div>
+      <div className="rounded-xl border border-gray-200 p-3 space-y-2">
+        <label className="flex items-start gap-2 text-sm font-medium text-gray-900"><input type="checkbox" className="mt-1" checked={p.require_2fa} onChange={e => setP({ ...p, require_2fa: e.target.checked })} />ログインは「パスキー」または「パスワード＋2段階認証」だけにする（推奨）</label>
+        <p className="text-xs text-gray-500">オフにすると、パスワードだけでログインできてしまいます。2段階認証が未設定の人は、パスワードでのログイン時にその場で設定します。</p>
+        <div className="max-w-xs"><label className="label text-xs">「このブラウザを信頼する」の日数（0=使わせない）</label><input className="input" type="number" min={0} max={90} value={p.mfa_trust_days} onChange={e => setP({ ...p, mfa_trust_days: Number(e.target.value) })} /></div>
       </div>
       <div className="grid gap-4 sm:grid-cols-2">
         <div><label className="label text-xs">セッションの最長日数（操作を続けていても、この日数でログアウト）</label><input className="input" type="number" min={1} max={90} value={p.session_max_days} onChange={e => setP({ ...p, session_max_days: Number(e.target.value) })} /></div>

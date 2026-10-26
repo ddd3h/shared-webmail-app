@@ -11,7 +11,7 @@ const DEV_SECRET = 'dev-secret-at-least-32-chars-long!!';
 
 // The key that seals session cookies. Falling back to a published development key in production would let anybody
 // forge a cookie, so there it must be set properly; the check runs on first use (not at import, so builds without env still work).
-function sessionPassword() {
+export function sessionPassword() {
   const secret = process.env.SESSION_SECRET || DEV_SECRET;
   if (process.env.NODE_ENV === 'production' && (secret === DEV_SECRET || secret.length < 32 || secret.startsWith('CHANGE_ME'))) {
     throw new Error('SESSION_SECRET must be set to a random string of at least 32 characters in production');
@@ -246,6 +246,8 @@ export async function clearSession(sessionId: string): Promise<void> {
 /** Ends every session of a person (after a password change, a lock, ...), optionally keeping the one in use. */
 export async function revokeUserSessions(userId: string, exceptSessionId?: string): Promise<number> {
   const r = await prisma.sessions.deleteMany({ where: { user_id: userId, ...(exceptSessionId ? { id: { not: exceptSessionId } } : {}) } });
+  // the reasons for ending sessions (password changed, account locked, ...) are also reasons to stop trusting browsers for 2FA
+  await prisma.known_devices.updateMany({ where: { user_id: userId, mfa_trusted_until: { not: null } }, data: { mfa_trusted_until: null } });
   return r.count;
 }
 

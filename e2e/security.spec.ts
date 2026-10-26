@@ -5,7 +5,7 @@ import { db } from './helpers/db';
 import { mm } from './helpers/mattermost-mock';
 import { clearNotifications, resetSecurity } from './helpers/seed';
 import { fakeIp } from './helpers/ui';
-import { hashPassword } from '../src/lib/password';
+import { deleteAccountsWithPrefix, newAccount as newAccountIn } from './helpers/accounts';
 
 test.describe.configure({ mode: 'serial' });
 test.beforeEach(async () => { await resetSecurity(); await clearNotifications(); await mm.reset(); });
@@ -14,15 +14,8 @@ test.afterAll(async () => { await resetSecurity(); });
 const CHROME_WIN = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36';
 const SAFARI_IOS = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1';
 
-// Accounts made for the tests that hammer a login: the limits live in the server's memory for 15 minutes,
-// so they must never be spent on an account other specs log in with.
-let accountCounter = 0;
-async function newAccount() {
-  const email = `acct-${Date.now().toString(36)}-${accountCounter++}@e2e.test`;
-  const user = await db.users.create({ data: { id: `u_${email.split('@')[0]}`, name: '試験用', email, role: 'user', worker_type: 'employee', password_hash: await hashPassword(PASSWORD, { N: 1024 }) } });
-  return { id: user.id, email, mm: `mm-${email.split('@')[0]}` };
-}
-test.afterAll(async () => { await db.users.deleteMany({ where: { email: { startsWith: 'acct-' } } }); });
+const newAccount = () => newAccountIn('acct');
+test.afterAll(async () => { await deleteAccountsWithPrefix('acct'); });
 
 const opened: APIRequestContext[] = [];
 test.afterEach(async () => { await Promise.all(opened.splice(0).map(c => c.dispose())); });

@@ -17,6 +17,8 @@ export default async function globalSetup() {
   const stopMock = await startMattermostMock();
   await seedBase();
   // The saved sessions are shared by the desktop and the phone project (different browsers), so the "cookie only works on the device it was issued to" check is off by default; e2e/security.spec.ts turns it on for its own tests.
+  // Every spec logs in with a password alone, so the "password + 2FA" rule is off by default; e2e/mfa.spec.ts turns it on for its own tests.
+  await db.app_settings.upsert({ where: { key: 'SECURITY_REQUIRE_2FA' }, create: { key: 'SECURITY_REQUIRE_2FA', value: 'off' }, update: { value: 'off' } });
   await db.app_settings.upsert({ where: { key: 'SECURITY_DEVICE_BINDING' }, create: { key: 'SECURITY_DEVICE_BINDING', value: 'off' }, update: { value: 'off' } });
 
   mkdirSync('e2e/.auth', { recursive: true });

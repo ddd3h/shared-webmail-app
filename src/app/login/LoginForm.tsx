@@ -2,6 +2,14 @@
 import { useState, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { startAuthentication } from '@simplewebauthn/browser';
+import { CodeStep, RecoveryCodesView, SetupStep } from '@/components/security/TwoFactorParts';
+
+// credentials → (code | setup → codes): the second step only appears for a password login; passkeys skip it
+type Step = 'credentials' | 'code' | 'setup' | 'codes';
+type Setup = { qr: string; secret: string; token: string };
+const CODE_ERRORS: Record<string, string> = {
+  invalid_code: 'コードが正しくありません', challenge_expired: '時間切れです。最初からやり直してください', too_many_requests: '間違いが続いたため、しばらく入力できません。時間をおいてお試しください',
+};
 
 export default function LoginForm() {
   const [mounted, setMounted] = useState(false);
@@ -11,6 +19,11 @@ export default function LoginForm() {
   const [loading, setLoading] = useState(false);
   const [passkeyLoading, setPasskeyLoading] = useState(false);
   const [passkeySupported, setPasskeySupported] = useState(false);
+  const [step, setStep] = useState<Step>('credentials');
+  const [challenge, setChallenge] = useState('');
+  const [trustDays, setTrustDays] = useState(0);
+  const [setup, setSetup] = useState<Setup | null>(null);
+  const [codes, setCodes] = useState<string[]>([]);
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -35,17 +48,53 @@ export default function LoginForm() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password })
       });
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        setError(data.error === 'unauthorized' ? 'メールアドレスまたはパスワードが正しくありません' : 'ログインに失敗しました');
+        setError(data.error === 'unauthorized' ? 'メールアドレスまたはパスワードが正しくありません' : data.error === 'too_many_requests' ? '試行回数が多すぎます。しばらくしてからお試しください' : 'ログインに失敗しました');
         return;
       }
+      if (data.mfa_required) { setChallenge(data.challenge); setTrustDays(data.trust_days ?? 0); setStep('code'); return; }
+      if (data.mfa_setup_required) { await beginSetup(data.challenge); return; }
       redirect();
     } catch {
       setError('ネットワークエラーが発生しました');
     } finally {
       setLoading(false);
     }
+  }
+
+  // ---- second step ----
+  const backToStart = () => { setStep('credentials'); setError(null); setPassword(''); setSetup(null); };
+
+  async function beginSetup(note: string) {
+    const res = await fetch('/api/auth/mfa/setup', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ challenge: note }) });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok) { setError(CODE_ERRORS[d.error] ?? '2段階認証を開始できませんでした'); return; }
+    setSetup({ qr: d.qr, secret: d.secret, token: d.setup_token });
+    setStep('setup');
+  }
+
+  async function submitCode(code: string, trust: boolean) {
+    setError(null); setLoading(true);
+    try {
+      const res = await fetch('/api/auth/mfa/verify', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ challenge, code, trust_device: trust }) });
+      const d = await res.json().catch(() => ({}));
+      if (res.ok) { redirect(); return; }
+      setError(CODE_ERRORS[d.error] ?? 'ログインに失敗しました');
+      if (d.error === 'challenge_expired') backToStart();
+    } catch { setError('ネットワークエラーが発生しました'); } finally { setLoading(false); }
+  }
+
+  async function submitSetupCode(code: string) {
+    if (!setup) return;
+    setError(null); setLoading(true);
+    try {
+      const res = await fetch('/api/auth/mfa/enable', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ setup_token: setup.token, code }) });
+      const d = await res.json().catch(() => ({}));
+      if (res.ok) { setCodes(d.recovery_codes ?? []); setStep('codes'); return; } // signed in already; the codes are shown before moving on
+      setError(CODE_ERRORS[d.error] ?? '設定できませんでした');
+      if (d.error === 'challenge_expired') backToStart();
+    } catch { setError('ネットワークエラーが発生しました'); } finally { setLoading(false); }
   }
 
   async function loginWithPasskey() {
@@ -98,15 +147,24 @@ export default function LoginForm() {
 
   return (
     <div className="card p-8 shadow-xl">
-      <h2 className="text-lg font-semibold text-gray-900 mb-6">ログイン</h2>
+      <h2 className="text-lg font-semibold text-gray-900 mb-6">{step === 'credentials' ? 'ログイン' : step === 'code' ? '2段階認証' : step === 'setup' ? '2段階認証の設定' : '回復コード'}</h2>
 
-      {error && (
+      {step === 'code' && <CodeStep onSubmit={submitCode} onCancel={backToStart} trustDays={trustDays} busy={loading} error={error} />}
+      {step === 'setup' && setup && (
+        <>
+          <p className="mb-4 rounded-lg bg-blue-50 border border-blue-200 p-3 text-sm text-blue-900">パスワードでログインするには、2段階認証（認証アプリ）の設定が必要です。パスキーを使う場合は不要です。</p>
+          <SetupStep qr={setup.qr} secret={setup.secret} onSubmit={submitSetupCode} onCancel={backToStart} busy={loading} error={error} />
+        </>
+      )}
+      {step === 'codes' && <RecoveryCodesView codes={codes} onDone={redirect} doneLabel="ログインを続ける" />}
+
+      {step === 'credentials' && error && (
         <div className="mb-4 rounded-lg bg-red-50 border border-red-200 p-3 text-sm text-red-700">
           {error}
         </div>
       )}
 
-      <form onSubmit={onSubmit} className="space-y-4">
+      {step === 'credentials' && <form onSubmit={onSubmit} className="space-y-4">
         <div>
           <label className="label" htmlFor="email">メールアドレス</label>
           <input
@@ -140,9 +198,9 @@ export default function LoginForm() {
         >
           {loading ? 'ログイン中…' : 'ログイン'}
         </button>
-      </form>
+      </form>}
 
-      {mounted && passkeySupported && (
+      {step === 'credentials' && mounted && passkeySupported && (
         <>
           <div className="flex items-center gap-3 my-4">
             <div className="flex-1 border-t border-gray-200" />

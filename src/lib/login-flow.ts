@@ -25,13 +25,13 @@ export async function countryAllowed(info: IpInfo | null): Promise<boolean> {
   return allowedCountries.some(c => c.toLowerCase() === info.country!.toLowerCase());
 }
 
-export async function finishLogin(req: NextRequest, user: Who, o: { method: Method; ip: string; ipInfo: IpInfo | null }): Promise<NextResponse> {
+export async function finishLogin(req: NextRequest, user: Who, o: { method: Method; ip: string; ipInfo: IpInfo | null; trustMfaDays?: number; extra?: Record<string, unknown> }): Promise<NextResponse> {
   const userAgent = req.headers.get('user-agent') || '';
   const { ip, ipInfo, method } = o;
   const networkType = ipInfo?.networkType ?? 'residential';
-  const res = NextResponse.json({ ok: true });
+  const res = NextResponse.json({ ok: true, ...o.extra });
 
-  const device = await rememberDevice(res, user.id, req.cookies.get(DEVICE_COOKIE)?.value, { ip, userAgent, country: ipInfo?.country, city: ipInfo?.city });
+  const device = await rememberDevice(res, user.id, req.cookies.get(DEVICE_COOKIE)?.value, { ip, userAgent, country: ipInfo?.country, city: ipInfo?.city }, o.trustMfaDays ? new Date(Date.now() + o.trustMfaDays * 86400_000) : undefined);
   await setSessionCookie(res, { userId: user.id, email: user.email, role: user.role }, { ip, userAgent, networkType, country: ipInfo?.country, city: ipInfo?.city, deviceId: device.deviceId });
   prisma.users.update({ where: { id: user.id }, data: { last_login_at: new Date() } }).catch(() => {});
 
