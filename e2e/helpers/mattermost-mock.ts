@@ -9,6 +9,7 @@ export function startMattermostMock(): Promise<() => Promise<void>> {
   const posts: Post[] = [];
   const channelTarget = new Map<string, string>();
   let failPosts = false;
+  let imageHits = 0;
 
   const server = http.createServer((req, res) => {
     let body = '';
@@ -17,7 +18,9 @@ export function startMattermostMock(): Promise<() => Promise<void>> {
       const url = req.url || '';
       const send = (o: unknown, code = 200) => { res.writeHead(code, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(o)); };
       if (url === '/__posts') return send(posts);
-      if (url === '/__reset') { posts.length = 0; failPosts = false; return send({ ok: true }); }
+      if (url === '/__reset') { posts.length = 0; failPosts = false; imageHits = 0; return send({ ok: true }); }
+      if (url === '/__image_hits') return send({ hits: imageHits });
+      if (/^\/api\/v4\/users\/[^/]+\/image$/.test(url)) { imageHits++; res.writeHead(200, { 'Content-Type': 'image/png' }); return res.end(Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64')); }
       if (url === '/__fail') { failPosts = JSON.parse(body || '{}').on !== false; return send({ failPosts }); }
       if (url === '/api/v4/users/me') return send({ id: 'bot-id' });
       if (url.startsWith('/api/v4/users/email/')) return send({ id: 'mm-' + decodeURIComponent(url.split('/').pop()!).split('@')[0] });
@@ -41,6 +44,8 @@ export function startMattermostMock(): Promise<() => Promise<void>> {
 // Used from specs.
 export const mm = {
   async posts(): Promise<Post[]> { return (await fetch(`${MM_URL}/__posts`)).json(); },
+  // How many times a profile picture was fetched from (the fake) Mattermost
+  async imageHits(): Promise<number> { return (await (await fetch(`${MM_URL}/__image_hits`)).json()).hits; },
   async reset() { await fetch(`${MM_URL}/__reset`, { method: 'POST' }); },
   async fail(on = true) { await fetch(`${MM_URL}/__fail`, { method: 'POST', body: JSON.stringify({ on }) }); },
   // DMs are sent after the HTTP response, so poll briefly.

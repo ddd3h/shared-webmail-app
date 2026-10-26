@@ -5,7 +5,7 @@ import { hashPassword } from '@/lib/password';
 import { passwordProblem } from '@/lib/password-policy';
 import { revokeUserSessions } from '@/lib/auth';
 import { logAudit } from '@/lib/audit';
-import { clearAvatarCache } from '@/lib/avatar-cache';
+import { forgetAvatar } from '@/lib/avatar';
 import { deleteStoredFiles } from '@/lib/attachment-storage';
 import { z } from 'zod';
 
@@ -60,7 +60,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     if (data.password_hash && id !== session.userId) await revokeUserSessions(id);
 
     // Clear avatar cache so the new Mattermost ID's image is fetched immediately
-    if (mattermostIdChanged) clearAvatarCache(id).catch(() => {});
+    if (mattermostIdChanged) forgetAvatar(id);
 
     await logAudit({
       actorUserId: session.userId,

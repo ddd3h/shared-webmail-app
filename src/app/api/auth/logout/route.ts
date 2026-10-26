@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSession, clearSession } from '@/lib/auth';
-import { clearAvatarCache } from '@/lib/avatar-cache';
+import { forgetAvatar } from '@/lib/avatar';
 
 async function performLogout() {
   try {
     const session = await getSession();
-    if (session?.userId) await clearAvatarCache(session.userId);
+    if (session?.userId) forgetAvatar(session.userId);
     if (session?.sessionId) await clearSession(session.sessionId);
   } catch {}
 }

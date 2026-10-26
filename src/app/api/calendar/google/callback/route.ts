@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse, connection } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { canEditCalendar } from '@/lib/rbac';
@@ -6,6 +6,7 @@ import { logAudit } from '@/lib/audit';
 import { calendarRedirectUri, sealToken } from '@/lib/google-calendar';
 
 export async function GET(req: NextRequest) {
+  await connection(); // always answered at request time (it reads the login cookie inside a try/catch that would otherwise swallow the prerender stop)
   const appUrl = (process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000').replace(/\/+$/, '');
   const back = (q: string) => {
     const res = NextResponse.redirect(`${appUrl}/calendar?${q}`);

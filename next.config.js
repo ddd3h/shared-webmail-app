@@ -60,6 +60,10 @@ const nextConfig = {
   // Suppress server identity disclosure
   poweredByHeader: false,
 
+  // Caching model of Next.js 16: nothing is cached unless the code says so ("use cache" + cacheLife / cacheTag).
+  cacheComponents: true,
+  partialPrefetching: true,
+
   experimental: {
     // proxy.ts buffers every request body, capped at 10MB by default — over that
     // the body is silently truncated and req.formData() throws. Attachment
