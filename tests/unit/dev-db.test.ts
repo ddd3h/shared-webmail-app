@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseDbTarget, splitArgs, composeEnv } from '../../scripts/lib/dev-db.mjs';
+import { parseDbTarget, splitArgs, composeEnv, loopbackUrl } from '../../scripts/lib/dev-db.mjs';
 
 describe('parseDbTarget', () => {
   it('localhost は自分のPC。ユーザー・パスワード・DB名・ポートを取り出す（記号は復号）', () => {
@@ -34,9 +34,23 @@ describe('splitArgs', () => {
 describe('composeEnv', () => {
   it('DATABASE_URL のユーザー・パスワード・DB名・ポートで Docker のDBを作る', () => {
     const env = composeEnv({ port: 5433, user: 'webmail', password: 'pw', database: 'webmail_app' }, { PATH: '/bin' } as unknown as NodeJS.ProcessEnv);
-    expect(env).toMatchObject({ PATH: '/bin', DEV_DB_PORT: '5433', DEV_DB_USER: 'webmail', DEV_DB_PASSWORD: 'pw', DEV_DB_NAME: 'webmail_app' });
+    expect(env).toMatchObject({ PATH: '/bin', DEV_DB_PORT: '5433', DEV_DB_USER: 'webmail', DEV_DB_PASSWORD: 'pw', DEV_DB_NAME: 'webmail_app', DEV_DB_AUTH: 'scram-sha-256' });
+  });
+  it('パスワードのない DATABASE_URL なら、コンテナはパスワードなしで受け付ける（このPCからだけ）', () => {
+    expect(composeEnv({ port: 5432, user: 'ddd3h', password: '', database: 'x' }, {} as NodeJS.ProcessEnv)).toMatchObject({ DEV_DB_USER: 'ddd3h', DEV_DB_AUTH: 'trust' });
   });
   it('ユーザーやパスワードが空でも既定を使う', () => {
     expect(composeEnv({ port: 5432, user: '', password: '', database: 'x' }, {} as NodeJS.ProcessEnv)).toMatchObject({ DEV_DB_USER: 'webmail', DEV_DB_PASSWORD: 'webmail' });
+  });
+});
+
+describe('loopbackUrl', () => {
+  it('localhost を 127.0.0.1 にする（IPv6 の ::1 に別のDBが居ても影響されない）', () => {
+    expect(loopbackUrl('postgresql://u:p@localhost:5432/db?schema=public')).toBe('postgresql://u:p@127.0.0.1:5432/db?schema=public');
+    expect(loopbackUrl('postgresql://u:p%40x@localhost/db')).toContain('p%40x@127.0.0.1');
+  });
+  it('それ以外はそのまま', () => {
+    expect(loopbackUrl('postgresql://u:p@db.example.com:5432/db')).toBe('postgresql://u:p@db.example.com:5432/db');
+    expect(loopbackUrl('not a url')).toBe('not a url');
   });
 });

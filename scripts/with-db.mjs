@@ -12,7 +12,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import net from 'node:net';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
-import { composeEnv, parseDbTarget, splitArgs } from './lib/dev-db.mjs';
+import { composeEnv, loopbackUrl, parseDbTarget, splitArgs } from './lib/dev-db.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 process.chdir(root);
@@ -49,7 +49,25 @@ async function startDb() {
   say(`データベースを起動します（docker compose / localhost:${target.port}）…`);
   const up = run('docker', [...COMPOSE, 'up', '-d', '--wait', 'db'], { env: composeEnv(target) });
   if (up.status !== 0) { console.error(`[db] 起動に失敗しました。localhost:${target.port} を別のものが使っていないか確認してください`); process.exit(1); }
+  // talk to the database we just started, not to whatever else "localhost" (::1) may lead to
+  process.env.DATABASE_URL = loopbackUrl(process.env.DATABASE_URL);
   return target;
+}
+
+// Why can't we log in? Asks the database from inside its own container with the user / password of DATABASE_URL.
+function explainLoginFailure(target) {
+  const url = loopbackUrl(process.env.DATABASE_URL);
+  const inside = spawnSync('docker', [...COMPOSE, 'exec', '-T', 'db', 'psql', url.replace(/@127\.0\.0\.1:\d+/, '@127.0.0.1:5432'), '-tAc', 'select 1'], { env: composeEnv(target), encoding: 'utf8' });
+  console.error('');
+  if (inside.status === 0) {
+    console.error(`[db] コンテナの中からは、DATABASE_URL のユーザー(${target.user})とパスワードでログインできました。
+     つまり、このPCの ${target.port} 番に、別のPostgreSQLが居て応答している可能性があります（IPv6 など）。
+     確認:  ss -ltnp | grep ${target.port}     止めるか、.env の DATABASE_URL のポートを変えてください。`);
+  } else {
+    console.error(`[db] 起動したDBに、DATABASE_URL のユーザー(${target.user})とパスワードではログインできません。
+     DBの入れ物(volume)が、前に別のユーザー・パスワードで作られたまま残っているのが原因です。
+     作り直す:  npm run db:reset   （開発用DBのデータは消えます）  →  もう一度 npm run seed:demo`);
+  }
 }
 
 function stopDb(target) {
@@ -66,7 +84,7 @@ const finish = code => {
 
 if (migrate) {
   const m = run('npx', ['prisma', 'migrate', 'deploy']);
-  if (m.status !== 0) { console.error('[db] マイグレーションに失敗しました'); finish(m.status ?? 1); }
+  if (m.status !== 0) { console.error('[db] マイグレーションに失敗しました'); if (started) explainLoginFailure(started); finish(m.status ?? 1); }
 }
 
 const child = spawn(command[0], command.slice(1), { stdio: 'inherit' });

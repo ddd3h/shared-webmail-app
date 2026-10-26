@@ -32,5 +32,16 @@ export function composeEnv(target, base = process.env) {
     DEV_DB_USER: target.user || 'webmail',
     DEV_DB_PASSWORD: target.password || 'webmail',
     DEV_DB_NAME: target.database,
+    // a DATABASE_URL without a password: let the (this-computer-only) container accept it
+    DEV_DB_AUTH: target.password ? 'scram-sha-256' : 'trust',
   };
+}
+
+/** The same URL pointing at 127.0.0.1: "localhost" may also mean ::1, where some other database could be listening. */
+export function loopbackUrl(url) {
+  try {
+    const u = new URL(url);
+    if (['localhost', '[::1]', '::1'].includes(u.hostname)) u.hostname = '127.0.0.1';
+    return u.toString();
+  } catch { return url; }
 }

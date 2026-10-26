@@ -10,6 +10,7 @@ services:
       POSTGRES_USER: ${DEV_DB_USER:-webmail}
       POSTGRES_PASSWORD: ${DEV_DB_PASSWORD:-webmail}
       POSTGRES_DB: ${DEV_DB_NAME:-webmail_app}
+      POSTGRES_HOST_AUTH_METHOD: ${DEV_DB_AUTH:-scram-sha-256}
     ports:
       - "127.0.0.1:${DEV_DB_PORT:-5432}:5432"   # this computer only
     volumes:
