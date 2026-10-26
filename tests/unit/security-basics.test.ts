@@ -90,16 +90,17 @@ describe('パスワードのルール', () => {
 
 describe('セキュリティ設定の読み込み', () => {
   it('空なら制限なし・セッション14日・新しい端末の通知あり', () => {
-    expect(parsePolicy({ cidrs: null, countries: null, days: null, alert: null })).toEqual({ allowedRules: [], allowedCountries: [], sessionMaxDays: 14, newDeviceAlert: true, deviceBinding: true, require2fa: true, mfaTrustDays: 30 });
+    expect(parsePolicy({ cidrs: null, countries: null, days: null, alert: null })).toEqual({ allowedRules: [], allowedCountries: [], sessionMaxDays: 14, newDeviceAlert: true, deviceBinding: true, require2fa: true, blockBots: true, mfaTrustDays: 30 });
   });
   it('不正なルールは捨て、範囲外の日数は既定に戻す', () => {
     const p = parsePolicy({ cidrs: '1.2.3.4\nbad\n10.0.0.0/8', countries: 'Japan, United States', days: '500', alert: 'off' });
-    expect(p).toEqual({ allowedRules: ['1.2.3.4', '10.0.0.0/8'], allowedCountries: ['Japan', 'United States'], sessionMaxDays: 14, newDeviceAlert: false, deviceBinding: true, require2fa: true, mfaTrustDays: 30 });
+    expect(p).toEqual({ allowedRules: ['1.2.3.4', '10.0.0.0/8'], allowedCountries: ['Japan', 'United States'], sessionMaxDays: 14, newDeviceAlert: false, deviceBinding: true, require2fa: true, blockBots: true, mfaTrustDays: 30 });
     expect(parsePolicy({ cidrs: null, countries: null, days: '7', alert: 'on' }).sessionMaxDays).toBe(7);
     expect(parsePolicy({ cidrs: null, countries: null, days: null, alert: null, binding: 'off' }).deviceBinding).toBe(false);
     expect(parsePolicy({ cidrs: null, countries: null, days: null, alert: null, twofa: 'off' }).require2fa).toBe(false);
     expect(parsePolicy({ cidrs: null, countries: null, days: null, alert: null, trust: '0' }).mfaTrustDays).toBe(0);
     expect(parsePolicy({ cidrs: null, countries: null, days: null, alert: null, trust: '999' }).mfaTrustDays).toBe(30);
+    expect(parsePolicy({ cidrs: null, countries: null, days: null, alert: null, bots: 'off' }).blockBots).toBe(false);
   });
 });
 

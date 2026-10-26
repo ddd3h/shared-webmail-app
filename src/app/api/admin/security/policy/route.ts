@@ -17,6 +17,7 @@ const schema = z.object({
   // omitted = keep what is set now
   require_2fa: z.boolean().optional(),
   mfa_trust_days: z.number().int().min(0).max(90).optional(),
+  block_bots: z.boolean().optional(),
 });
 
 // GET /api/admin/security/policy - the current rules, and which address the admin is calling from
@@ -24,7 +25,7 @@ export async function GET(req: NextRequest) {
   if (!(await adminActor())) return forbidden();
   const p = await loadSecurityPolicy();
   const [cidrs, countries] = await Promise.all([getSetting('SECURITY_ALLOWED_CIDRS'), getSetting('SECURITY_ALLOWED_COUNTRIES')]);
-  return NextResponse.json({ allowed_cidrs: cidrs ?? '', allowed_countries: countries ?? '', session_max_days: p.sessionMaxDays, new_device_alert: p.newDeviceAlert, device_binding: p.deviceBinding, require_2fa: p.require2fa, mfa_trust_days: p.mfaTrustDays, your_ip: getClientIp(req) });
+  return NextResponse.json({ allowed_cidrs: cidrs ?? '', allowed_countries: countries ?? '', session_max_days: p.sessionMaxDays, new_device_alert: p.newDeviceAlert, device_binding: p.deviceBinding, require_2fa: p.require2fa, mfa_trust_days: p.mfaTrustDays, block_bots: p.blockBots, your_ip: getClientIp(req) });
 }
 
 // PUT /api/admin/security/policy
@@ -44,11 +45,12 @@ export async function PUT(req: NextRequest) {
   }
   const current = await loadSecurityPolicy();
   const require_2fa = d.require_2fa ?? current.require2fa;
-  await saveSecurityPolicy({ ...d, require_2fa, mfa_trust_days: d.mfa_trust_days ?? current.mfaTrustDays }, actor.id);
+  const block_bots = d.block_bots ?? current.blockBots;
+  await saveSecurityPolicy({ ...d, require_2fa, mfa_trust_days: d.mfa_trust_days ?? current.mfaTrustDays, block_bots }, actor.id);
   if (require_2fa !== current.require2fa) {
     // turning the second step off is the one change that weakens every account at once: leave a loud record
     await recordSecurityEvent({ type: require_2fa ? 'policy_2fa_on' : 'policy_2fa_off', severity: require_2fa ? 'info' : 'alert', userId: actor.id });
   }
-  await logAudit({ actorUserId: actor.id, actionType: 'security_policy_update', targetType: 'app_settings', metadata: { rules: lines.length, countries: d.allowed_countries, session_max_days: d.session_max_days, new_device_alert: d.new_device_alert, device_binding: d.device_binding, require_2fa, mfa_trust_days: d.mfa_trust_days ?? current.mfaTrustDays } });
+  await logAudit({ actorUserId: actor.id, actionType: 'security_policy_update', targetType: 'app_settings', metadata: { rules: lines.length, countries: d.allowed_countries, session_max_days: d.session_max_days, new_device_alert: d.new_device_alert, device_binding: d.device_binding, require_2fa, mfa_trust_days: d.mfa_trust_days ?? current.mfaTrustDays, block_bots } });
   return NextResponse.json({ ok: true });
 }

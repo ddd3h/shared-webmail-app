@@ -7,13 +7,15 @@ import { addStrike } from '@/lib/login-guard';
 import { originProblem } from '@/lib/origin-check';
 import { loadSecurityPolicy } from '@/lib/security-settings';
 import { recordSecurityEvent } from '@/lib/security-events';
+import { botAllowList, botBlockForcedOff, botKind } from '@/lib/bot-guard';
 import { judgeAuthenticated, judgeUnauthenticated, type Verdict } from '@/lib/sweep-guard';
 
 const PUBLIC_PATHS = ['/login', '/reset-password', '/api/auth/login', '/api/auth/mfa/', '/api/auth/logout', '/api/cron/', '/api/passkeys/auth-options', '/api/passkeys/auth'];
 const isStatic = (p: string) =>
   p.startsWith('/_next') || p.startsWith('/manifest') || p.startsWith('/sw.js') ||
   p.startsWith('/icon') || // icon-192.png, icon-512.png, icon-badge.png — must be fetchable unauthenticated (push notifications fetch these in the background, without a session cookie)
-  p === '/favicon.ico';
+  p === '/favicon.ico' ||
+  p === '/robots.txt'; // answered to robots too: a 403 here would read as "nothing is forbidden" to some crawlers
 const isPublic = (p: string) => PUBLIC_PATHS.some(x => p.startsWith(x));
 
 const AUTO_BLOCK_MINUTES = 60;
@@ -21,7 +23,7 @@ const AUTO_BLOCK_MINUTES = 60;
 function denied(req: NextRequest, status: 403 | 429, error: string, retryAfterSec?: number): NextResponse {
   const headers = retryAfterSec ? { 'Retry-After': String(retryAfterSec) } : undefined;
   if (req.nextUrl.pathname.startsWith('/api/')) return NextResponse.json({ error }, { status, headers });
-  return new NextResponse(status === 429 ? 'アクセスが多すぎます。しばらくしてからもう一度お試しください。' : 'アクセスが許可されていません。', { status, headers: { ...headers, 'content-type': 'text/plain; charset=utf-8' } });
+  return new NextResponse(status === 429 ? 'アクセスが多すぎます。しばらくしてからもう一度お試しください。' : error === 'bots_not_allowed' ? 'ロボットによるアクセスは許可されていません。' : 'アクセスが許可されていません。', { status, headers: { ...headers, 'content-type': 'text/plain; charset=utf-8' } });
 }
 
 let lastUnknownNoteAt = 0;
@@ -50,6 +52,23 @@ async function addressRules(req: NextRequest, ip: string): Promise<NextResponse 
   return null;
 }
 
+const botNoted = new Map<string, number>();
+/** Robots (AI crawlers, scripts, headless browsers) are refused; the note is made at most once a minute per address and kind. */
+async function botRules(req: NextRequest, ip: string): Promise<NextResponse | null> {
+  if (req.nextUrl.pathname.startsWith('/api/cron/')) return null; // the scheduler is a script, and has its own secret
+  if (botBlockForcedOff()) return null;
+  const kind = botKind(req.headers.get('user-agent'), botAllowList());
+  if (!kind) return null;
+  if (!(await loadSecurityPolicy()).blockBots) return null;
+  const key = `${ip}|${kind}`;
+  if (Date.now() - (botNoted.get(key) ?? 0) > 60_000) {
+    if (botNoted.size > 500) botNoted.clear();
+    botNoted.set(key, Date.now());
+    await recordSecurityEvent({ type: 'bot_blocked', severity: 'info', ip, detail: { kind, ua: req.headers.get('user-agent')?.slice(0, 200) ?? null, path: req.nextUrl.pathname } });
+  }
+  return denied(req, 403, 'bots_not_allowed');
+}
+
 /** A request that looks like sweeping gets a 429 and, when it is a clear case, its address is blocked for a while. */
 async function sweepResponse(req: NextRequest, ip: string, v: Extract<Verdict, { ok: false }>, userId?: string): Promise<NextResponse> {
   if (v.sweep) {
@@ -67,6 +86,8 @@ export async function proxy(req: NextRequest) {
   const ip = clientIpFrom(name => req.headers.get(name));
   const refused = await addressRules(req, ip);
   if (refused) return refused;
+  const robot = await botRules(req, ip);
+  if (robot) return robot;
 
   if (isPublic(pathname)) return NextResponse.next();
 

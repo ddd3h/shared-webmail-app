@@ -56,6 +56,8 @@ export default defineConfig({
       EMBEDDING_API_URL: `${MM_URL}/v1`,
       EMBEDDING_MODEL: 'e2e-concepts',
       CRON_SECRET: 'e2e-cron-secret',
+      // the API clients of the specs introduce themselves as "Playwright"; the bot specs send their own User-Agent
+      BOT_ALLOW_UA: 'Playwright/',
       GOOGLE_CLIENT_ID: 'e2e-client.apps.googleusercontent.com',
       GOOGLE_CLIENT_SECRET: 'e2e-secret',
       NEXT_TELEMETRY_DISABLED: '1',

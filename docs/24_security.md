@@ -71,6 +71,24 @@
 - **CSRF**: 更新リクエスト（POST/PUT/PATCH/DELETE）の `Origin` が自分のサイトでなければ403。`Origin: null` も拒否し、記録します。
 - ヘッダー: CSP・HSTS・`X-Frame-Options: DENY`・`nosniff`・`Referrer-Policy`・`Permissions-Policy`・**COOP/CORP（same-origin）**。個人情報を含むAPI（認証・口座・振込・管理・プロフィール）は `Cache-Control: no-store`。
 
+### ロボット（AI・クローラ・スクリプト）の遮断
+
+`src/proxy.ts` の `botRules`（判定は `src/lib/bot-guard.ts`）。すべてのリクエストの User-Agent を見て、次のものは**403（`bots_not_allowed`）**で断ります。ログイン画面もAPIも、ログイン済みのCookieを持っていても対象です。
+
+| 種類 | 例 |
+|---|---|
+| AI・データ収集のクローラ | GPTBot・ChatGPT-User・OAI-SearchBot・ClaudeBot・Claude-Web・anthropic-ai・PerplexityBot・CCBot・Google-Extended・Bytespider・Amazonbot・Applebot・Meta-ExternalAgent・cohere-ai・Diffbot・SemrushBot・AhrefsBot など |
+| スクリプト・自動ツール | curl・wget・python-requests・Go-http-client・okhttp・axios・node-fetch・Postman・Googlebot などの `bot/` や `+http://…` を名乗るもの |
+| 自動操作ブラウザ | HeadlessChrome・PhantomJS・Puppeteer・Playwright・Selenium・Lighthouse |
+| User-Agent が無い接続 | （空） |
+
+- **管理画面の「アクセスの条件」でオン／オフ**できます（既定はオン・推奨）。環境変数 `BOT_BLOCK=off` で、画面の設定に関わらず全体を止められます。
+- 例外（監視ツールなど）は `BOT_ALLOW_UA="UptimeRobot,..."`（User-Agent に含まれる文字。カンマ区切り）。
+- **`/api/cron/`（定期処理）は対象外**です（スクリプトから、鍵つきで呼ぶため）。`/robots.txt` はロボットにも見せます（403だと「何も禁止されていない」と読む実装があるため）。
+- 断ったことは「セキュリティイベント」に `bot_blocked` として残ります（同じアドレス・同じ種類は1分に1回）。アドレスの自動ブロックまではしません（共有のNATで巻き込む恐れがあるため）。
+- お願いの仕組みも併用: `public/robots.txt`（全ロボットに全面禁止）、全ページの `X-Robots-Tag: noindex, nofollow, noarchive, nosnippet, noimageai, noai`、`<meta name="robots">`。
+- **限界**: これは**名乗る相手にしか効きません**。User-Agent を偽装するスクリプトや、普通のChromeを自動操作するものは、この遮断だけでは止まりません。そちらは、これまでの仕組み（ログインした接続元のアドレスにセッションを固定・パスワード＋2段階認証・リクエストの上限・探索（スイーピング）の検知）で守ります。
+
 ## 6. 管理者の画面（`/admin/security`）
 
 直近24時間の失敗・成功・ログイン中のセッション数、失敗が多いアドレス／狙われているアカウント、**検知したできごと**（スイーピング・自動ブロック・Cookie使い回し・他サイトからの更新など）、ブロック中のアドレス（解除可）、ロック中のアカウント、アクセスの条件、最近のログイン。すべての操作は監査ログに残ります。
@@ -114,13 +132,17 @@
 | `PASSKEY_ALLOW_ANY_ORIGIN` | `1` で、本番でも任意のOriginでパスキーを許可（ngrok等。通常は設定しない） |
 | `API_BUDGET_EXEMPT_USER_IDS` | 利用上限の対象外にするユーザーID（カンマ区切り） |
 | `SECURITY_REQUIRE_2FA` | 設定キー（画面から変更）。`off` で2段階認証ルールを無効化。E2Eは既定で `off` |
+| `SECURITY_BLOCK_BOTS` | 設定キー（画面から変更）。`off` でロボットの遮断を無効化（既定はオン） |
+| `BOT_BLOCK` | `off` でロボットの遮断を、画面の設定に関わらず全体で無効化 |
+| `BOT_ALLOW_UA` | ロボット遮断の例外にする User-Agent の一部（カンマ区切り。監視ツールなど）。E2Eは `Playwright/` |
 | `SECURITY_CACHE_TTL_MS` | 設定・ブロック一覧をメモリに覚える時間（既定 10〜15秒） |
 
 ## 限界（知っておいてください）
 
 - ログインの回数・探索の判定は**メモリ上**です（1台構成が前提）。再起動すると数分の記録は消えます（ログインの失敗回数はDBでも数えるので、そちらは残ります）。複数台にするなら Redis などへの移行が必要です。
 - IPの国・ネットワークの判定は外部サービス（ip-api.com）に頼っています。失敗したときは「許可」側に倒れます（利用を止めないため）。
+- ロボットの遮断は User-Agent の自己申告が頼りです（上の説明のとおり、偽装には効きません）。
 - 端末の識別はCookieです。Cookieを消すと「新しい端末」になります。
 
 ## テスト
-`e2e/security.spec.ts`（ログイン・総当たり・スイーピング・新しい端末・セッション・ロック・アクセス制限・Cookie使い回し・CSRF・ヘッダー・画面）、`tests/api/auth-login.test.ts`、`tests/unit/security-basics.test.ts`（TOTPはRFC 6238のテストベクトル付き）。2段階認証は `e2e/mfa.spec.ts`（設定・コード誤り・使い回し・総当たり・回復コード・信頼ブラウザ・管理者リセット・画面）と `tests/api/mfa-login.test.ts`。
+ロボットの遮断は `e2e/bots.spec.ts` と `tests/unit/bot-guard.test.ts`。`e2e/security.spec.ts`（ログイン・総当たり・スイーピング・新しい端末・セッション・ロック・アクセス制限・Cookie使い回し・CSRF・ヘッダー・画面）、`tests/api/auth-login.test.ts`、`tests/unit/security-basics.test.ts`（TOTPはRFC 6238のテストベクトル付き）。2段階認証は `e2e/mfa.spec.ts`（設定・コード誤り・使い回し・総当たり・回復コード・信頼ブラウザ・管理者リセット・画面）と `tests/api/mfa-login.test.ts`。

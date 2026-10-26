@@ -19,6 +19,8 @@ const SECURITY_HEADERS = [
   { key: 'Cross-Origin-Opener-Policy', value: 'same-origin' },
   { key: 'Cross-Origin-Resource-Policy', value: 'same-origin' },
   { key: 'X-Permitted-Cross-Domain-Policies', value: 'none' },
+  // Not for search engines or AI: nothing here is public, and nothing should be indexed, cached or used for training
+  { key: 'X-Robots-Tag', value: 'noindex, nofollow, noarchive, nosnippet, noimageai, noai' },
   {
     // 2-year HSTS — only effective over HTTPS; harmless over HTTP (browsers ignore it)
     key: 'Strict-Transport-Security',
