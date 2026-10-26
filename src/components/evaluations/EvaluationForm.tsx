@@ -29,16 +29,19 @@ export default function EvaluationForm({ id, onClose, onChanged }: { id: string;
   const [comment, setComment] = useState('');
   const [msg, setMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
-  const load = useCallback(async () => {
+  // `current` says whether this answer is still wanted: a late answer (dev mode asks twice) must not wipe the scores just typed
+  const load = useCallback(async (current: () => boolean = () => true) => {
     const res = await fetch(`/api/evaluations/${id}`);
+    if (!current()) return;
     if (!res.ok) { setMsg({ type: 'error', text: '評価を表示できません' }); return; }
     const detail: Detail = await res.json();
+    if (!current()) return;
     const side = editableSide(detail);
     setD(detail);
     setComment(side === 'self' ? detail.self_comment ?? '' : side === 'manager' ? detail.manager_comment ?? '' : '');
     setDraft(Object.fromEntries(detail.criteria.map(c => [c.id, side === 'manager' ? { score: c.manager_score, comment: c.manager_comment ?? '' } : { score: c.self_score, comment: c.self_comment ?? '' }])));
   }, [id]);
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { let alive = true; load(() => alive); return () => { alive = false; }; }, [load]);
 
   const side = d ? editableSide(d) : null;
   async function save(submit: boolean) {
