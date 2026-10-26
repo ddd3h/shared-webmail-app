@@ -24,12 +24,23 @@ function denied(req: NextRequest, status: 403 | 429, error: string, retryAfterSe
   return new NextResponse(status === 429 ? 'アクセスが多すぎます。しばらくしてからもう一度お試しください。' : 'アクセスが許可されていません。', { status, headers: { ...headers, 'content-type': 'text/plain; charset=utf-8' } });
 }
 
+let lastUnknownNoteAt = 0;
+/** A request whose address cannot be told (broken proxy setup, forged header) is refused; the note is made at most once a minute. */
+async function unknownAddress(req: NextRequest): Promise<NextResponse> {
+  if (Date.now() - lastUnknownNoteAt > 60_000) {
+    lastUnknownNoteAt = Date.now();
+    await recordSecurityEvent({ type: 'ip_unknown', severity: 'warn', detail: { path: req.nextUrl.pathname, xff: req.headers.get('x-forwarded-for')?.slice(0, 200) ?? null } });
+  }
+  return denied(req, 403, 'ip_unknown');
+}
+
 /** Address-level rules, for every request: blocked addresses, allowed networks, and requests that come from another website. */
 async function addressRules(req: NextRequest, ip: string): Promise<NextResponse | null> {
+  const cron = req.nextUrl.pathname.startsWith('/api/cron/'); // called by the scheduler with a secret, not by people
+  if (ip === 'unknown' && !cron) return unknownAddress(req); // every limit, block and session check is per address, so a request without one gets nothing
   if (await isIpBlocked(ip)) return denied(req, 403, 'access_denied');
   const policy = await loadSecurityPolicy();
-  const cron = req.nextUrl.pathname.startsWith('/api/cron/'); // called by the scheduler with a secret, not by people
-  if (!cron && policy.allowedRules.length > 0 && ip !== 'unknown' && !matchesAny(ip, policy.allowedRules)) return denied(req, 403, 'access_denied');
+  if (!cron && policy.allowedRules.length > 0 && !matchesAny(ip, policy.allowedRules)) return denied(req, 403, 'access_denied');
 
   const ownHosts = [req.headers.get('host'), req.headers.get('x-forwarded-host'), (() => { try { return new URL(process.env.NEXT_PUBLIC_APP_URL || '').host; } catch { return null; } })()];
   if (originProblem(req.method, req.headers.get('origin'), ownHosts)) {

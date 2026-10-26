@@ -29,4 +29,5 @@ function networkOf(ip: string): string {
   return groups.slice(0, 4).map(g => g.replace(/^0+(?=.)/, '')).join(':');
 }
 
-export const sameNetwork = (a: string, b: string) => networkOf(a) === networkOf(b);
+/** An address that could not be told is never "the same" as anything. */
+export const sameNetwork = (a: string, b: string) => a !== 'unknown' && b !== 'unknown' && networkOf(a) === networkOf(b);

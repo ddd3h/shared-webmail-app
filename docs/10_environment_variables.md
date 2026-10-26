@@ -20,7 +20,7 @@
 | 変数名 | 必須 | 用途 | 使用ファイル | シークレット |
 |---|---|---|---|---|
 | `DATABASE_URL` | ✅ | PostgreSQL接続文字列 | `prisma/schema.prisma` | ✅ |
-| `TRUSTED_PROXY_COUNT` | - | 手前のリバースプロキシの台数（既定 1）。`X-Forwarded-For` の右から何番目を接続元とみなすか。詳細は [24_security.md](24_security.md) | `src/lib/client-ip.ts` | - |
+| `TRUSTED_PROXY_COUNT` | - | 手前のリバースプロキシの台数（既定 1）。`X-Forwarded-For` の右から何番目を接続元とみなすか。IPが取れないリクエストは拒否されるため、台数を誤るとログインできなくなる。詳細は [24_security.md](24_security.md) | `src/lib/client-ip.ts` | - |
 | `SESSION_SECRET` | ✅ | iron-webcryptoのセッション暗号化鍵（32文字以上） | `src/lib/auth.ts` | ✅ |
 | `ENCRYPTION_KEY_HEX` | ✅ | AES-256-GCM鍵（32バイト = 64桁の16進文字列） | `src/lib/crypto.ts` | ✅ |
 

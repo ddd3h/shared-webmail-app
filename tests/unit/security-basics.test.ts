@@ -253,8 +253,8 @@ describe('sameNetwork（ログイン中のIPアドレス確認）', () => {
     expect(sameNetwork('::1', '127.0.0.1')).toBe(true);
     expect(sameNetwork('::1', '203.0.113.5')).toBe(false);
   });
-  it('分からないアドレス同士は同じ（プロキシ設定なしの構成を壊さない）', () => {
-    expect(sameNetwork('unknown', 'unknown')).toBe(true);
+  it('分からないアドレスは、何とも同じにならない（unknown同士でも）', () => {
+    expect(sameNetwork('unknown', 'unknown')).toBe(false);
     expect(sameNetwork('unknown', '203.0.113.5')).toBe(false);
   });
 });

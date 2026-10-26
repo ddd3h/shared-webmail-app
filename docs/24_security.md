@@ -11,6 +11,7 @@
 ## 1. 接続元（どこからアクセスしているか）
 
 - **正しいIPの決め方**（`src/lib/client-ip.ts`）: `X-Forwarded-For` の左端はクライアントが好きな値を書けるため、IP単位の制限をすべて回避できてしまいます。自社のプロキシ（nginx）が**追記した右側**を使います。プロキシの台数は `TRUSTED_PROXY_COUNT`（既定 1）。0 ならヘッダーを信用しません。
+- **IPアドレスが分からないリクエストは拒否**（403 `ip_unknown`）: プロキシの設定ミス（`TRUSTED_PROXY_COUNT` の誤り、プロキシを通っていない、`X-Forwarded-For` が不正な値）でアドレスが取れないと、制限・ブロック・セッションのIP確認がすべて効かなくなるため、通しません。「検知したできごと」に記録します（1分に1回まで）。スケジューラ用の `/api/cron/*` は秘密キーで守られているので対象外です。**`TRUSTED_PROXY_COUNT=0` はアドレスが常に不明になるため、全員が入れなくなります。通常は設定しないでください。**
   - nginx は `proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;` にしてください（`scripts/setup.sh` と `deploy/nginx-collab.conf` はそうなっています）。
 - **ログインの履歴**: 成功・失敗ごとに、時刻・IP・端末（ブラウザとOS）・国と市区町村・ネットワークの種類（自宅／公共Wi-Fi／クラウド・VPN）を記録します。
   - 本人は **プロフィール →「最近のログイン履歴」** で自分の分を見られます。管理者は `/admin/security` で全体を見られます。
@@ -108,7 +109,7 @@
 
 | 変数 | 意味 |
 |---|---|
-| `TRUSTED_PROXY_COUNT` | 手前にあるプロキシの台数（既定 1）。0 で `X-Forwarded-For` を信用しない |
+| `TRUSTED_PROXY_COUNT` | 手前にあるプロキシの台数（既定 1）。誤るとIPが取れず、全リクエストが拒否される（0 も同様） |
 | `SESSION_SECRET` | 32文字以上のランダム文字列。本番では必須 |
 | `PASSKEY_ALLOW_ANY_ORIGIN` | `1` で、本番でも任意のOriginでパスキーを許可（ngrok等。通常は設定しない） |
 | `API_BUDGET_EXEMPT_USER_IDS` | 利用上限の対象外にするユーザーID（カンマ区切り） |

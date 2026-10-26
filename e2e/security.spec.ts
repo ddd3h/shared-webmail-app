@@ -162,6 +162,17 @@ test.describe('総当たり・スイーピングへの対策', () => {
     expect((await db.security_events.findMany({ where: { type: 'sweep_detected', user_id: acct.id } })).length).toBeGreaterThan(0);
   });
 
+  test('接続元のIPアドレスが分からないリクエストは、画面もAPIもログインも拒否され、記録が残る', async () => {
+    const bad = await pwRequest.newContext({ baseURL: BASE_URL, extraHTTPHeaders: { 'x-forwarded-for': 'not-an-address' } });
+    opened.push(bad);
+    expect((await bad.get('/login')).status()).toBe(403);
+    const api = await bad.post('/api/auth/login', { data: { email: USERS.guest.email, password: PASSWORD } });
+    expect(api.status()).toBe(403);
+    expect((await api.json()).error).toBe('ip_unknown');
+    expect((await bad.get('/api/auth/session')).status()).toBe(403);
+    expect((await db.security_events.findMany({ where: { type: 'ip_unknown' } })).length).toBeGreaterThanOrEqual(1);
+  });
+
   test('このマシン自身（ループバック）からのアクセスは、スキャン扱い・自動ブロックの対象にしない', async () => {
     const c = await pwRequest.newContext({ baseURL: BASE_URL }); // no forwarding header: the server sees its own loopback address
     opened.push(c);
