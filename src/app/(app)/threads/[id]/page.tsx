@@ -1106,11 +1106,12 @@ function ThreadDetailPageInner({ params }: Props) {
       <div ref={bottomRef} />
 
       {/* Floating scroll buttons */}
-      <div className={`fixed right-16 flex flex-col gap-2 z-40 ${isTeam ? 'bottom-52' : 'bottom-20'}`}>
+      {/* in the bottom-right corner; on a phone above the bottom bar (the bar is about 6rem tall) */}
+      <div className="fixed right-4 md:right-6 bottom-[calc(env(safe-area-inset-bottom)+6.5rem)] md:bottom-6 flex flex-col gap-2 z-40">
         {showScrollTop && (
           <button
             onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
-            className="h-10 w-10 rounded-full bg-white border border-gray-200 shadow-lg flex items-center justify-center text-gray-500 hover:text-blue-600 hover:border-blue-300 hover:shadow-xl transition-all"
+            className="h-11 w-11 md:h-10 md:w-10 rounded-full bg-white border border-gray-200 shadow-lg flex items-center justify-center text-gray-500 hover:text-blue-600 hover:border-blue-300 hover:shadow-xl transition-all"
             title="ページ先頭へ"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1121,7 +1122,7 @@ function ThreadDetailPageInner({ params }: Props) {
         {showScrollBottom && (
           <button
             onClick={() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' })}
-            className="h-10 w-10 rounded-full bg-blue-600 shadow-lg flex items-center justify-center text-white hover:bg-blue-700 hover:shadow-xl transition-all"
+            className="h-11 w-11 md:h-10 md:w-10 rounded-full bg-blue-600 shadow-lg flex items-center justify-center text-white hover:bg-blue-700 hover:shadow-xl transition-all"
             title="ページ末尾へ（返信フォーム）"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
