@@ -20,7 +20,8 @@
     "worker:push": "ts-node src/workers/push.ts",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
-    "test:e2e:report": "playwright show-report"
+    "test:e2e:report": "playwright show-report",
+    "seed:demo": "node --env-file-if-exists=.env prisma/seed-demo.mjs"
   },
   "dependencies": {
     "@prisma/client": "^5.13.0",

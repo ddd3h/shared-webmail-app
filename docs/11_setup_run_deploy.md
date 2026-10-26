@@ -78,6 +78,8 @@ node prisma/seed.mjs
 # → admin@example.com / admin1234 が作成される
 ```
 
+テストサーバーに、全機能の例になるデータをまとめて入れるには `npm run seed:demo`（詳しくは [29_demo_data.md](29_demo_data.md)）。
+
 ### 7. 開発サーバー起動
 
 ```bash
