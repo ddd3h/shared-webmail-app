@@ -11,7 +11,7 @@ export type Claim = {
   trip: { id: string; destination: string; start_date: string; end_date: string } | null;
   in_batch?: boolean;
   pay_plan: Plan | null;
-  mileage: { origin: string; destination: string; round_trip_km: number; rate_per_km: number; source: 'google' | 'manual'; map_url: string } | null;
+  mileage: { origin: string; destination: string; round_trip_km: number; rate_per_km: number; source: 'google' | 'osm' | 'manual'; map_url: string } | null;
 };
 type Sum = { count: number; amount: number };
 export type Summary = { pending: Sum; to_reimburse: Sum; in_payslip: Sum; paid: Sum };
@@ -55,7 +55,7 @@ export function ClaimDetail({ c }: { c: Claim }) {
       {c.mileage && (
         <div className="rounded-lg bg-sky-50 px-3 py-2 text-xs text-sky-900 space-y-0.5">
           <p>🚗 自家用車: 自宅 → {c.mileage.destination}（往復 {c.mileage.round_trip_km} km × {c.mileage.rate_per_km}円）</p>
-          <p className="text-sky-700">{c.mileage.source === 'google' ? 'Googleマップの最適ルートで計算' : '本人が入力した距離（経路は未確認）'} ・ <a href={c.mileage.map_url} target="_blank" rel="noreferrer" className="underline">地図でルートを見る</a></p>
+          <p className="text-sky-700">{c.mileage.source === 'google' ? 'Googleマップの最適ルートで計算' : c.mileage.source === 'osm' ? 'OpenStreetMapの道路データで計算' : '本人が入力した距離（経路は未確認）'} ・ <a href={c.mileage.map_url} target="_blank" rel="noreferrer" className="underline">地図でルートを見る</a></p>
         </div>
       )}
       {c.description && <p className="whitespace-pre-wrap wrap-break-word text-gray-700">{c.description}</p>}

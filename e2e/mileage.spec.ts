@@ -1,6 +1,6 @@
 import type { APIRequestContext } from '@playwright/test';
 import { test, expect, uniq } from './fixtures';
-import { AUTH, USERS } from './helpers/constants';
+import { AUTH, MM_URL, USERS } from './helpers/constants';
 import { db } from './helpers/db';
 import { mm } from './helpers/mattermost-mock';
 import { resetExpenses } from './helpers/seed';
@@ -16,14 +16,14 @@ const setHome = (id: string, home_address: string | null) => db.users.update({ w
 test.beforeEach(async () => {
   await resetExpenses();
   await db.users.updateMany({ data: { home_address: null } });
-  await db.app_settings.deleteMany({ where: { key: 'MILEAGE_RATE_PER_KM' } });
+  await db.app_settings.deleteMany({ where: { key: { in: ['MILEAGE_RATE_PER_KM', 'ROUTE_PROVIDER', 'OSRM_BASE_URL'] } } });
   await setKey(KEY);
   await mm.reset();
   await new Promise(r => setTimeout(r, 300)); // the server remembers settings for a moment
 });
 test.afterAll(async () => {
   await db.users.updateMany({ data: { home_address: null } });
-  await db.app_settings.deleteMany({ where: { key: 'MILEAGE_RATE_PER_KM' } });
+  await db.app_settings.deleteMany({ where: { key: { in: ['MILEAGE_RATE_PER_KM', 'ROUTE_PROVIDER', 'OSRM_BASE_URL'] } } });
   await setKey(KEY);
   await resetExpenses();
 });
@@ -181,16 +181,16 @@ test.describe('単価とAPIキー（システム管理者）', () => {
     expect(JSON.parse(audit!.metadata_json)).toMatchObject({ rate_from: 20, rate_to: 30 });
   });
 
-  test('APIキーを外すと、行き先と片道の距離を自分で入力する方式になる。キーがあるときは手入力を受け付けない', async ({ as }) => {
+  test('「調べない」を選ぶと、行き先と片道の距離を自分で入力する方式になる。調べるときは手入力を受け付けない', async ({ as }) => {
     await setHome(USERS.tanaka.id, HOME);
     const admin = await as('admin');
     const c = await as('tanaka');
     expect((await claim(c, { destination: '新宿駅', manual_one_way_km: '10' })).status()).toBe(400);
-    expect(((await (await admin.get('/api/admin/expense-settings')).json()).maps_api_key_set)).toBe(true);
+    expect(await (await admin.get('/api/admin/expense-settings')).json()).toMatchObject({ maps_api_key_set: true, route_provider: 'google' });
 
-    expect((await admin.put('/api/admin/expense-settings', { data: { maps_api_key: '' } })).status()).toBe(200);
+    expect((await admin.put('/api/admin/expense-settings', { data: { route_provider: 'manual' } })).status()).toBe(200);
     await new Promise(r => setTimeout(r, 300));
-    expect((await (await admin.get('/api/admin/expense-settings')).json()).maps_api_key_set).toBe(false);
+    expect((await (await admin.get('/api/admin/expense-settings')).json()).route_provider).toBe('manual');
     expect((await (await c.get('/api/expenses/mileage')).json()).route_service).toBe(false);
 
     const need = await c.post('/api/expenses/mileage/estimate', { data: { destination: '新宿駅' } });
@@ -201,12 +201,130 @@ test.describe('単価とAPIキー（システム管理者）', () => {
     expect(res.status()).toBe(201);
     expect(await db.expense_claims.findFirst({ where: { user_id: USERS.tanaka.id } })).toMatchObject({ amount: 400, mileage_source: 'manual', mileage_distance_m: 20000 });
     expect((await mm.mapsCalls()).calls).toBe(0);
+    expect((await mm.osm.state()).osrm).toHaveLength(0);
     // an absurd distance is refused
     expect((await claim(c, { destination: '新宿駅', manual_one_way_km: '5000' })).status()).toBe(400);
 
     // a key can be put back, and is never sent back
     expect((await admin.put('/api/admin/expense-settings', { data: { maps_api_key: 'AIza-new' } })).status()).toBe(200);
     expect(JSON.stringify(await (await admin.get('/api/admin/expense-settings')).json())).not.toContain('AIza-new');
+  });
+});
+
+test.describe('無料の調べ方（OpenStreetMap）', () => {
+  const useOsm = async (as: (r: 'admin') => Promise<import('@playwright/test').APIRequestContext>) => {
+    expect((await (await as('admin')).put('/api/admin/expense-settings', { data: { route_provider: 'osm' } })).status()).toBe(200);
+    await new Promise(r => setTimeout(r, 300));
+  };
+
+  test('国土地理院で住所を探し、OSRMで道のりを出す。Googleは使わない。キーがなくても使える', async ({ as }) => {
+    await useOsm(as);
+    await setHome(USERS.tanaka.id, HOME);
+    const c = await as('tanaka');
+    const dest = place('新宿駅');
+    const res = await c.post('/api/expenses/mileage/estimate', { data: { destination: dest } });
+    expect(res.status()).toBe(200);
+    expect(await res.json()).toMatchObject({ one_way_km: 12.3, round_trip_km: 24.7, rate_per_km: 20, amount: 494, source: 'osm' });
+    const seen = await mm.osm.state();
+    expect(seen.gsi).toEqual([HOME, dest]);                 // both places were looked up as addresses
+    expect(seen.nominatim).toHaveLength(0);                 // the address search knew them: nothing else is asked
+    expect(seen.osrm).toHaveLength(1);
+    expect(seen.osrm[0]).toContain('/route/v1/driving/139.764,35.6812;139.6917,35.6895');
+    expect((await mm.mapsCalls()).calls).toBe(0);
+    // a second ask is remembered
+    await c.post('/api/expenses/mileage/estimate', { data: { destination: dest } });
+    expect((await mm.osm.state()).osrm).toHaveLength(1);
+
+    // the key can be taken away: nothing changes for the free way
+    await (await as('admin')).put('/api/admin/expense-settings', { data: { maps_api_key: '' } });
+    await new Promise(r => setTimeout(r, 300));
+    expect((await (await c.get('/api/expenses/mileage')).json())).toMatchObject({ route_service: true });
+    const claimed = await claim(c, { destination: dest });
+    expect(claimed.status()).toBe(201);
+    expect(await db.expense_claims.findFirst({ where: { user_id: USERS.tanaka.id } })).toMatchObject({ amount: 494, mileage_source: 'osm', mileage_distance_m: 24700 });
+  });
+
+  test('住所でなく施設名のときは、OpenStreetMap（Nominatim）で探す。名前で身元を明かして、1秒に1回まで', async ({ as }) => {
+    await useOsm(as);
+    await setHome(USERS.tanaka.id, HOME);
+    const c = await as('tanaka');
+    const res = await c.post('/api/expenses/mileage/estimate', { data: { destination: '東京タワー' } });
+    expect(res.status()).toBe(200);
+    expect(await res.json()).toMatchObject({ one_way_km: 8, round_trip_km: 16, amount: 320, source: 'osm' });
+    const seen = await mm.osm.state();
+    expect(seen.nominatim.map(n => n.q)).toEqual(['東京タワー']);
+    expect(seen.nominatim[0].ua).toContain('shared-webmail-app');
+    // the home address is known to the 国土地理院 search, so only the tower went to Nominatim
+  });
+
+  test('見つからない場所は422。サービスが落ちているときは502。道がつながらないときは422', async ({ as }) => {
+    await useOsm(as);
+    await setHome(USERS.yamada.id, HOME);
+    const c = await as('yamada');
+    const ask = async (destination: string) => { const r = await c.post('/api/expenses/mileage/estimate', { data: { destination } }); return [r.status(), (await r.json()).error]; };
+    expect(await ask(place('どこにもない場所'))).toEqual([422, 'route_not_found']);
+    await mm.osm.fail('osrm');
+    expect(await ask(place('新宿駅'))).toEqual([502, 'route_failed']);
+    await mm.osm.fail('noroute');
+    expect(await ask(place('新宿駅'))).toEqual([422, 'route_not_found']);
+    await mm.osm.fail('gsi');
+    expect(await ask(place('横浜駅'))).toEqual([502, 'route_failed']);   // the address search is down and Nominatim does not know it either
+    await mm.osm.fail('nominatim');
+    expect(await ask(place('どこかの店'))).toEqual([502, 'route_failed']);
+    await mm.osm.fail(null);
+    expect(await ask(place('新宿駅'))).toEqual([200, undefined]);
+    expect(await db.expense_claims.count()).toBe(0);
+  });
+
+  test('管理者の設定: Googleはキーがあるときだけ選べる。自前のOSRMサーバーのアドレスを入れると、そちらに聞く', async ({ as }) => {
+    const admin = await as('admin');
+    await admin.put('/api/admin/expense-settings', { data: { maps_api_key: '' } });
+    expect((await admin.put('/api/admin/expense-settings', { data: { route_provider: 'google' } })).status()).toBe(400);
+    expect((await admin.put('/api/admin/expense-settings', { data: { route_provider: 'bing' } })).status()).toBe(400);
+    for (const bad of ['ftp://x', 'router', 'http://']) expect((await admin.put('/api/admin/expense-settings', { data: { osrm_url: bad } })).status(), bad).toBe(400);
+    expect((await (await admin.get('/api/admin/expense-settings')).json())).toMatchObject({ route_provider: 'osm', maps_api_key_set: false, osrm_url: null });
+    expect((await (await as('sato')).put('/api/admin/expense-settings', { data: { route_provider: 'osm' } })).status()).toBe(403);
+
+    // a route server of one's own: the address is used instead of the public one (here the stand-in under another path)
+    await setHome(USERS.tanaka.id, HOME);
+    expect((await admin.put('/api/admin/expense-settings', { data: { osrm_url: `${MM_URL}/osrm/` } })).status()).toBe(200);
+    await new Promise(r => setTimeout(r, 300));
+    expect((await (await admin.get('/api/admin/expense-settings')).json()).osrm_url).toBe(`${MM_URL}/osrm/`);
+    expect((await (await (await as('tanaka')).post('/api/expenses/mileage/estimate', { data: { destination: place('新宿駅') } })).json()).source).toBe('osm');
+    expect((await admin.put('/api/admin/expense-settings', { data: { osrm_url: '' } })).status()).toBe(200);
+    expect((await (await admin.get('/api/admin/expense-settings')).json()).osrm_url).toBeNull();
+    // with a key, Google can be chosen again
+    await admin.put('/api/admin/expense-settings', { data: { maps_api_key: 'AIza-x' } });
+    expect((await admin.put('/api/admin/expense-settings', { data: { route_provider: 'google' } })).status()).toBe(200);
+    expect((await (await admin.get('/api/admin/expense-settings')).json()).route_provider).toBe('google');
+  });
+
+  test('画面: 管理画面で「距離の調べ方」を切り替えられる。申請の詳細に何で計算したかが出る', async ({ browser, as }) => {
+    await setHome(USERS.sato.id, HOME);
+    const ctx = await browser.newContext({ storageState: AUTH.admin, locale: 'ja-JP' });
+    const page = await ctx.newPage();
+    await page.goto('/admin/settings');
+    await page.getByRole('button', { name: /経費（自家用車）/ }).first().click();
+    await expect(page.getByLabel(/Googleマップ（有料/)).toBeChecked();
+    await page.getByLabel(/OpenStreetMap（無料/).click();
+    await expect(page.getByText('距離の調べ方を「OpenStreetMap」にしました')).toBeVisible();
+    await expect(page.getByLabel('ルート検索サーバーのアドレス（任意）')).toBeVisible();
+    await page.getByLabel(/調べない/).click();
+    await expect(page.getByText('距離の調べ方を「調べない」にしました')).toBeVisible();
+    await page.getByLabel(/OpenStreetMap（無料/).click();
+    await expect(page.getByText('距離の調べ方を「OpenStreetMap」にしました')).toBeVisible();
+    expect((await db.app_settings.findUnique({ where: { key: 'ROUTE_PROVIDER' } }))!.value).toBe('osm');
+    await ctx.close();
+
+    // and what it was worked out with shows on the claim
+    await new Promise(r => setTimeout(r, 300));
+    const sato = await browser.newContext({ storageState: AUTH.sato, locale: 'ja-JP' });
+    const p2 = await sato.newPage();
+    expect((await claim(await as('sato'), { destination: place('新宿駅') })).status()).toBe(201);
+    await p2.goto('/expenses');
+    await p2.getByRole('button', { name: /自家用車: |訪問/ }).first().click();
+    await expect(p2.getByText('OpenStreetMapの道路データで計算')).toBeVisible();
+    await sato.close();
   });
 });
 
@@ -277,14 +395,14 @@ test.describe('経費の申請（画面）', () => {
     await expect(page.getByRole('button', { name: '申請する' })).toBeDisabled();
   });
 
-  test('APIキーがないときは、片道の距離を入力する欄が出る', async ({ page }) => {
+  test('「調べない」のときは、片道の距離を入力する欄が出る', async ({ page }) => {
     await setHome(USERS.sato.id, HOME);
-    await setKey('');
+    await db.app_settings.upsert({ where: { key: 'ROUTE_PROVIDER' }, create: { key: 'ROUTE_PROVIDER', value: 'manual' }, update: { value: 'manual' } });
     await new Promise(r => setTimeout(r, 300));
     await page.goto('/expenses');
     await page.getByRole('button', { name: '＋ 経費を申請' }).click();
     await field(page, '勘定科目').selectOption('自家用車');
-    await expect(page.getByText('ルートの自動検索（Googleマップ）が設定されていないため')).toBeVisible();
+    await expect(page.getByText('ルートの自動検索を使わない設定のため')).toBeVisible();
     await page.getByLabel('行き先（住所・施設名）').fill('取引先');
     await page.getByLabel('片道の距離（km）').fill('7.5');
     await page.getByRole('button', { name: '金額を計算' }).click();

@@ -56,6 +56,10 @@ export default defineConfig({
       // the meaning search talks to a fake embedding service (see e2e/helpers/mattermost-mock.ts)
       // the route search talks to a fake Google Routes service (same stand-in server)
       MAPS_API_URL: `${MM_URL}/maps`,
+      // the free route search (OpenStreetMap) talks to fakes as well
+      GSI_URL: `${MM_URL}/gsi`,
+      NOMINATIM_URL: `${MM_URL}/nominatim`,
+      OSRM_URL: `${MM_URL}/osrm`,
       // freee: the authorization screen and the API are a fake too
       FREEE_AUTH_URL: `${MM_URL}/freee-auth`,
       FREEE_API_URL: `${MM_URL}/freee-api`,

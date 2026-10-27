@@ -5,7 +5,11 @@ export const MAX_RATE_PER_KM = 1000;
 export const MAX_ONE_WAY_KM = 1000;
 export const MAX_ADDRESS_LENGTH = 300;
 
-export type MileageSource = 'google' | 'manual';
+export type MileageSource = 'google' | 'osm' | 'manual';
+
+/** How the distance is found: Google's Routes API (a key, billed), OpenStreetMap (free, no key) or typed in by the person. */
+export type RouteProvider = 'google' | 'osm' | 'manual';
+export const ROUTE_PROVIDERS: RouteProvider[] = ['google', 'osm', 'manual'];
 
 /** The rate setting as a number: a whole number of yen from 1 up, otherwise the default. */
 export function parseRate(raw: string | null | undefined): number {

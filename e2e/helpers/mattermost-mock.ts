@@ -25,6 +25,13 @@ export function startMattermostMock(): Promise<() => Promise<void>> {
   let failEmbeddings = false;
   let embeddingCalls = 0;
   let mapsCalls = 0;
+  // stand-ins for the free route search: 国土地理院 address search, Nominatim, OSRM
+  const osm = { gsi: [] as string[], nominatim: [] as { q: string; ua: string }[], osrm: [] as string[], uas: [] as string[] };
+  let failOsm: 'gsi' | 'nominatim' | 'osrm' | 'noroute' | null = null;
+  // places the stand-ins know: [lon, lat]; the route length depends on where it ends
+  const PLACES: Record<string, [number, number]> = { 丸の内: [139.764, 35.6812], 新宿: [139.6917, 35.6895], 横浜: [139.638, 35.4437] };
+  const NAMED: Record<string, [number, number]> = { 東京タワー: [139.7454, 35.6586] };
+  const OSRM_METERS = (lon: number) => (Math.abs(lon - 139.6917) < 1e-4 ? 12340 : Math.abs(lon - 139.638) < 1e-4 ? 35000 : Math.abs(lon - 139.7454) < 1e-4 ? 8000 : 5000);
   // a stand-in for freee: OAuth (authorize / token), companies, bank accounts, accounts, and deals
   const FREEE = { id: 'e2e-freee-id', secret: 'e2e-freee-secret', code: 'e2e-freee-code' };
   let freeeSeq = 0;
@@ -44,7 +51,7 @@ export function startMattermostMock(): Promise<() => Promise<void>> {
       const url = req.url || '';
       const send = (o: unknown, code = 200) => { res.writeHead(code, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(o)); };
       if (url === '/__posts') return send(posts);
-      if (url === '/__reset') { posts.length = 0; failPosts = false; imageHits = 0; failEmbeddings = false; embeddingCalls = 0; mapsCalls = 0; failMaps = null; lastMaps = null; freeeAccess = ''; freeeRefresh = ''; freeeTokenCalls = []; freeeDeals = []; failFreee = null; freeeCompanies = 1; return send({ ok: true }); }
+      if (url === '/__reset') { posts.length = 0; failPosts = false; imageHits = 0; failEmbeddings = false; embeddingCalls = 0; mapsCalls = 0; failMaps = null; lastMaps = null; osm.gsi = []; osm.nominatim = []; osm.osrm = []; osm.uas = []; failOsm = null; freeeAccess = ''; freeeRefresh = ''; freeeTokenCalls = []; freeeDeals = []; failFreee = null; freeeCompanies = 1; return send({ ok: true }); }
       if (url === '/__fail_embeddings') { failEmbeddings = JSON.parse(body || '{}').on !== false; return send({ failEmbeddings }); }
       if (url === '/__embedding_calls') return send({ calls: embeddingCalls });
       if (url === '/v1/embeddings') {
@@ -66,6 +73,30 @@ export function startMattermostMock(): Promise<() => Promise<void>> {
         // stand-in distances: 新宿 12.34 km, 横浜 35.0 km, anything else 8.0 km
         const meters = /新宿/.test(dest) ? 12340 : /横浜/.test(dest) ? 35000 : 8000;
         return send({ routes: [{ distanceMeters: meters }] });
+      }
+      if (url === '/__osm_state') return send(osm);
+      if (url === '/__fail_osm') { failOsm = JSON.parse(body || '{}').mode ?? null; return send({ failOsm }); }
+      if (url.startsWith('/gsi/address-search/AddressSearch')) {
+        const q = new URL(url, 'http://x').searchParams.get('q') || '';
+        osm.gsi.push(q); osm.uas.push(String(req.headers['user-agent'] ?? ''));
+        if (failOsm === 'gsi') return send({ error: 'down' }, 503);
+        const hit = Object.entries(PLACES).find(([k]) => q.includes(k));
+        return send(hit ? [{ type: 'Feature', geometry: { type: 'Point', coordinates: hit[1] }, properties: { title: q } }] : []);
+      }
+      if (url.startsWith('/nominatim/search')) {
+        const q = new URL(url, 'http://x').searchParams.get('q') || '';
+        osm.nominatim.push({ q, ua: String(req.headers['user-agent'] ?? '') });
+        if (failOsm === 'nominatim') return send({ error: 'down' }, 503);
+        const hit = Object.entries(NAMED).find(([k]) => q.includes(k));
+        return send(hit ? [{ lat: String(hit[1][1]), lon: String(hit[1][0]), display_name: q }] : []);
+      }
+      if (url.startsWith('/osrm/route/v1/driving/')) {
+        osm.osrm.push(url);
+        if (failOsm === 'osrm') return send({ code: 'Error' }, 503);
+        if (failOsm === 'noroute') return send({ code: 'NoRoute', message: 'Impossible route' }, 200);
+        const [, b] = decodeURIComponent(url.split('/driving/')[1].split('?')[0]).split(';');
+        const lon = Number(b.split(',')[0]);
+        return send({ code: 'Ok', routes: [{ distance: OSRM_METERS(lon), duration: 600 }] });
       }
       if (url === '/__freee_state') return send({ deals: freeeDeals, tokenCalls: freeeTokenCalls, access: freeeAccess });
       if (url === '/__freee_fail') { failFreee = JSON.parse(body || '{}').mode ?? null; return send({ failFreee }); }
@@ -135,6 +166,10 @@ export const mm = {
   async embeddingCalls(): Promise<number> { return (await (await fetch(`${MM_URL}/__embedding_calls`)).json()).calls; },
   async mapsCalls(): Promise<{ calls: number; last: { key: string; origin?: string; destination?: string; mode?: string } | null }> { return (await fetch(`${MM_URL}/__maps_calls`)).json(); },
   async failMaps(mode: 'down' | 'denied' | null) { await fetch(`${MM_URL}/__fail_maps`, { method: 'POST', body: JSON.stringify({ mode }) }); },
+  osm: {
+    async state(): Promise<{ gsi: string[]; nominatim: { q: string; ua: string }[]; osrm: string[]; uas: string[] }> { return (await fetch(`${MM_URL}/__osm_state`)).json(); },
+    async fail(mode: 'gsi' | 'nominatim' | 'osrm' | 'noroute' | null) { await fetch(`${MM_URL}/__fail_osm`, { method: 'POST', body: JSON.stringify({ mode }) }); },
+  },
   freee: {
     async state(): Promise<{ deals: any[]; tokenCalls: string[]; access: string }> { return (await fetch(`${MM_URL}/__freee_state`)).json(); },
     async fail(mode: 'down' | 'invalid' | null) { await fetch(`${MM_URL}/__freee_fail`, { method: 'POST', body: JSON.stringify({ mode }) }); },

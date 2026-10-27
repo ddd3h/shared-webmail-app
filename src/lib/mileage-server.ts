@@ -30,7 +30,7 @@ export async function resolveMileage(userId: string, input: MileageInput): Promi
     if (input.manual_one_way_km !== undefined) return { error: 'manual_not_allowed', status: 400 };
     const r = await drivingDistance(origin, destination);
     if (!r.ok) return r.reason === 'not_found' ? { error: 'route_not_found', status: 422 } : { error: 'route_failed', status: 502 };
-    oneWay = r.meters; source = 'google';
+    oneWay = r.meters; source = r.source ?? 'google';
   } else {
     const km = input.manual_one_way_km;
     if (km === undefined) return { error: 'distance_required', status: 400 };

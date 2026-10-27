@@ -8,7 +8,7 @@ import { MILEAGE_CATEGORY } from '@/lib/expense';
 type Trip = { id: string; destination: string; start_date: string; end_date: string };
 type Form = { id?: string; trip_id: string; expense_date: string; category: string; title: string; amount: string; payment_method: 'personal' | 'company'; description: string; destination: string; manual_km: string };
 type MileageInfo = { rate_per_km: number; route_service: boolean; home_address: string | null };
-type Estimate = { destination: string; round_trip_km: number; rate_per_km: number; amount: number; source: 'google' | 'manual'; map_url: string };
+type Estimate = { destination: string; round_trip_km: number; rate_per_km: number; amount: number; source: 'google' | 'osm' | 'manual'; map_url: string };
 const MILEAGE_ERRORS: Record<string, string> = {
   home_not_set: '先にプロフィールで自宅を登録してください',
   route_not_found: '行き先が見つかりません。住所や施設名をもう少し詳しく入力してください',
@@ -202,7 +202,7 @@ export default function MyExpenses({ initialTripId }: { initialTripId?: string }
                     {mi && !mi.route_service && (
                       <div><label className="text-xs text-gray-600" htmlFor="mileage-km">片道の距離（km）</label>
                         <input id="mileage-km" type="number" min={0.1} step={0.1} className={`${inp} text-right`} value={form.manual_km} onChange={e => editForm({ ...form, manual_km: e.target.value })} />
-                        <p className="mt-1 text-xs text-amber-700">ルートの自動検索（Googleマップ）が設定されていないため、距離を自分で入力します。承認者が地図で確認します。</p></div>
+                        <p className="mt-1 text-xs text-amber-700">ルートの自動検索を使わない設定のため、距離を自分で入力します。承認者が地図で確認します。</p></div>
                     )}
                     <button type="button" className={`${btn} w-full`} disabled={estimating || !form.destination.trim() || (mi !== null && !mi.route_service && !(Number(form.manual_km) > 0))} onClick={estimate}>{estimating ? '計算中…' : mi && !mi.route_service ? '金額を計算' : 'ルートを調べて金額を計算'}</button>
                     {estError && <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700">{estError}</p>}
