@@ -20,17 +20,20 @@ export async function GET() {
   });
 }
 
+const itemSchema = z.object({ type: z.enum(['payslip', 'payment', 'expense']), ids: z.array(z.string().min(1)).min(1).max(500) });
 const schema = z.object({
-  kind: z.enum(['payment', 'payroll']),
-  ids: z.array(z.string().min(1)).min(1).max(500),
+  kind: z.enum(['payment', 'payroll', 'monthly']),
+  ids: z.array(z.string().min(1)).max(500).default([]),
+  // monthly: everything to be transferred in one file
+  items: z.array(itemSchema).max(500).optional(),
   category: z.enum(['21', '11', '12']).optional(),
   transfer_date: z.string().refine(isValidTransferDate),
   force: z.boolean().default(false),
-});
+}).refine(v => (v.kind === 'monthly' ? (v.items?.length ?? 0) > 0 : v.ids.length > 0), { message: 'nothing_selected' });
 
 /** Payments are always 総合振込; payroll is 給与 unless 賞与 (or 総合) was asked for. */
-function categoryFor(kind: 'payment' | 'payroll', asked: string | undefined): CategoryCode {
-  if (kind === 'payment') return '21';
+function categoryFor(kind: 'payment' | 'payroll' | 'monthly', asked: string | undefined): CategoryCode {
+  if (kind === 'payment' || kind === 'monthly') return '21'; // a file that mixes salaries, fees and payments is a 総合振込
   return asked === '12' ? '12' : asked === '21' ? '21' : '11';
 }
 
@@ -43,11 +46,11 @@ export async function POST(req: NextRequest) {
   const d = parsed.data;
   const category = categoryFor(d.kind, d.category);
 
-  const result = await createBatch({ kind: d.kind, ids: d.ids, category, transferDate: d.transfer_date, force: d.force, actorId: actor.id });
+  const result = await createBatch({ kind: d.kind, ids: d.ids, items: d.items, category, transferDate: d.transfer_date, force: d.force, actorId: actor.id });
   if (!result.ok) return NextResponse.json({ error: result.error, message: result.message, problems: result.problems }, { status: result.status });
   await logAudit({
     actorUserId: actor.id, actionType: 'transfer_batch_create', targetType: 'transfer_batches', targetId: result.id,
-    metadata: { kind: d.kind, category, count: result.count, total: result.total, transfer_date: d.transfer_date, force: d.force },
+    metadata: { kind: d.kind, category, items: d.items?.map(i => ({ type: i.type, n: i.ids.length })), count: result.count, total: result.total, transfer_date: d.transfer_date, force: d.force },
   });
   return NextResponse.json({ id: result.id, count: result.count, total: result.total, file_name: result.fileName }, { status: 201 });
 }

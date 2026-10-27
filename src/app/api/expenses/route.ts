@@ -27,6 +27,7 @@ function serialize(c: any, schedules: Awaited<ReturnType<typeof loadSchedules>>[
   return {
     id: c.id,
     user: { id: c.user.id, name: c.user.name },
+    in_batch: !!c.batch_id,
     pay_plan: open ? planOf(schedules, c.user.worker_type, c.expense_date, c.created_at, 'expense') : null,
     expense_date: c.expense_date.toISOString().slice(0, 10),
     category: c.category,

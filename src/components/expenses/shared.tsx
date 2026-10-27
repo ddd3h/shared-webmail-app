@@ -9,6 +9,7 @@ export type Claim = {
   reviewer: string | null; review_comment: string | null; reimbursed_at: string | null; reimburse_note: string | null; receipts: Receipt[];
   payslip: { id: string; pay_month: string; title: string; status: string } | null;
   trip: { id: string; destination: string; start_date: string; end_date: string } | null;
+  in_batch?: boolean;
   pay_plan: Plan | null;
   mileage: { origin: string; destination: string; round_trip_km: number; rate_per_km: number; source: 'google' | 'manual'; map_url: string } | null;
 };
@@ -64,7 +65,8 @@ export function ClaimDetail({ c }: { c: Claim }) {
           {c.reviewer ?? '管理者'} のコメント: {c.review_comment}
         </p>
       )}
-      {c.pay_plan && (c.status === 'pending' || c.status === 'approved') && (
+      {c.in_batch && c.status === 'approved' && <p className="rounded-lg bg-blue-50 px-3 py-2 text-xs text-blue-800">全銀データに入っています。銀行で振り込まれて「振込済」にすると、返金済になります。</p>}
+      {c.pay_plan && !c.in_batch && (c.status === 'pending' || c.status === 'approved') && (
         <p className={`rounded-lg px-3 py-2 text-xs ${c.pay_plan.late ? 'bg-amber-50 text-amber-800' : 'bg-gray-50 text-gray-600'}`}>
           {c.pay_plan.late
             ? `申請の期限を過ぎたため、${Number(c.pay_plan.period.slice(5))}月分（締め ${shortDate(c.pay_plan.closing_date)}）として扱われ、${shortDate(c.pay_plan.pay_date)}の返金予定です。`

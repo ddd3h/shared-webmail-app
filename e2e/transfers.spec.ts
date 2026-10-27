@@ -622,6 +622,7 @@ test.describe('画面', () => {
       await makePayslip({ role: 'sato' });
       await makePayslip({ role: 'tanaka' });
       await page.goto('/transfers');
+      await page.getByRole('button', { name: '給与の振込' }).click();
       await expect(page.getByText('受取口座が未確認')).toBeVisible();
       await expect(page.getByText('受取口座が未登録')).toBeVisible();
       await expect(page.getByRole('checkbox', { name: /佐藤/ })).toBeDisabled();
@@ -632,6 +633,7 @@ test.describe('画面', () => {
       await readyAccount(as);
       await makePayslip({ role: 'sato' });
       await page.goto('/transfers');
+      await page.getByRole('button', { name: '給与の振込' }).click();
       await page.getByLabel(/佐藤/).check();
       await page.getByRole('button', { name: '全銀データを作成…' }).click();
       await page.getByRole('button', { name: '作成する' }).click();

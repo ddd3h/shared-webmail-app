@@ -6,8 +6,8 @@ import { todayJst } from '@/components/payments/shared';
 type Problem = { id: string; label: string; reason: string };
 
 // Asks for the 振込指定日 and makes the 全銀 file. If any line can't go into the file, nothing is made and every problem is listed.
-export default function CreateBatchModal({ kind, ids, total, hasBatched, suggestedDate, onClose, onCreated }: {
-  kind: 'payment' | 'payroll'; ids: string[]; total: number; hasBatched: boolean; suggestedDate?: string; onClose: () => void; onCreated: (batchId: string, fileName: string) => void;
+export default function CreateBatchModal({ kind, ids, items, total, hasBatched, suggestedDate, onClose, onCreated }: {
+  kind: 'payment' | 'payroll' | 'monthly'; ids: string[]; items?: { type: string; ids: string[] }[]; total: number; hasBatched: boolean; suggestedDate?: string; onClose: () => void; onCreated: (batchId: string, fileName: string) => void;
 }) {
   // the statements' own pay date (set from 締め日・振込日) when it is still ahead; otherwise today
   const [date, setDate] = useState(suggestedDate && suggestedDate >= todayJst() ? suggestedDate : todayJst());
@@ -20,7 +20,7 @@ export default function CreateBatchModal({ kind, ids, total, hasBatched, suggest
   async function create() {
     setBusy(true); setError(''); setProblems([]);
     try {
-      const res = await api('/api/transfers/batches', 'POST', { kind, ids, transfer_date: date, force, ...(kind === 'payroll' ? { category } : {}) });
+      const res = await api('/api/transfers/batches', 'POST', { kind, ids: kind === 'monthly' ? [] : ids, ...(kind === 'monthly' ? { items } : {}), transfer_date: date, force, ...(kind === 'payroll' ? { category } : {}) });
       if (res.ok) { const b = await res.json(); onCreated(b.id, b.file_name); return; }
       const e = await res.json().catch(() => ({}));
       if (e.problems) setProblems(e.problems);
@@ -31,7 +31,7 @@ export default function CreateBatchModal({ kind, ids, total, hasBatched, suggest
 
   return (
     <Modal title="全銀データを作成" onClose={onClose}>
-      <p className="text-sm text-gray-700 mb-3">{ids.length}件・合計 <b className="tabular-nums">{yen(total)}</b> の{kind === 'payroll' ? '給与' : '総合'}振込データを作ります。</p>
+      <p className="text-sm text-gray-700 mb-3">{ids.length}件・合計 <b className="tabular-nums">{yen(total)}</b> の{kind === 'payroll' ? '給与' : kind === 'monthly' ? 'まとめて1つの総合' : '総合'}振込データを作ります。</p>
       <div className="space-y-3">
         <div><label className="text-xs text-gray-600">振込指定日（銀行が振り込む日）</label><input type="date" className={inp} value={date} min={todayJst()} onChange={e => setDate(e.target.value)} /></div>
         {kind === 'payroll' && (

@@ -5,7 +5,7 @@ import { todayJst } from '@/components/payments/shared';
 import { CATEGORY_LABEL, type CategoryCode } from '@/lib/zengin';
 
 type Batch = {
-  id: string; kind: 'payment' | 'payroll'; category_code: CategoryCode; transfer_date: string; item_count: number; total_amount: number;
+  id: string; kind: 'payment' | 'payroll' | 'monthly'; category_code: CategoryCode; transfer_date: string; item_count: number; total_amount: number;
   file_name: string; created_at: string; paid_at: string | null; creator: string | null;
 };
 
@@ -53,7 +53,7 @@ export default function BatchHistory({ refreshKey }: { refreshKey: number }) {
         <div key={b.id} className="rounded-xl border border-gray-200 bg-white p-3 space-y-2">
           <div className="flex flex-wrap items-center gap-2">
             <span className="rounded-sm bg-gray-100 px-1.5 py-0.5 text-[11px] text-gray-700">{CATEGORY_LABEL[b.category_code] ?? b.category_code}</span>
-            <span className="text-sm font-medium text-gray-900">{b.kind === 'payroll' ? '給与' : '支払'} {b.item_count}件</span>
+            <span className="text-sm font-medium text-gray-900">{b.kind === 'payroll' ? '給与' : b.kind === 'monthly' ? '月次まとめ' : '支払'} {b.item_count}件</span>
             <span className="text-sm font-bold tabular-nums">{yen(b.total_amount)}</span>
             <div className="flex-1" />
             {b.paid_at
@@ -71,7 +71,7 @@ export default function BatchHistory({ refreshKey }: { refreshKey: number }) {
       {pay && (
         <Modal title="振込済にする" onClose={() => setPay(null)}>
           <p className="text-sm text-gray-700 mb-3">{pay.item_count}件・合計 <b className="tabular-nums">{yen(pay.total_amount)}</b> を一括で{pay.kind === 'payroll' ? '支払済' : '振込済'}にします。銀行にデータを送り、振込が実行されたことを確認してから記録してください。
-            {pay.kind === 'payroll' && ' 給与明細に合算した経費の立替金も、あわせて精算済みになります。'}</p>
+            {(pay.kind === 'payroll' || pay.kind === 'monthly') && ' 給与明細に合算した経費の立替金も、あわせて精算済みになります。'}{pay.kind === 'monthly' && ' 振込申請は振込済、経費の立替金は返金済になります。'}</p>
           <div><label className="text-xs text-gray-600">振込日</label><input type="date" className={inp} value={payDate} onChange={e => setPayDate(e.target.value)} /></div>
           <div className="flex justify-end gap-2 pt-4"><button className={btn} onClick={() => setPay(null)}>閉じる</button><button className={btnPrimary} disabled={busy || !payDate} onClick={markPaid}>記録する</button></div>
         </Modal>

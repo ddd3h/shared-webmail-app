@@ -35,7 +35,7 @@ test.describe('スマホ: 経理担当', () => {
     await page.locator('nav.md\\:hidden').first().getByRole('button', { name: 'メニュー' }).click();
     await page.getByRole('link', { name: '振込データ' }).click();
     await expect(page).toHaveURL(/\/transfers/);
-    for (const tab of ['給与の振込', '支払の振込', '作成履歴', '受取口座の確認', '全銀の設定']) {
+    for (const tab of ['月次まとめ', '給与の振込', '支払の振込', '作成履歴', '受取口座の確認', '全銀の設定']) {
       await page.getByRole('button', { name: tab, exact: true }).click();
       await page.waitForTimeout(300);
       expect(await hasHorizontalOverflow(page), tab).toBe(false);

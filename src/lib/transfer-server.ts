@@ -10,11 +10,13 @@ import { CATEGORY_LABEL, buildZengin, validateHeader, validateRow, type Category
 import { loadZenginSettings, toHeader } from '@/lib/zengin-settings';
 
 export type Problem = { id: string; label: string; reason: string };
-type Line = ZenginRow & { id: string; label: string };
-type Kind = 'payment' | 'payroll';
+// `ref` (monthly files): what the line stands for, so the right rows are claimed. One expense line covers all of one person's claims.
+export type ItemRef = { type: 'payslip' | 'payment' | 'expense'; ids: string[] };
+type Line = ZenginRow & { id: string; label: string; ref?: ItemRef };
+type Kind = 'payment' | 'payroll' | 'monthly';
 type Loaded = { lines: Line[]; problems: Problem[] };
 
-export type CreateInput = { kind: Kind; ids: string[]; category: CategoryCode; transferDate: string; force: boolean; actorId: string };
+export type CreateInput = { kind: Kind; ids: string[]; items?: ItemRef[]; category: CategoryCode; transferDate: string; force: boolean; actorId: string };
 export type CreateResult =
   | { ok: true; id: string; count: number; total: number; fileName: string }
   | { ok: false; status: number; error: string; message?: string; problems?: Problem[] };
@@ -85,6 +87,52 @@ async function loadPayrollLines(ids: string[], force: boolean): Promise<Loaded> 
   });
 }
 
+/** One line per person for approved out-of-pocket claims that are not in a pay statement: they are paid back to the person's own account. */
+async function loadExpenseLines(claimIds: string[], force: boolean): Promise<Loaded> {
+  const rows = await prisma.expense_claims.findMany({ where: { id: { in: claimIds } }, include: { user: { include: { bank_account: true } } } });
+  const found = new Map(rows.map(c => [c.id, c]));
+  const out: Loaded = { lines: [], problems: [] };
+  const byUser = new Map<string, typeof rows>();
+  for (const id of claimIds) {
+    const c = found.get(id);
+    if (!c) { out.problems.push({ id, label: id, reason: '経費の申請が見つかりません' }); continue; }
+    byUser.set(c.user_id, [...(byUser.get(c.user_id) ?? []), c]);
+  }
+  for (const [userId, claims] of byUser) {
+    const u = claims[0].user;
+    const a = u.bank_account;
+    const key = `expense:${userId}`;
+    const bad = claims.find(c => c.status !== 'approved' || c.payment_method !== 'personal') ? '承認済みの立替ではない経費が含まれています'
+      : claims.find(c => c.payslip_id) ? '給与明細に合算済みの経費が含まれています（明細と一緒に振り込まれます）'
+      : null;
+    const problem = bad ?? (!a ? '受取口座が登録されていません' : !a.verified_at ? '受取口座が未確認です' : claims.some(c => batchedReason(c.batch_id, force)) ? ALREADY_BATCHED : null);
+    const r = checkLine({
+      id: key, label: `${u.name} 経費の立替金（${claims.length}件）`, ref: { type: 'expense', ids: claims.map(c => c.id) },
+      bankCode: a?.bank_code ?? '', bankName: a?.bank_name ?? '', branchCode: a?.branch_code ?? '', branchName: a?.branch_name ?? '',
+      accountType: (a?.account_type ?? 'ordinary') as ZenginRow['accountType'], accountNumber: a ? await readAccountNumber(a.account_number_enc) : '',
+      holder: a?.account_holder ?? '', amount: claims.reduce((s, c) => s + c.amount, 0),
+    }, problem);
+    if ('line' in r) out.lines.push(r.line); else out.problems.push(r.problem);
+  }
+  return out;
+}
+
+/** Everything that has to be transferred in a month, in one file: pay statements (給与・賞与・業務委託費・役員報酬), payment requests and expenses. */
+async function loadMonthlyLines(items: ItemRef[], force: boolean): Promise<Loaded> {
+  const ids = (type: ItemRef['type']) => [...new Set(items.filter(i => i.type === type).flatMap(i => i.ids))];
+  const [slips, pays, claims] = await Promise.all([
+    ids('payslip').length ? loadPayrollLines(ids('payslip'), force) : { lines: [], problems: [] },
+    ids('payment').length ? loadPaymentLines(ids('payment'), force) : { lines: [], problems: [] },
+    ids('expense').length ? loadExpenseLines(ids('expense'), force) : { lines: [], problems: [] },
+  ]);
+  const tag = (l: Line, type: ItemRef['type']): Line => ({ ...l, id: `${type}:${l.id}`, ref: { type, ids: [l.id] } });
+  const tagP = (p: Problem, type: ItemRef['type']): Problem => ({ ...p, id: `${type}:${p.id}` });
+  return {
+    lines: [...slips.lines.map(l => tag(l, 'payslip')), ...pays.lines.map(l => tag(l, 'payment')), ...claims.lines],
+    problems: [...slips.problems.map(p => tagP(p, 'payslip')), ...pays.problems.map(p => tagP(p, 'payment')), ...claims.problems],
+  };
+}
+
 const fileNameFor = (kind: Kind, transferDate: string) =>
   `zengin-${kind}-${transferDate.replace(/-/g, '')}-${new Date().toISOString().slice(11, 19).replace(/:/g, '')}.txt`;
 
@@ -105,6 +153,18 @@ async function saveBatch(input: CreateInput, lines: Line[], file: ReturnType<typ
       },
     });
     const free = input.force ? {} : { batch_id: null };
+    if (input.kind === 'monthly') {
+      // each kind of item is claimed on its own; a short count in any of them rolls the whole file back
+      const refs = (type: ItemRef['type']) => lines.flatMap(l => (l.ref?.type === type ? l.ref.ids : []));
+      const [payslips, payments, expenses] = [refs('payslip'), refs('payment'), refs('expense')];
+      const done = await Promise.all([
+        payslips.length ? tx.payslips.updateMany({ where: { id: { in: payslips }, status: 'planned', ...free }, data: { batch_id: batch.id } }) : { count: 0 },
+        payments.length ? tx.payment_requests.updateMany({ where: { id: { in: payments }, status: 'approved', ...free }, data: { batch_id: batch.id } }) : { count: 0 },
+        expenses.length ? tx.expense_claims.updateMany({ where: { id: { in: expenses }, status: 'approved', payment_method: 'personal', payslip_id: null, ...free }, data: { batch_id: batch.id } }) : { count: 0 },
+      ]);
+      if (done[0].count !== payslips.length || done[1].count !== payments.length || done[2].count !== expenses.length) throw new ItemsChanged();
+      return { id: batch.id, fileName };
+    }
     const claimed = input.kind === 'payment'
       ? await tx.payment_requests.updateMany({ where: { id: { in: ids }, status: 'approved', ...free }, data: { batch_id: batch.id } })
       : await tx.payslips.updateMany({ where: { id: { in: ids }, status: 'planned', ...free }, data: { batch_id: batch.id } });
@@ -120,7 +180,9 @@ export async function createBatch(input: CreateInput): Promise<CreateResult> {
   if (headerProblem) return { ok: false, status: 422, error: 'zengin_settings', message: `全銀の設定（委託者情報）を確認してください: ${headerProblem}` };
 
   const ids = [...new Set(input.ids)];
-  const { lines, problems } = await (input.kind === 'payment' ? loadPaymentLines(ids, input.force) : loadPayrollLines(ids, input.force));
+  const { lines, problems } = await (input.kind === 'monthly' ? loadMonthlyLines(input.items ?? [], input.force)
+    : input.kind === 'payment' ? loadPaymentLines(ids, input.force) : loadPayrollLines(ids, input.force));
+  if (input.kind === 'monthly' && lines.length === 0 && problems.length === 0) return { ok: false, status: 400, error: 'nothing_selected' };
   if (problems.length > 0) return { ok: false, status: 422, error: 'invalid_items', problems };
 
   const file = buildZengin(header, lines);

@@ -85,6 +85,7 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
   const own = claim.user_id === actor.id;
   if (!own && !isFinance(actor)) return NextResponse.json({ error: 'forbidden' }, { status: 403 });
   // Paid claims are the record of a payment; approved ones only an admin may remove.
+  if (claim.batch_id && claim.status !== 'paid') return NextResponse.json({ error: 'in_batch' }, { status: 409 }); // already in a 全銀 file: cancel the file first
   if (claim.status === 'paid' || (own && !isEditable(claim))) return NextResponse.json({ error: 'not_deletable' }, { status: 409 });
   await prisma.expense_claims.delete({ where: { id } });
   await deleteStoredFiles(claim.receipts.map(r => r.storage_key));

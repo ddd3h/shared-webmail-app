@@ -30,7 +30,7 @@ export async function POST(req: NextRequest) {
   const { ids, mode, paid_date, pay_month, note } = parsed.data;
 
   const claims = await prisma.expense_claims.findMany({
-    where: { id: { in: ids }, status: 'approved', payment_method: 'personal', payslip_id: null },
+    where: { id: { in: ids }, status: 'approved', payment_method: 'personal', payslip_id: null, batch_id: null }, // one already in a 全銀 file is paid by marking that file paid
     select: { id: true, user_id: true, amount: true },
   });
   const total = claims.reduce((s, c) => s + c.amount, 0);
@@ -47,7 +47,7 @@ export async function POST(req: NextRequest) {
 
   const date = paid_date ?? jstDateString(new Date());
   const res = await prisma.expense_claims.updateMany({
-    where: { id: { in: claims.map(c => c.id) }, status: 'approved', payslip_id: null },
+    where: { id: { in: claims.map(c => c.id) }, status: 'approved', payslip_id: null, batch_id: null },
     data: { status: 'paid', reimbursed_at: toDbDate(date), reimbursed_by_id: actor.id, reimburse_note: note || null },
   });
   await logAudit({

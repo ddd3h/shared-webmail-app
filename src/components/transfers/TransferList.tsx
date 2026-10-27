@@ -4,7 +4,8 @@ import { Notice, Stat, btn, btnPrimary, currentMonth, MonthNav, yen } from '@/co
 import { dateLabel } from '@/components/work/ui';
 import CreateBatchModal from './CreateBatchModal';
 
-type Line = { id: string; who: string; title: string; amount: number; batched: boolean; blocker: string | null; sub: string; pay_date?: string | null };
+type Ref = { type: 'payslip' | 'payment' | 'expense'; ids: string[] };
+type Line = { id: string; who: string; title: string; amount: number; batched: boolean; blocker: string | null; sub: string; pay_date?: string | null; ref?: Ref; label?: string; date?: string; overdue?: boolean };
 type Flash = { type: 'success' | 'error'; text: string } | null;
 
 // ---- data: one function per source, each returns the same Line shape ----
@@ -34,16 +35,33 @@ async function fetchPayrollLines(month: string): Promise<Line[]> {
   }));
 }
 
-// Shared list for the two ways of making a file: approved payment requests, or the month's pay statements.
-export default function TransferList({ kind, onCreated }: { kind: 'payment' | 'payroll'; onCreated: (id: string, fileName: string) => void }) {
+// Everything to be transferred in the month, from every source: one file for all of it.
+async function fetchMonthlyLines(month: string): Promise<{ lines: Line[]; totals: Totals | null }> {
+  const res = await fetch(`/api/transfers/monthly?month=${month}`);
+  if (!res.ok) return { lines: [], totals: null };
+  const d = await res.json();
+  return {
+    totals: d.totals,
+    lines: d.items.map((i: any): Line => ({
+      id: i.key, who: i.who, title: i.title, amount: i.amount, batched: i.batched, blocker: i.blocker, sub: i.sub,
+      ref: { type: i.type, ids: i.ids }, label: i.kind_label, date: i.scheduled_date, overdue: i.overdue, pay_date: i.scheduled_date,
+    })),
+  };
+}
+type Totals = { payroll: number; payment: number; expense: number; all: number };
+
+// Shared list for the ways of making a file: approved payment requests, or the month's pay statements.
+export default function TransferList({ kind, onCreated }: { kind: 'payment' | 'payroll' | 'monthly'; onCreated: (id: string, fileName: string) => void }) {
   const [month, setMonth] = useState(currentMonth());
   const [lines, setLines] = useState<Line[] | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [creating, setCreating] = useState(false);
   const [msg, setMsg] = useState<Flash>(null);
+  const [totals, setTotals] = useState<Totals | null>(null);
 
   const load = useCallback(async () => {
-    setLines(kind === 'payment' ? await fetchPaymentLines() : await fetchPayrollLines(month));
+    if (kind === 'monthly') { const r = await fetchMonthlyLines(month); setLines(r.lines); setTotals(r.totals); }
+    else setLines(kind === 'payment' ? await fetchPaymentLines() : await fetchPayrollLines(month));
     setSelected(new Set());
   }, [kind, month]);
   useEffect(() => { setLines(null); load(); }, [load]);
@@ -52,11 +70,12 @@ export default function TransferList({ kind, onCreated }: { kind: 'payment' | 'p
   const ready = (lines ?? []).filter(l => !l.blocker && !l.batched);
   const picked = (lines ?? []).filter(l => selected.has(l.id));
   const total = picked.reduce((s, l) => s + l.amount, 0);
-  const unit = kind === 'payroll' ? '給与' : '支払';
+  const unit = kind === 'payroll' ? '給与' : kind === 'monthly' ? '振込' : '支払';
 
   return (
     <div className="space-y-3">
-      {kind === 'payroll' && <MonthNav month={month} onChange={setMonth} />}
+      {kind !== 'payment' && <MonthNav month={month} onChange={setMonth} />}
+      {kind === 'monthly' && <p className="text-xs text-gray-500">{Number(month.slice(5))}月末までに振り込む、給与・賞与・業務委託費・役員報酬・振込申請・経費の立替金を、1つの全銀データ（総合振込）にまとめます。期日や振込日が過ぎている未払いも入ります。</p>}
       {lines && (
         <div className="grid grid-cols-3 gap-2 sm:gap-3">
           <Stat label={`${unit}待ち`} value={`${lines.length}件`} sub={yen(lines.reduce((s, l) => s + l.amount, 0))} />
@@ -64,9 +83,12 @@ export default function TransferList({ kind, onCreated }: { kind: 'payment' | 'p
           <Stat label="対応が必要" value={`${lines.filter(l => l.blocker).length}件`} sub="口座の未登録・未確認" />
         </div>
       )}
+      {kind === 'monthly' && totals && lines && lines.length > 0 && (
+        <p className="text-xs text-gray-600" data-testid="monthly-totals">給与・報酬等 {yen(totals.payroll)} ・ 振込申請 {yen(totals.payment)} ・ 経費 {yen(totals.expense)} ・ 合計 <b className="tabular-nums">{yen(totals.all)}</b></p>
+      )}
       <Notice msg={msg} />
       {lines === null && <p className="text-sm text-gray-400">読み込み中…</p>}
-      {lines && lines.length === 0 && <p className="text-sm text-gray-400">{kind === 'payroll' ? 'この月の支払予定の明細はありません' : '振込待ちの申請はありません'}</p>}
+      {lines && lines.length === 0 && <p className="text-sm text-gray-400">{kind === 'payroll' ? 'この月の支払予定の明細はありません' : kind === 'monthly' ? 'この月に振り込むものはありません' : '振込待ちの申請はありません'}</p>}
       {lines && lines.length > 0 && (
         <>
           <div className="flex flex-wrap items-center gap-3 text-sm">
@@ -83,6 +105,8 @@ export default function TransferList({ kind, onCreated }: { kind: 'payment' | 'p
                 <div className="min-w-0 flex-1">
                   <div className="text-sm font-medium text-gray-900 wrap-break-word">{l.who} <span className="font-normal text-gray-400">/</span> {l.title}</div>
                   <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs text-gray-500">
+                    {l.label && <span className="rounded-sm bg-blue-50 px-1.5 py-0.5 text-blue-700">{l.label}</span>}
+                    {l.date && <span className={l.overdue ? 'text-red-600' : ''}>{l.overdue ? '期日超過 ' : '振込予定 '}{l.date.slice(5).replace('-', '/')}</span>}
                     <span>{l.sub}</span>
                     {l.blocker && <span className="rounded-sm bg-amber-50 px-1.5 py-0.5 text-amber-700">{l.blocker}</span>}
                     {l.batched && <span className="rounded-sm bg-gray-100 px-1.5 py-0.5 text-gray-600">全銀データ作成済み</span>}
@@ -95,7 +119,7 @@ export default function TransferList({ kind, onCreated }: { kind: 'payment' | 'p
         </>
       )}
       {creating && (
-        <CreateBatchModal kind={kind} ids={[...selected]} total={total} suggestedDate={picked.map(l => l.pay_date).filter((d): d is string => !!d).sort()[0]} hasBatched={picked.some(l => l.batched)} onClose={() => setCreating(false)}
+        <CreateBatchModal kind={kind} ids={[...selected]} items={kind === 'monthly' ? picked.map(l => l.ref!) : undefined} total={total} suggestedDate={picked.map(l => l.pay_date).filter((d): d is string => !!d).sort()[0]} hasBatched={picked.some(l => l.batched)} onClose={() => setCreating(false)}
           onCreated={(id, name) => { setCreating(false); setMsg({ type: 'success', text: `全銀データを作成しました（${name}）。「作成履歴」からダウンロードできます` }); onCreated(id, name); load(); }} />
       )}
     </div>
