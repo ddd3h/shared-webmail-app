@@ -200,6 +200,22 @@ export function notifyBankAccountChanged(userId: string) {
   });
 }
 
+/** Finance staff changed (or removed) somebody's account for them: the owner is told, and so are the other finance staff, who have to check it. */
+export function notifyBankAccountChangedByStaff(userId: string, actorId: string, removed = false) {
+  return safely('bank_changed_by_staff', async () => {
+    const [u, actor] = await Promise.all([
+      prisma.users.findUnique({ where: { id: userId }, select: { id: true, name: true, email: true } }),
+      prisma.users.findUnique({ where: { id: actorId }, select: { name: true } }),
+    ]);
+    if (!u) return;
+    const by = mmText(actor?.name ?? '経理担当', 40);
+    await sendDirectMessage(u.id, u.email, `🏦 **受取口座が${removed ? '削除' : '変更'}されました**\n\n${by} さんが、あなたの受取口座を${removed ? '削除' : '登録・変更'}しました。覚えがないときは、経理担当に連絡してください。\n\n${appUrl()}/profile#bank`, 'bank_account_changed_by_staff');
+    if (removed) return;
+    const finance = await prisma.users.findMany({ where: { id: { notIn: [userId, actorId] }, OR: [{ role: 'admin' }, { is_accounting: true }] }, select: { id: true, email: true } });
+    await dmAll(finance, `🏦 **受取口座が変更されました**\n\n${by} さんが **${mmText(u.name, 40)}** さんの口座を変更しました。内容を確かめて、確認済にしてください。\n\n${appUrl()}/transfers`, 'bank_account_changed');
+  });
+}
+
 export function notifyBankAccountVerified(userId: string) {
   return safely('bank_verified', async () => {
     const u = await prisma.users.findUnique({ where: { id: userId }, select: { id: true, email: true } });

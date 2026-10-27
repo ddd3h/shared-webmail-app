@@ -116,7 +116,10 @@ model users {
   trips_reviewed             business_trips[]         @relation("trip_reviewer")
   is_accounting              Boolean                  @default(false)
   is_hr          Boolean  @default(false) // 人事担当: sees and finalizes every evaluation, whatever the unit or 役職
+  withholding_class      String   @default("ko") // 源泉徴収（所得税）の税額表: 'ko' = 甲欄 (主たる給与), 'otsu' = 乙欄 (従たる給与)
   bank_account               user_bank_accounts?      @relation("bank_owner")
+  year_end_declarations      year_end_declarations[]  @relation("year_end_owner")
+  year_end_confirmed         year_end_declarations[]  @relation("year_end_confirmer")
   org_unit_id                String?
   position_id                String?
   org_unit                   org_units?               @relation("unit_members", fields: [org_unit_id], references: [id], onDelete: SetNull)
@@ -1101,6 +1104,7 @@ model user_bank_accounts {
   account_holder     String    // 口座名義（カナ）
   verified_at        DateTime?
   verified_by_id     String?
+  changed_by_id      String?   // finance staff who last changed it on the owner's behalf (null = the owner); they may not verify their own change
   created_at         DateTime  @default(now())
   updated_at         DateTime  @updatedAt
 
@@ -1357,4 +1361,26 @@ model thread_embeddings {
   embedded_at DateTime @default(now())
 
   thread threads @relation(fields: [thread_id], references: [id], onDelete: Cascade)
+}
+
+// 年末調整 (year-end tax adjustment): what a person declares for one calendar year (spouse, dependants, deductions).
+// The content is JSON (see src/lib/year-end.ts) encrypted at rest; it holds names, birth dates and incomes of family members.
+// The My Number is never collected. status: draft -> submitted -> confirmed (by 経理 / 人事); any later edit by the owner returns it to draft.
+model year_end_declarations {
+  id              String    @id @default(cuid())
+  user_id         String
+  year            Int
+  status          String    @default("draft") // 'draft' | 'submitted' | 'confirmed'
+  data_enc        String
+  submitted_at    DateTime?
+  confirmed_at    DateTime?
+  confirmed_by_id String?
+  created_at      DateTime  @default(now())
+  updated_at      DateTime  @updatedAt
+
+  user      users  @relation("year_end_owner", fields: [user_id], references: [id], onDelete: Cascade)
+  confirmer users? @relation("year_end_confirmer", fields: [confirmed_by_id], references: [id], onDelete: SetNull)
+
+  @@unique([user_id, year])
+  @@index([year, status])
 }

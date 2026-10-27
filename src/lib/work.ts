@@ -23,6 +23,17 @@ export const usesReports = (t: WorkerType) => t === 'contractor' || t === 'quasi
 export const isContractorLike = (t: WorkerType) => t === 'contractor' || t === 'quasi_contractor';
 export const paysSalary = (t: WorkerType) => t === 'employee' || t === 'regular' || t === 'part';
 
+// 源泉徴収（所得税）の税額表の欄. 甲欄 = this company is the main employer (扶養控除等申告書 is handed in; 年末調整 is done here);
+// 乙欄 = a second job (no 扶養控除等申告書, a higher rate, no 年末調整 here). Chosen per person.
+export const WITHHOLDING_CLASSES = ['ko', 'otsu'] as const;
+export type WithholdingClass = (typeof WITHHOLDING_CLASSES)[number];
+export const WITHHOLDING_LABEL: Record<WithholdingClass, string> = { ko: '甲欄', otsu: '乙欄' };
+export const WITHHOLDING_HELP: Record<WithholdingClass, string> = {
+  ko: '甲欄: 扶養控除等申告書を出している、主たる勤務先の給与',
+  otsu: '乙欄: 扶養控除等申告書を出していない、従たる勤務先の給与（年末調整はしません）',
+};
+export const toWithholdingClass = (v: string | null | undefined): WithholdingClass => (v === 'otsu' ? 'otsu' : 'ko');
+
 export const DEFAULT_DAILY_MINUTES = 480;
 export const DEFAULT_AUTO_BREAK_MINUTES = 60;
 // Auto break only kicks in for shifts at least this long.

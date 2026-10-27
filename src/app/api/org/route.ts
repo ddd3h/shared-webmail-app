@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { getSession, requireAuth } from '@/lib/auth';
-import { getActor, isAdmin } from '@/lib/work-auth';
+import { getActor, isAdmin, isYearEndStaff } from '@/lib/work-auth';
 import { isCapability, scopeOf } from '@/lib/org';
 import { loadUnits } from '@/lib/org-server';
 
@@ -30,6 +30,6 @@ export async function GET() {
       can_evaluate: u.role === 'admin' || !!positions.find(p => p.id === u.position_id)?.permissions.includes('evaluate'),
       ...(admin ? { role: u.role, email: u.email } : {}),
     })),
-    me: { id: actor.id, is_admin: admin, capabilities: admin ? ['approve_requests', 'evaluate', 'hr_admin'] : (myPosition?.permissions ?? []).filter(isCapability), headed_unit_ids: [...scopeOf(all, actor.id)] },
+    me: { id: actor.id, is_admin: admin, capabilities: admin ? ['approve_requests', 'evaluate', 'hr_admin'] : (myPosition?.permissions ?? []).filter(isCapability), headed_unit_ids: [...scopeOf(all, actor.id)], can_year_end: isYearEndStaff(actor) },
   });
 }

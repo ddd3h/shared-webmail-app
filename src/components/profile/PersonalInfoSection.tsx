@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react';
 import FoldCard from '@/components/mobile/FoldCard';
 
-type Info = { name: string; email: string; is_admin: boolean; worker_type: string; unit: string | null; position: string | null; mattermost_linked: boolean };
+type Info = { name: string; email: string; is_admin: boolean; worker_type: string; withholding?: string | null; unit: string | null; position: string | null; mattermost_linked: boolean };
 
 // Who the company has on file: name, e-mail, kind of work, unit and position, Mattermost link. Read only here; an administrator changes them.
 export default function PersonalInfoSection() {
@@ -10,7 +10,7 @@ export default function PersonalInfoSection() {
   useEffect(() => { fetch('/api/profile/info').then(r => (r.ok ? r.json() : null)).then(setInfo).catch(() => {}); }, []);
 
   const rows: [string, string][] = info ? [
-    ['名前', info.name], ['メールアドレス', info.email], ['区分', info.worker_type],
+    ['名前', info.name], ['メールアドレス', info.email], ['区分', info.worker_type], ...(info.withholding ? [['源泉徴収（所得税）', info.withholding] as [string, string]] : []),
     ['所属', info.unit ?? '未設定'], ['役職', info.position ?? '未設定'],
     ['システムの権限', info.is_admin ? '管理者' : '一般'], ['Mattermost連携', info.mattermost_linked ? '連携済み（通知のDMが届きます）' : '未連携'],
   ] : [];
@@ -30,7 +30,7 @@ export default function PersonalInfoSection() {
           {rows.map(([k, v]) => <div key={k}><dt className="mb-0.5 text-xs text-gray-500">{k}</dt><dd className="font-medium text-gray-900 wrap-break-word">{v}</dd></div>)}
         </dl>
       )}
-      <p className="text-xs text-gray-400">名前・メールアドレス・区分・所属・役職・権限は管理者が登録します。変更が必要なときは管理者に依頼してください。</p>
+      <p className="text-xs text-gray-400">名前・メールアドレス・区分・所属・役職・権限は管理者が、源泉徴収の欄は経理担当が登録します。変更が必要なときは管理者に依頼してください。</p>
     </FoldCard>
   );
 }

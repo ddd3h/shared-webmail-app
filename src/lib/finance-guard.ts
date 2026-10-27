@@ -2,7 +2,7 @@
 // Each returns the actor, or null when the role is missing (the route answers with `forbidden()`).
 import { NextResponse } from 'next/server';
 import { getSession, requireAuth } from '@/lib/auth';
-import { getActor, isFinance, type Actor } from '@/lib/work-auth';
+import { getActor, isFinance, isYearEndStaff, type Actor } from '@/lib/work-auth';
 
 async function actorWhere(allowed: (a: Actor) => boolean): Promise<Actor | null> {
   const session = await getSession();
@@ -12,6 +12,8 @@ async function actorWhere(allowed: (a: Actor) => boolean): Promise<Actor | null>
 }
 
 export const financeActor = () => actorWhere(isFinance);
+/** 経理, 人事 or admin: the people who handle 年末調整. */
+export const yearEndActor = () => actorWhere(isYearEndStaff);
 /** Signed in as a system administrator. The role is the one the database holds (getSession reads it on every request), so a demoted
  *  administrator is refused at once even with an old cookie. Nothing more is read: callers need only the id. */
 export async function adminActor(): Promise<{ id: string } | null> {

@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Modal, Notice, Stat, btn, btnPrimary, currentMonth, inp, yen, api, TYPE_LABEL, type WorkerType, PanelSkeleton } from './ui';
 import Link from 'next/link';
 import { shortDate } from '@/lib/pay-schedule';
+import { WITHHOLDING_CLASSES, WITHHOLDING_HELP, WITHHOLDING_LABEL, paysSalary, type WithholdingClass } from '@/lib/work';
 
 type Item = { id?: string; kind: 'earning' | 'deduction'; label: string; amount: number; system?: boolean };
 type LinkedClaim = { id: string; title: string; amount: number; expense_date: string };
@@ -13,19 +14,24 @@ type Slip = {
 type Summary = { month: string; planned_total: number; paid_total: number; count: number };
 type Draft = { id?: string; userId: string; pay_month: string; title: string; status: 'planned' | 'paid'; pay_date: string; note: string; items: { kind: 'earning' | 'deduction'; label: string; amount: string }[]; system: { label: string; amount: number } | null ; date_touched?: boolean; hint?: string };
 
+// 所得税 is typed in by hand; the label says which 源泉徴収 table it was worked out with
+const taxLabel = (c: WithholdingClass) => `所得税（${WITHHOLDING_LABEL[c]}）`;
+const isTaxLabel = (l: string) => /^所得税(（[甲乙]欄）)?$/.test(l);
 const monthLabel = (m: string) => `${m.slice(0, 4)}年${Number(m.slice(5))}月`;
 const StatusBadge = ({ s }: { s: string }) => (
   <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${s === 'paid' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>{s === 'paid' ? '支払済' : '支払予定'}</span>
 );
 
 // Own pay statements (default) or, for admins (`manage`), everyone's with create/edit.
-export default function PayrollPanel({ manage = false, members = [], noun = '給与' }: { manage?: boolean; members?: { id: string; name: string; worker_type: WorkerType }[]; noun?: string }) {
+export default function PayrollPanel({ manage = false, members = [], noun = '給与' }: { manage?: boolean; members?: { id: string; name: string; worker_type: WorkerType; withholding_class?: WithholdingClass }[]; noun?: string }) {
   const [items, setItems] = useState<Slip[]>([]);
   const [loaded, setLoaded] = useState(false);   // the first answer has arrived (until then: a placeholder, not "nothing here")
   const [summary, setSummary] = useState<Summary | null>(null);
   const [filter, setFilter] = useState('');
   const [open, setOpen] = useState<string | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
+  const [wcChosen, setWcChosen] = useState<Record<string, WithholdingClass>>({});   // 源泉徴収の欄 changed on this screen
+  const wcOf = (id: string): WithholdingClass => wcChosen[id] ?? members.find(m => m.id === id)?.withholding_class ?? 'ko';
   const [msg, setMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   const load = useCallback(async () => {
@@ -39,7 +45,7 @@ export default function PayrollPanel({ manage = false, members = [], noun = '給
 
   const blank = (): Draft => ({
     userId: filter || members[0]?.id || '', pay_month: currentMonth(), title: noun, status: 'planned', pay_date: '', note: '',
-    items: [{ kind: 'earning', label: '基本給', amount: '' }, { kind: 'deduction', label: '社会保険料', amount: '' }, { kind: 'deduction', label: '所得税', amount: '' }],
+    items: [{ kind: 'earning', label: '基本給', amount: '' }, { kind: 'deduction', label: '社会保険料', amount: '' }, { kind: 'deduction', label: taxLabel(wcOf(filter || members[0]?.id || '')), amount: '' }],
     system: null,
   });
   // a new statement starts with the pay date of the person's kind of worker (締め日・振込日); a date typed by hand is left alone
@@ -57,6 +63,14 @@ export default function PayrollPanel({ manage = false, members = [], noun = '給
   }, [dUser, dMonth, dTouched]);
   const draftNet = draft ? draft.items.reduce((s, i) => s + (i.kind === 'earning' ? 1 : -1) * (Number(i.amount) || 0), 0) + (draft.system?.amount ?? 0) : 0;
 
+  // the person's 源泉徴収の欄 (甲欄 / 乙欄): saved at once; a default 所得税 row follows it
+  async function setWithholding(userId: string, c: WithholdingClass) {
+    const res = await api(`/api/work/users/${userId}`, 'PATCH', { withholding_class: c });
+    if (!res.ok) { flash('error', '源泉徴収の欄を変更できませんでした'); return; }
+    setWcChosen(w => ({ ...w, [userId]: c }));
+    setDraft(d => d && { ...d, items: d.items.map(i => (i.kind === 'deduction' && isTaxLabel(i.label) ? { ...i, label: taxLabel(c) } : i)) });
+    flash('success', `源泉徴収を${WITHHOLDING_LABEL[c]}にしました`);
+  }
   async function save() {
     if (!draft) return;
     const items = draft.items.filter(i => i.label.trim() && i.amount !== '').map(i => ({ kind: i.kind, label: i.label, amount: Math.round(Number(i.amount)) }));
@@ -137,11 +151,27 @@ export default function PayrollPanel({ manage = false, members = [], noun = '給
         <Modal title={draft.id ? '明細を編集' : '明細を登録'} onClose={() => setDraft(null)}>
           <div className="space-y-3">
             {!draft.id && (
-              <div><label className="text-xs text-gray-600">対象者</label>
-                <select className={inp} value={draft.userId} onChange={e => setDraft({ ...draft, userId: e.target.value })}>
+              <div><label className="text-xs text-gray-600" htmlFor="payslip-user">対象者</label>
+                <select id="payslip-user" className={inp} value={draft.userId} onChange={e => setDraft({ ...draft, userId: e.target.value, items: draft.items.map(i => (i.kind === 'deduction' && isTaxLabel(i.label) ? { ...i, label: taxLabel(wcOf(e.target.value)) } : i)) })}>
                   {members.map(m => <option key={m.id} value={m.id}>{m.name}（{TYPE_LABEL[m.worker_type]}）</option>)}
                 </select></div>
             )}
+            {manage && (() => {
+              const who = members.find(m => m.id === draft.userId);
+              if (!who || !(paysSalary(who.worker_type) || who.worker_type === 'executive')) return null;
+              const c = wcOf(who.id);
+              return (
+                <div className="rounded-lg border border-gray-200 px-3 py-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <label className="text-xs font-semibold text-gray-600" htmlFor="withholding-class">源泉徴収（所得税）の欄</label>
+                    <select id="withholding-class" className="rounded-lg border border-gray-300 px-2 py-1 text-sm" value={c} onChange={e => setWithholding(who.id, e.target.value as WithholdingClass)}>
+                      {WITHHOLDING_CLASSES.map(k => <option key={k} value={k}>{WITHHOLDING_LABEL[k]}</option>)}
+                    </select>
+                  </div>
+                  <p className="mt-1 text-xs text-gray-500">{WITHHOLDING_HELP[c]}。税額は、{WITHHOLDING_LABEL[c]}の源泉徴収税額表で調べて、下の「所得税」に入れてください。</p>
+                </div>
+              );
+            })()}
             <div className="grid grid-cols-2 gap-2">
               <div><label className="text-xs text-gray-600">対象月</label><input type="month" className={inp} value={draft.pay_month} onChange={e => setDraft({ ...draft, pay_month: e.target.value })} /></div>
               <div><label className="text-xs text-gray-600">名称</label><input className={inp} value={draft.title} onChange={e => setDraft({ ...draft, title: e.target.value })} /></div>

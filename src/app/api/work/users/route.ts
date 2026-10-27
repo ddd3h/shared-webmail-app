@@ -10,7 +10,7 @@ export async function GET() {
   const actor = await getActor(session.userId);
   if (!actor || !isFinance(actor)) return NextResponse.json({ error: 'forbidden' }, { status: 403 });
   const items = await prisma.users.findMany({
-    select: { id: true, name: true, email: true, role: true, worker_type: true, is_accounting: true, is_hr: true },
+    select: { id: true, name: true, email: true, role: true, worker_type: true, is_accounting: true, is_hr: true, withholding_class: true },
     orderBy: { created_at: 'asc' },
   });
   return NextResponse.json({ items });

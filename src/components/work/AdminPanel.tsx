@@ -4,10 +4,10 @@ import AttendancePanel from './AttendancePanel';
 import ReportsPanel from './ReportsPanel';
 import PayrollPanel from './PayrollPanel';
 import PayScheduleSettings from './PayScheduleSettings';
-import { paysSalary, usesAttendance, usesReports } from '@/lib/work';
+import { WITHHOLDING_CLASSES, WITHHOLDING_HELP, WITHHOLDING_LABEL, paysSalary, usesAttendance, usesReports, type WithholdingClass } from '@/lib/work';
 import { Notice, TYPE_LABEL, btnPrimary, inp, api, type WorkerType } from './ui';
 
-type Member = { id: string; name: string; email: string; role: string; worker_type: WorkerType; is_accounting: boolean; is_hr: boolean };
+type Member = { id: string; name: string; email: string; role: string; worker_type: WorkerType; is_accounting: boolean; is_hr: boolean; withholding_class: WithholdingClass };
 const SECTIONS = [
   { key: 'members', label: '区分・設定', adminOnly: true },
   { key: 'attendance', label: '勤怠の確認' },
@@ -38,6 +38,10 @@ export default function AdminPanel({ isAdmin = true }: { isAdmin?: boolean }) {
   async function setType(id: string, worker_type: WorkerType) {
     const res = await api(`/api/work/users/${id}`, 'PATCH', { worker_type });
     if (res.ok) { setMembers(ms => ms.map(m => m.id === id ? { ...m, worker_type } : m)); flash('success', '区分を更新しました'); } else flash('error', '更新に失敗しました');
+  }
+  async function setWithholding(id: string, withholding_class: WithholdingClass) {
+    const res = await api(`/api/work/users/${id}`, 'PATCH', { withholding_class });
+    if (res.ok) { setMembers(ms => ms.map(m => m.id === id ? { ...m, withholding_class } : m)); flash('success', `源泉徴収を${WITHHOLDING_LABEL[withholding_class]}にしました${withholding_class === 'otsu' ? '（年末調整の対象から外れます）' : ''}`); } else flash('error', '更新に失敗しました');
   }
   async function setAccounting(id: string, is_accounting: boolean) {
     const res = await api(`/api/work/users/${id}`, 'PATCH', { is_accounting });
@@ -70,7 +74,7 @@ export default function AdminPanel({ isAdmin = true }: { isAdmin?: boolean }) {
         <div className="space-y-4">
           <div className="rounded-xl border border-gray-200 bg-white overflow-x-auto">
             <table className="w-full text-sm">
-              <thead className="bg-gray-50 text-xs text-gray-500"><tr><th className="px-3 py-2 text-left">名前</th><th className="px-3 py-2 text-left">区分</th><th className="px-3 py-2 text-left">経理担当</th><th className="px-3 py-2 text-left">人事担当</th><th className="px-3 py-2 text-left hidden sm:table-cell">使える機能</th></tr></thead>
+              <thead className="bg-gray-50 text-xs text-gray-500"><tr><th className="px-3 py-2 text-left">名前</th><th className="px-3 py-2 text-left">区分</th><th className="px-3 py-2 text-left">源泉徴収</th><th className="px-3 py-2 text-left">経理担当</th><th className="px-3 py-2 text-left">人事担当</th><th className="px-3 py-2 text-left hidden sm:table-cell">使える機能</th></tr></thead>
               <tbody className="divide-y divide-gray-100">
                 {members.map(m => (
                   <tr key={m.id}>
@@ -79,6 +83,14 @@ export default function AdminPanel({ isAdmin = true }: { isAdmin?: boolean }) {
                       <select className={`${inp} max-w-36`} value={m.worker_type} onChange={e => setType(m.id, e.target.value as WorkerType)} aria-label={`${m.name}の区分`}>
                         {(Object.keys(TYPE_LABEL) as WorkerType[]).map(t => <option key={t} value={t}>{TYPE_LABEL[t]}</option>)}
                       </select>
+                    </td>
+                    <td className="px-3 py-2">
+                      {paysSalary(m.worker_type) || m.worker_type === 'executive'
+                        ? (
+                          <select className={`${inp} max-w-24`} value={m.withholding_class} onChange={e => setWithholding(m.id, e.target.value as WithholdingClass)} aria-label={`${m.name}の源泉徴収`} title={WITHHOLDING_HELP[m.withholding_class]}>
+                            {WITHHOLDING_CLASSES.map(c => <option key={c} value={c}>{WITHHOLDING_LABEL[c]}</option>)}
+                          </select>
+                        ) : <span className="text-xs text-gray-400" title="給与・役員報酬の人だけ選びます">—</span>}
                     </td>
                     <td className="px-3 py-2">
                       {m.role === 'admin'

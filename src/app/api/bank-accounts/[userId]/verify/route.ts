@@ -7,7 +7,7 @@ import { notifyBankAccountVerified } from '@/lib/work-notify';
 
 const schema = z.object({ revision: z.string().min(1) });
 
-/** Nobody confirms their own account while another finance person exists. */
+/** Nobody confirms their own account, or one they changed themself, while another finance person exists. */
 async function mayVerifyOwn(actorId: string): Promise<boolean> {
   const others = await prisma.users.count({ where: { id: { not: actorId }, OR: [{ role: 'admin' }, { is_accounting: true }] } });
   return others === 0;
@@ -26,6 +26,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ use
   const acct = await prisma.user_bank_accounts.findUnique({ where: { user_id: userId } });
   if (!acct) return NextResponse.json({ error: 'not_found' }, { status: 404 });
   if (userId === actor.id && !(await mayVerifyOwn(actor.id))) return NextResponse.json({ error: 'self_verify' }, { status: 403 });
+  if (acct.changed_by_id === actor.id && userId !== actor.id && !(await mayVerifyOwn(actor.id))) return NextResponse.json({ error: 'self_verify_change' }, { status: 403 });
 
   const seen = new Date(parsed.data.revision);
   const done = await prisma.user_bank_accounts.updateMany({

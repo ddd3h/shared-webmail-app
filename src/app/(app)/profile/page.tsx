@@ -7,6 +7,7 @@ import FoldCard from '@/components/mobile/FoldCard';
 import PersonalInfoSection from '@/components/profile/PersonalInfoSection';
 import BankAccountSection from '@/components/profile/BankAccountSection';
 import HomeAddressSection from '@/components/profile/HomeAddressSection';
+import YearEndSection from '@/components/profile/YearEndSection';
 import PushSettingsSection from '@/components/profile/PushSettingsSection';
 
 type Passkey = {
@@ -380,6 +381,7 @@ export default function ProfilePage() {
       <PersonalInfoSection />
       <HomeAddressSection />
       <BankAccountSection />
+      <YearEndSection />
 
       <GroupTitle>ログインとセキュリティ</GroupTitle>
       <PasswordSection />

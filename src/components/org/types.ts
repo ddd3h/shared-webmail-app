@@ -5,7 +5,7 @@ export type OrgPosition = { id: string; name: string; level: number; permissions
 export type OrgMember = { id: string; name: string; org_unit_id: string | null; position_id: string | null; can_evaluate: boolean; role?: string; email?: string };
 export type OrgData = {
   units: OrgUnit[]; positions: OrgPosition[]; members: OrgMember[];
-  me: { id: string; is_admin: boolean; capabilities: Capability[]; headed_unit_ids: string[] };
+  me: { id: string; is_admin: boolean; capabilities: Capability[]; headed_unit_ids: string[]; can_year_end?: boolean };
 };
 
 /** Units as a tree, in display order: [{ unit, depth }] depth-first. */
