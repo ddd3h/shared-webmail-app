@@ -1,3 +1,4 @@
+import { triggerFreeeSync } from '@/lib/freee-sync';
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/db';
@@ -39,5 +40,6 @@ export async function POST(req: NextRequest) {
     metadata: { ids: rows.map(r => r.id), total: rows.reduce((s, r) => s + transferAmount(r), 0), date },
   });
   if (res.count > 0) void notifyPaymentPaid(rows.map(r => r.id), date);
+  if (res.count > 0) triggerFreeeSync();
   return NextResponse.json({ paid: res.count, skipped: ids.length - res.count });
 }

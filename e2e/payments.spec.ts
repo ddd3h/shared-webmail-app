@@ -71,13 +71,14 @@ test.describe('取引先', () => {
     expect((await db.payment_vendors.findUnique({ where: { id: v.id } }))!.verified_at).toBeNull();
   });
 
-  test('編集・確認は管理者だけ（経理担当・一般ユーザーは403）', async ({ as }) => {
+  test('編集・確認は経理担当と管理者だけ（一般ユーザーは403）', async ({ as }) => {
     const v = await makeVendor({ verified: false });
-    for (const r of ['sato', 'keiri'] as const) {
-      const c = await as(r);
-      expect((await c.put(`/api/payments/vendors/${v.id}`, { data: vendorBody() })).status(), r).toBe(403);
-      expect((await c.post(`/api/payments/vendors/${v.id}/verify`)).status(), r).toBe(403);
-    }
+    const sato = await as('sato');
+    expect((await sato.put(`/api/payments/vendors/${v.id}`, { data: vendorBody() })).status()).toBe(403);
+    expect((await sato.post(`/api/payments/vendors/${v.id}/verify`)).status()).toBe(403);
+    // 経理担当 handles all the money, vendors included
+    expect((await (await as('keiri')).put(`/api/payments/vendors/${v.id}`, { data: vendorBody() })).status()).toBe(200);
+    expect((await (await as('keiri')).post(`/api/payments/vendors/${v.id}/verify`)).status()).toBe(200);
     expect((await (await as('admin')).post(`/api/payments/vendors/${v.id}/verify`)).status()).toBe(200);
   });
 });

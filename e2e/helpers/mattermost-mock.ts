@@ -25,6 +25,15 @@ export function startMattermostMock(): Promise<() => Promise<void>> {
   let failEmbeddings = false;
   let embeddingCalls = 0;
   let mapsCalls = 0;
+  // a stand-in for freee: OAuth (authorize / token), companies, bank accounts, accounts, and deals
+  const FREEE = { id: 'e2e-freee-id', secret: 'e2e-freee-secret', code: 'e2e-freee-code' };
+  let freeeSeq = 0;
+  let freeeAccess = '';
+  let freeeRefresh = '';
+  let freeeTokenCalls: string[] = [];
+  let freeeDeals: any[] = [];
+  let failFreee: 'down' | 'invalid' | null = null;
+  let freeeCompanies = 1;
   let failMaps: 'down' | 'denied' | null = null;
   let lastMaps: { key: string; origin?: string; destination?: string; mode?: string } | null = null;
 
@@ -35,7 +44,7 @@ export function startMattermostMock(): Promise<() => Promise<void>> {
       const url = req.url || '';
       const send = (o: unknown, code = 200) => { res.writeHead(code, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(o)); };
       if (url === '/__posts') return send(posts);
-      if (url === '/__reset') { posts.length = 0; failPosts = false; imageHits = 0; failEmbeddings = false; embeddingCalls = 0; mapsCalls = 0; failMaps = null; lastMaps = null; return send({ ok: true }); }
+      if (url === '/__reset') { posts.length = 0; failPosts = false; imageHits = 0; failEmbeddings = false; embeddingCalls = 0; mapsCalls = 0; failMaps = null; lastMaps = null; freeeAccess = ''; freeeRefresh = ''; freeeTokenCalls = []; freeeDeals = []; failFreee = null; freeeCompanies = 1; return send({ ok: true }); }
       if (url === '/__fail_embeddings') { failEmbeddings = JSON.parse(body || '{}').on !== false; return send({ failEmbeddings }); }
       if (url === '/__embedding_calls') return send({ calls: embeddingCalls });
       if (url === '/v1/embeddings') {
@@ -57,6 +66,43 @@ export function startMattermostMock(): Promise<() => Promise<void>> {
         // stand-in distances: 新宿 12.34 km, 横浜 35.0 km, anything else 8.0 km
         const meters = /新宿/.test(dest) ? 12340 : /横浜/.test(dest) ? 35000 : 8000;
         return send({ routes: [{ distanceMeters: meters }] });
+      }
+      if (url === '/__freee_state') return send({ deals: freeeDeals, tokenCalls: freeeTokenCalls, access: freeeAccess });
+      if (url === '/__freee_fail') { failFreee = JSON.parse(body || '{}').mode ?? null; return send({ failFreee }); }
+      if (url === '/__freee_companies') { freeeCompanies = JSON.parse(body || '{}').n ?? 1; return send({ freeeCompanies }); }
+      if (url === '/__freee_expire') { freeeAccess = ''; return send({ ok: true }); } // the access token stops working (the refresh token still does)
+      if (url.startsWith('/freee-auth/public_api/authorize')) {
+        const q = new URL(url, 'http://x').searchParams;
+        const back = new URL(q.get('redirect_uri') || 'http://localhost');
+        if (q.get('client_id') !== FREEE.id) { res.writeHead(400); return res.end('bad client'); }
+        back.searchParams.set('code', FREEE.code); back.searchParams.set('state', q.get('state') || '');
+        res.writeHead(302, { Location: back.toString() }); return res.end();
+      }
+      if (url === '/freee-auth/public_api/token') {
+        const f = new URLSearchParams(body);
+        freeeTokenCalls.push(f.get('grant_type') || '');
+        const okClient = f.get('client_id') === FREEE.id && f.get('client_secret') === FREEE.secret;
+        const okGrant = (f.get('grant_type') === 'authorization_code' && f.get('code') === FREEE.code) || (f.get('grant_type') === 'refresh_token' && f.get('refresh_token') === freeeRefresh && freeeRefresh !== '');
+        if (!okClient || !okGrant) return send({ error: 'invalid_grant', error_description: 'bad grant' }, 401);
+        freeeSeq++; freeeAccess = `at-${freeeSeq}`; freeeRefresh = `rt-${freeeSeq}`;   // the refresh token works once
+        return send({ access_token: freeeAccess, token_type: 'Bearer', expires_in: 86400, refresh_token: freeeRefresh, scope: 'read write', created_at: 0 });
+      }
+      if (url.startsWith('/freee-api/')) {
+        if (req.headers.authorization !== `Bearer ${freeeAccess}` || !freeeAccess) return send({ message: 'unauthorized' }, 401);
+        const path = url.slice('/freee-api'.length).split('?')[0];
+        if (path === '/api/1/companies') return send({ companies: [{ id: 111, name: 'テスト株式会社', display_name: 'テスト株式会社' }, { id: 222, name: '別会社', display_name: '別会社' }].slice(0, freeeCompanies) });
+        if (path === '/api/1/walletables') return send({ walletables: [{ id: 501, name: 'みずほ銀行 普通', type: 'bank_account' }, { id: 502, name: '現金', type: 'wallet' }] });
+        if (path === '/api/1/account_items') return send({ account_items: [{ id: 9001, name: '給料手当' }, { id: 9002, name: '役員報酬' }, { id: 9003, name: '外注費' }, { id: 9004, name: '買掛金' }, { id: 9005, name: '旅費交通費' }, { id: 9006, name: '交際費' }] });
+        if (path === '/api/1/deals' && req.method === 'POST') {
+          if (failFreee === 'down') return send({ message: 'unavailable' }, 503);
+          const deal = JSON.parse(body || '{}');
+          if (failFreee === 'invalid') return send({ status_code: 400, errors: [{ type: 'status', messages: ['勘定科目が不正です'] }] }, 400);
+          const total = (deal.details ?? []).reduce((s: number, x: any) => s + x.amount, 0);
+          if (deal.type !== 'expense' || !deal.company_id || !deal.issue_date || !(deal.details ?? []).length || (deal.payments ?? []).reduce((s: number, x: any) => s + x.amount, 0) !== total) return send({ message: 'invalid deal' }, 400);
+          freeeDeals.push({ ...deal, id: 7000 + freeeDeals.length + 1, version: req.headers['x-api-version'] });
+          return send({ deal: { id: 7000 + freeeDeals.length } });
+        }
+        return send({ message: 'not found' }, 404);
       }
       if (url === '/__image_hits') return send({ hits: imageHits });
       if (/^\/api\/v4\/users\/[^/]+\/image$/.test(url)) { imageHits++; res.writeHead(200, { 'Content-Type': 'image/png' }); return res.end(Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64')); }
@@ -89,6 +135,12 @@ export const mm = {
   async embeddingCalls(): Promise<number> { return (await (await fetch(`${MM_URL}/__embedding_calls`)).json()).calls; },
   async mapsCalls(): Promise<{ calls: number; last: { key: string; origin?: string; destination?: string; mode?: string } | null }> { return (await fetch(`${MM_URL}/__maps_calls`)).json(); },
   async failMaps(mode: 'down' | 'denied' | null) { await fetch(`${MM_URL}/__fail_maps`, { method: 'POST', body: JSON.stringify({ mode }) }); },
+  freee: {
+    async state(): Promise<{ deals: any[]; tokenCalls: string[]; access: string }> { return (await fetch(`${MM_URL}/__freee_state`)).json(); },
+    async fail(mode: 'down' | 'invalid' | null) { await fetch(`${MM_URL}/__freee_fail`, { method: 'POST', body: JSON.stringify({ mode }) }); },
+    async companies(n: number) { await fetch(`${MM_URL}/__freee_companies`, { method: 'POST', body: JSON.stringify({ n }) }); },
+    async expireAccessToken() { await fetch(`${MM_URL}/__freee_expire`, { method: 'POST' }); },
+  },
   async reset() { await fetch(`${MM_URL}/__reset`, { method: 'POST' }); },
   async fail(on = true) { await fetch(`${MM_URL}/__fail`, { method: 'POST', body: JSON.stringify({ on }) }); },
   // DMs are sent after the HTTP response, so poll briefly.

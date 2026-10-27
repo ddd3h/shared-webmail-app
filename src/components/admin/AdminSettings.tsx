@@ -3,6 +3,7 @@ import { Suspense, useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import FoldCard from '@/components/mobile/FoldCard';
 import MileageSettingsCard from '@/components/admin/MileageSettingsCard';
+import FreeeSettingsCard from '@/components/admin/FreeeSettingsCard';
 
 type Item = { key: string; value: string; isSecret: boolean };
 type User = { id: string; name: string; email: string; role: string; mattermost_user_id: string | null };
@@ -583,6 +584,8 @@ function AdminSettingsContent({ tab }: { tab: AdminTab }) {
       {tab === 'system' && (
         <div className="space-y-6 max-w-2xl pb-20">
           <MileageSettingsCard />
+
+          <FreeeSettingsCard />
 
           <FoldCard title="アプリ基本設定" className="card p-6" bodyClass="">
             <div className="space-y-4">

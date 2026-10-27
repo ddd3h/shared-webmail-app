@@ -4,9 +4,10 @@ import TransferList from '@/components/transfers/TransferList';
 import BatchHistory from '@/components/transfers/BatchHistory';
 import AccountsReview from '@/components/transfers/AccountsReview';
 import ZenginSettingsPanel from '@/components/transfers/ZenginSettingsPanel';
+import FreeeSync from '@/components/transfers/FreeeSync';
 
 type Me = { id: string; name: string; role: string; is_finance: boolean };
-type TabKey = 'monthly' | 'payroll' | 'payment' | 'history' | 'accounts' | 'settings';
+type TabKey = 'monthly' | 'payroll' | 'payment' | 'history' | 'freee' | 'accounts' | 'settings';
 
 export default function TransfersPage() {
   const [me, setMe] = useState<Me | null>(null);
@@ -17,7 +18,7 @@ export default function TransfersPage() {
   if (!me) return <p className="text-sm text-gray-400">読み込み中…</p>;
   if (!me.is_finance) return <p className="text-sm text-gray-600">このページは経理担当と管理者だけが使えます。</p>;
   const tabs: { k: TabKey; l: string }[] = [
-    { k: 'monthly', l: '月次まとめ' }, { k: 'payroll', l: '給与の振込' }, { k: 'payment', l: '支払の振込' }, { k: 'history', l: '作成履歴' },
+    { k: 'monthly', l: '月次まとめ' }, { k: 'payroll', l: '給与の振込' }, { k: 'payment', l: '支払の振込' }, { k: 'history', l: '作成履歴' }, { k: 'freee', l: 'freee連携' },
     { k: 'accounts', l: '受取口座の確認' }, { k: 'settings', l: '全銀の設定' },
   ];
   const created = () => setRefresh(n => n + 1);
@@ -36,6 +37,7 @@ export default function TransfersPage() {
       {tab === 'payroll' && <TransferList key="payroll" kind="payroll" onCreated={created} />}
       {tab === 'payment' && <TransferList key="payment" kind="payment" onCreated={created} />}
       {tab === 'history' && <BatchHistory refreshKey={refresh} />}
+      {tab === 'freee' && <FreeeSync />}
       {tab === 'accounts' && <AccountsReview meId={me.id} />}
       {tab === 'settings' && <ZenginSettingsPanel admin={me.role === 'admin'} />}
     </div>

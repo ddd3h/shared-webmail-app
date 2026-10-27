@@ -5,6 +5,7 @@ import { logAudit } from '@/lib/audit';
 import { financeActor, forbidden } from '@/lib/finance-guard';
 import { isValidDateString, jstDateString } from '@/lib/work';
 import { notifySettled, settleBatch } from '@/lib/transfer-settle';
+import { triggerFreeeSync } from '@/lib/freee-sync';
 
 const schema = z.object({ paid_date: z.string().refine(isValidDateString).optional(), note: z.string().trim().max(500).optional() });
 
@@ -29,5 +30,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     metadata: { kind: batch.kind, count: settled.paidIds.length, total: batch.total_amount, date },
   });
   notifySettled(settled, date);
+  triggerFreeeSync();
   return NextResponse.json({ ok: true, paid: settled.paidIds.length });
 }

@@ -6,6 +6,7 @@ import { logAudit } from '@/lib/audit';
 import { getActor, isFinance } from '@/lib/work-auth';
 import { notifyExpenseAddedToPayslip, notifyExpenseReimbursed } from '@/lib/work-notify';
 import { attachClaimsToPayslips } from '@/lib/expense-payslip';
+import { triggerFreeeSync } from '@/lib/freee-sync';
 import { isValidDateString, isValidMonth, jstDateString, toDbDate } from '@/lib/work';
 
 const schema = z.object({
@@ -54,6 +55,6 @@ export async function POST(req: NextRequest) {
     actorUserId: actor.id, actionType: 'expense_reimburse', targetType: 'expense_claims',
     metadata: { ids: claims.map(c => c.id), total, users: [...new Set(claims.map(c => c.user_id))] },
   });
-  if (res.count > 0) void notifyExpenseReimbursed(claims.map(c => c.id), date, note);
+  if (res.count > 0) { void notifyExpenseReimbursed(claims.map(c => c.id), date, note); triggerFreeeSync(); }
   return NextResponse.json({ reimbursed: res.count, attached: 0, skipped: ids.length - res.count });
 }

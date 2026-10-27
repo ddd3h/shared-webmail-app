@@ -1,3 +1,4 @@
+import { triggerFreeeSync } from '@/lib/freee-sync';
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/db';
@@ -72,7 +73,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     actorUserId: actor.id, actionType: 'payslip_update', targetType: 'payslips', targetId: id,
     metadata: { user_id: existing.user_id, pay_month: d.pay_month, net: payslipTotals(d.items).net },
   });
-  if (existing.status !== 'paid' && d.status === 'paid') void notifyPayslip(id, 'paid');
+  if (existing.status !== 'paid' && d.status === 'paid') { void notifyPayslip(id, 'paid'); triggerFreeeSync(); }
   return NextResponse.json({ ok: true });
 }
 

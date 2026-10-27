@@ -1105,6 +1105,28 @@ model pay_schedules {
   updated_at           DateTime   @updatedAt
 }
 
+// Money that moved out (a paid pay statement, payment request or expense reimbursement) and what became of sending it to freee.
+// One row per source: a thing is never sent twice.
+model freee_exports {
+  id            String    @id @default(cuid())
+  source_type   String    // 'payslip' | 'payment' | 'expense'
+  source_id     String
+  status        String    @default("pending") // 'pending' | 'sending' | 'sent' | 'failed' | 'skipped'
+  amount        Int
+  paid_date     DateTime  @db.Date
+  description   String
+  freee_deal_id Int?
+  error         String?
+  attempts      Int       @default(0)
+  sent_at       DateTime?
+  created_at    DateTime  @default(now())
+  updated_at    DateTime  @updatedAt
+
+  @@unique([source_type, source_id])
+  @@index([status])
+  @@index([paid_date])
+}
+
 model transfer_batches {
   id            String    @id @default(cuid())
   kind          String

@@ -42,6 +42,7 @@
 | `ENCRYPTION_KEY_VERSION` | △ | 暗号鍵バージョン識別子（例: `"v1"`） | `src/lib/crypto.ts`（推定） | いいえ |
 | `GOOGLE_CLIENT_ID` | △ | Google OAuth クライアントID（コンタクト同期用） | `src/app/api/contacts/google/auth/route.ts`, `sync/route.ts`, `callback/route.ts` | ✅ |
 | `GOOGLE_MAPS_API_KEY` | △ | Google Maps（Routes API）のキー。自家用車の経費で自宅→行き先の距離を調べる。管理画面から設定でき、未設定なら距離を手入力 | `src/lib/route-distance.ts` | ✅ |
+| `FREEE_AUTH_URL` / `FREEE_API_URL` | × | freee の認可・APIのアドレス（テスト用の差し替え。既定は `https://accounts.secure.freee.co.jp` / `https://api.freee.co.jp`）。freeeの接続情報は管理画面で設定（`33_freee.md`） | `src/lib/freee.ts` | ❌ |
 | `MAPS_API_URL` | × | Routes API の代わりに使うサービスのアドレス（テスト用。既定は `https://routes.googleapis.com`） | `src/lib/route-distance.ts` | ❌ |
 | `GOOGLE_CLIENT_SECRET` | △ | Google OAuth クライアントシークレット（コンタクト同期用） | `src/app/api/contacts/google/sync/route.ts`, `callback/route.ts` | ✅ |
 | `OPENROUTER_API_KEY` | △ | OpenRouter APIキー（AI返信アシスト用） | `src/app/api/ai/reply/route.ts` | ✅ |

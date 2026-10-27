@@ -10,6 +10,7 @@ import { runStaleUnreadAlerts } from '@/lib/background-jobs';
 import { dispatchDueScheduledSends } from '@/lib/mail/deliver';
 import { embeddingEnabled } from '@/lib/embedding';
 import { indexPendingThreads } from '@/lib/semantic-search';
+import { triggerFreeeSync } from '@/lib/freee-sync';
 
 const DEFAULT_INTERVAL_SEC = 180;
 
@@ -46,6 +47,8 @@ async function tick() {
   await runPollSync().catch(e => console.error('[cron] poll error:', e));
   // meaning-vectors for the semantic search (does nothing unless EMBEDDING_API_URL is set)
   if (embeddingEnabled()) await indexPendingThreads(50).catch(e => console.error('[embedding] index error:', e?.message || e));
+  // money paid since the last round goes to freee (does nothing unless automatic sending is on)
+  triggerFreeeSync();
   // Keep IDLE connections in sync with DB (picks up new/removed mailboxes)
   await reconcileIdleConnections().catch(e => console.error('[idle] reconcile error:', e));
 }

@@ -1,3 +1,4 @@
+import { triggerFreeeSync } from '@/lib/freee-sync';
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/db';
@@ -102,5 +103,6 @@ export async function POST(req: NextRequest) {
     metadata: { user_id: d.userId, pay_month: d.pay_month, net: payslipTotals(d.items).net },
   });
   void notifyPayslip(row.id, 'created');
+  if (d.status === 'paid') triggerFreeeSync();
   return NextResponse.json({ id: row.id }, { status: 201 });
 }
