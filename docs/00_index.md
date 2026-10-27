@@ -30,7 +30,7 @@
 | [27_mobile.md](./27_mobile.md) | スマホ表示の方針 | 隠して必要なときに出す・シート・丸い「＋」・画面ごとの見え方 |
 | [28_profile.md](./28_profile.md) | プロフィール | 個人情報・受取口座・セキュリティ・メール署名を1か所に |
 | [29_demo_data.md](./29_demo_data.md) | デモデータ | テストサーバー用のサンプルデータの入れ方・消し方 |
-| [30_semantic_search.md](./30_semantic_search.md) | 意味検索 | Embedding を使った「意味でも探す」・設定・しくみ・デメリット |
+| [30_semantic_search.md](./30_semantic_search.md) | 意味検索 | Embedding を使った「意味検索」・設定・しくみ・デメリット |
 | [32_admin_console.md](./32_admin_console.md) | 管理画面 | 管理の画面構成・セキュリティの4項目・DBの取り方の最適化・安全のための修正 |
 | [33_freee.md](./33_freee.md) | freee連携 | 支払い済みのお金の動きをfreeeに取引として送る（設定・送信・失敗時の扱い） |
 | [31_notifications.md](./31_notifications.md) | 通知 | お知らせの一覧（受信箱）・ベルの数・プッシュ設定のプロフィールへの移動 |

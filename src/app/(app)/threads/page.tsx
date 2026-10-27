@@ -86,7 +86,7 @@ type Thread = {
   has_mattermost: boolean;
   has_draft: boolean;
   readers: ThreadReader[];
-  match?: 'semantic'; // found by meaning, not by the words (only in a search with 意味でも探す)
+  match?: 'semantic'; // found by meaning, not by the words (only in a search with 意味検索)
   score?: number;
 };
 
@@ -321,7 +321,7 @@ function ThreadList() {
   useEffect(() => { if (searchOpen) searchRef.current?.focus(); }, [searchOpen]);
   const [showHistory, setShowHistory] = useState(false);
   const [searchHistory, setSearchHistory] = useState<string[]>([]);
-  // 意味でも探す: offered only when the server has an embedding service; the choice is remembered in this browser
+  // 意味検索: offered only when the server has an embedding service; the choice is remembered in this browser
   const { data: semanticStatus } = useSWR<{ enabled: boolean }>('/api/search/semantic', fetcher);
   const [semanticOn, setSemanticOn] = useState(true);
   useEffect(() => { try { if (localStorage.getItem(SEMANTIC_KEY) === '0') setSemanticOn(false); } catch {} }, []);
@@ -855,7 +855,7 @@ function ThreadList() {
                 type="checkbox" checked={semanticOn} className="mt-0.5 w-4 h-4 rounded text-blue-600 border-gray-300"
                 onChange={e => { setSemanticOn(e.target.checked); try { localStorage.setItem(SEMANTIC_KEY, e.target.checked ? '1' : '0'); } catch {} }}
               />
-              <span><span className="font-medium text-gray-700">意味でも探す</span><span className="hidden sm:inline">　言葉が同じでなくても、内容が近いメールを下に足します</span></span>
+              <span className="font-medium text-gray-700">意味検索</span>
             </label>
           )}
           {semanticDown && (

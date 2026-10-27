@@ -101,10 +101,10 @@ test.describe('意味検索の画面', () => {
     await index(request);
     await search(page, 'インボイス');
     await expect(row(page, T.invoice.subject)).toBeVisible();
-    await page.getByLabel(/意味でも探す/).uncheck();
+    await page.getByLabel(/意味検索/).uncheck();
     await expect(page.getByText('メールはありません')).toBeVisible();
     await page.reload();
-    await expect(page.getByLabel(/意味でも探す/)).not.toBeChecked();
+    await expect(page.getByLabel(/意味検索/)).not.toBeChecked();
   });
 
   test('意味検索のサービスが落ちていても、キーワード検索は使えて、お知らせが出る', async ({ page, request }) => {
