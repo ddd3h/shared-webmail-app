@@ -595,8 +595,8 @@ function ThreadDetailPageInner({ params }: Props) {
         </div>
       )}
 
-      {/* Sticky header */}
-      <div className="sticky top-0 md:top-14 z-30 bg-white/95 backdrop-blur-sm border-b border-gray-200 -mx-4 sm:-mx-6 lg:-mx-8 px-4 sm:px-6 lg:px-8 py-0 mb-4 shadow-xs">
+      {/* Sticky header. -mt-6 cancels the top padding of <main>: it starts where it sticks, so it does not jump up when the scrolling begins */}
+      <div className="sticky top-0 md:top-[calc(3.5rem+1px)] -mt-6 z-30 bg-white/95 backdrop-blur-sm border-b border-gray-200 -mx-4 sm:-mx-6 lg:-mx-8 px-4 sm:px-6 lg:px-8 py-0 mb-4 shadow-xs">
         <div>
           {/* Top row: back + subject + reply */}
           <div className="flex items-center gap-3 py-3 border-b border-gray-100">
