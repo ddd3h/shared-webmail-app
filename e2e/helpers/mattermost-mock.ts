@@ -24,6 +24,9 @@ export function startMattermostMock(): Promise<() => Promise<void>> {
   let imageHits = 0;
   let failEmbeddings = false;
   let embeddingCalls = 0;
+  let mapsCalls = 0;
+  let failMaps: 'down' | 'denied' | null = null;
+  let lastMaps: { key: string; origin?: string; destination?: string; mode?: string } | null = null;
 
   const server = http.createServer((req, res) => {
     let body = '';
@@ -32,7 +35,7 @@ export function startMattermostMock(): Promise<() => Promise<void>> {
       const url = req.url || '';
       const send = (o: unknown, code = 200) => { res.writeHead(code, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(o)); };
       if (url === '/__posts') return send(posts);
-      if (url === '/__reset') { posts.length = 0; failPosts = false; imageHits = 0; failEmbeddings = false; embeddingCalls = 0; return send({ ok: true }); }
+      if (url === '/__reset') { posts.length = 0; failPosts = false; imageHits = 0; failEmbeddings = false; embeddingCalls = 0; mapsCalls = 0; failMaps = null; lastMaps = null; return send({ ok: true }); }
       if (url === '/__fail_embeddings') { failEmbeddings = JSON.parse(body || '{}').on !== false; return send({ failEmbeddings }); }
       if (url === '/__embedding_calls') return send({ calls: embeddingCalls });
       if (url === '/v1/embeddings') {
@@ -40,6 +43,20 @@ export function startMattermostMock(): Promise<() => Promise<void>> {
         if (failEmbeddings) return send({ error: 'down' }, 503);
         const { input } = JSON.parse(body) as { input: string[] };
         return send({ data: input.map((t, index) => ({ index, embedding: fakeEmbedding(t) })) });
+      }
+      if (url === '/__maps_calls') return send({ calls: mapsCalls, last: lastMaps });
+      if (url === '/__fail_maps') { failMaps = JSON.parse(body || '{}').mode ?? null; return send({ failMaps }); }
+      if (url === '/maps/directions/v2:computeRoutes') {
+        mapsCalls++;
+        const parsed = JSON.parse(body || '{}');
+        lastMaps = { key: String(req.headers['x-goog-api-key'] ?? ''), origin: parsed.origin?.address, destination: parsed.destination?.address, mode: parsed.travelMode };
+        if (failMaps === 'down') return send({ error: { status: 'UNAVAILABLE', message: 'down' } }, 503);
+        if (failMaps === 'denied') return send({ error: { status: 'PERMISSION_DENIED', message: 'API key not valid' } }, 400);
+        const dest: string = parsed.destination?.address ?? '';
+        if (/見つからない/.test(dest)) return send({ error: { status: 'NOT_FOUND', message: 'Address not found (geocoding failed)' } }, 404);
+        // stand-in distances: 新宿 12.34 km, 横浜 35.0 km, anything else 8.0 km
+        const meters = /新宿/.test(dest) ? 12340 : /横浜/.test(dest) ? 35000 : 8000;
+        return send({ routes: [{ distanceMeters: meters }] });
       }
       if (url === '/__image_hits') return send({ hits: imageHits });
       if (/^\/api\/v4\/users\/[^/]+\/image$/.test(url)) { imageHits++; res.writeHead(200, { 'Content-Type': 'image/png' }); return res.end(Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64')); }
@@ -70,6 +87,8 @@ export const mm = {
   async imageHits(): Promise<number> { return (await (await fetch(`${MM_URL}/__image_hits`)).json()).hits; },
   async failEmbeddings(on = true) { await fetch(`${MM_URL}/__fail_embeddings`, { method: 'POST', body: JSON.stringify({ on }) }); },
   async embeddingCalls(): Promise<number> { return (await (await fetch(`${MM_URL}/__embedding_calls`)).json()).calls; },
+  async mapsCalls(): Promise<{ calls: number; last: { key: string; origin?: string; destination?: string; mode?: string } | null }> { return (await fetch(`${MM_URL}/__maps_calls`)).json(); },
+  async failMaps(mode: 'down' | 'denied' | null) { await fetch(`${MM_URL}/__fail_maps`, { method: 'POST', body: JSON.stringify({ mode }) }); },
   async reset() { await fetch(`${MM_URL}/__reset`, { method: 'POST' }); },
   async fail(on = true) { await fetch(`${MM_URL}/__fail`, { method: 'POST', body: JSON.stringify({ on }) }); },
   // DMs are sent after the HTTP response, so poll briefly.

@@ -48,6 +48,8 @@ export type AppSettingKey =
   | 'AI_REPLY_EXTRA_PROMPT'
   | 'WORK_DAILY_MINUTES'
   | 'WORK_AUTO_BREAK_MINUTES'
+  | 'MILEAGE_RATE_PER_KM'
+  | 'GOOGLE_MAPS_API_KEY'
   | 'ZENGIN_CLIENT_CODE'
   | 'ZENGIN_CLIENT_NAME'
   | 'ZENGIN_BANK_CODE'
@@ -66,6 +68,7 @@ export const SECRET_SETTING_KEYS = new Set<AppSettingKey>([
   'ENCRYPTION_KEY_HEX',
   'CRON_SECRET',
   'NOTIFY_SMTP_PASS',
+  'GOOGLE_MAPS_API_KEY',
 ]);
 
 export const MANAGED_SETTING_KEYS: AppSettingKey[] = [

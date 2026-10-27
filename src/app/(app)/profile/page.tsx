@@ -6,6 +6,7 @@ import { startRegistration } from '@simplewebauthn/browser';
 import FoldCard from '@/components/mobile/FoldCard';
 import PersonalInfoSection from '@/components/profile/PersonalInfoSection';
 import BankAccountSection from '@/components/profile/BankAccountSection';
+import HomeAddressSection from '@/components/profile/HomeAddressSection';
 import PushSettingsSection from '@/components/profile/PushSettingsSection';
 
 type Passkey = {
@@ -377,6 +378,7 @@ export default function ProfilePage() {
 
       <GroupTitle>個人情報と口座</GroupTitle>
       <PersonalInfoSection />
+      <HomeAddressSection />
       <BankAccountSection />
 
       <GroupTitle>ログインとセキュリティ</GroupTitle>

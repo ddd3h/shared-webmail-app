@@ -1,6 +1,8 @@
 // Pure helpers for expense claims (no I/O so they are easy to test).
 
-export const EXPENSE_CATEGORIES = ['交通費', '出張・宿泊費', '交際費', '会議費', '消耗品費', '通信費', '書籍・研修費', 'その他'] as const;
+export const EXPENSE_CATEGORIES = ['交通費', '自家用車', '出張・宿泊費', '交際費', '会議費', '消耗品費', '通信費', '書籍・研修費', 'その他'] as const;
+/** The category whose amount is worked out from the distance (src/lib/mileage.ts), not typed in. */
+export const MILEAGE_CATEGORY = '自家用車';
 
 export type ExpenseStatus = 'pending' | 'approved' | 'rejected' | 'paid';
 export type PaymentMethod = 'personal' | 'company';

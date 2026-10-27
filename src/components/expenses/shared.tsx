@@ -8,11 +8,12 @@ export type Claim = {
   reviewer: string | null; review_comment: string | null; reimbursed_at: string | null; reimburse_note: string | null; receipts: Receipt[];
   payslip: { id: string; pay_month: string; title: string; status: string } | null;
   trip: { id: string; destination: string; start_date: string; end_date: string } | null;
+  mileage: { origin: string; destination: string; round_trip_km: number; rate_per_km: number; source: 'google' | 'manual'; map_url: string } | null;
 };
 type Sum = { count: number; amount: number };
 export type Summary = { pending: Sum; to_reimburse: Sum; in_payslip: Sum; paid: Sum };
 
-export const CATEGORIES = ['交通費', '出張・宿泊費', '交際費', '会議費', '消耗品費', '通信費', '書籍・研修費', 'その他'];
+export const CATEGORIES = ['交通費', '自家用車', '出張・宿泊費', '交際費', '会議費', '消耗品費', '通信費', '書籍・研修費', 'その他'];
 export const STATUS_LABEL = { pending: '承認待ち', approved: '承認済', rejected: '却下', paid: '返金済' } as const;
 const STATUS_STYLE = {
   pending: 'bg-amber-100 text-amber-700', approved: 'bg-blue-100 text-blue-700',
@@ -48,6 +49,12 @@ export function ClaimDetail({ c }: { c: Claim }) {
   return (
     <div className="space-y-2 text-sm">
       {c.trip && <p className="text-xs text-sky-700">出張: {c.trip.destination}（{c.trip.start_date.slice(5).replace('-', '/')}〜{c.trip.end_date.slice(5).replace('-', '/')}）</p>}
+      {c.mileage && (
+        <div className="rounded-lg bg-sky-50 px-3 py-2 text-xs text-sky-900 space-y-0.5">
+          <p>🚗 自家用車: 自宅 → {c.mileage.destination}（往復 {c.mileage.round_trip_km} km × {c.mileage.rate_per_km}円）</p>
+          <p className="text-sky-700">{c.mileage.source === 'google' ? 'Googleマップの最適ルートで計算' : '本人が入力した距離（経路は未確認）'} ・ <a href={c.mileage.map_url} target="_blank" rel="noreferrer" className="underline">地図でルートを見る</a></p>
+        </div>
+      )}
       {c.description && <p className="whitespace-pre-wrap wrap-break-word text-gray-700">{c.description}</p>}
       <ReceiptLinks receipts={c.receipts} />
       {c.review_comment && (

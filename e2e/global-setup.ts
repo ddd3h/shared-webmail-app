@@ -23,6 +23,9 @@ export default async function globalSetup() {
   await db.app_settings.upsert({ where: { key: 'SECURITY_IDLE_MINUTES' }, create: { key: 'SECURITY_IDLE_MINUTES', value: '0' }, update: { value: '0' } });
   await db.app_settings.upsert({ where: { key: 'SECURITY_DEVICE_BINDING' }, create: { key: 'SECURITY_DEVICE_BINDING', value: 'off' }, update: { value: 'off' } });
 
+  // the own-car claims search routes at a stand-in service (MAPS_API_URL); e2e/mileage.spec.ts switches the key off for its own tests
+  await db.app_settings.upsert({ where: { key: 'GOOGLE_MAPS_API_KEY' }, create: { key: 'GOOGLE_MAPS_API_KEY', value: 'e2e-maps-key', is_secret: true }, update: { value: 'e2e-maps-key', is_secret: true } });
+
   mkdirSync('e2e/.auth', { recursive: true });
   for (const role of ROLES) {
     // no forwarding header: the saved sessions belong to this machine's own address, which is where every plain test client comes from (a session only works from the address it began on)

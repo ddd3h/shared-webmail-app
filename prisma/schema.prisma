@@ -64,6 +64,7 @@ model users {
   mattermost_user_id     String?
   mattermost_link_status String?
   signature              String?
+  home_address           String?  // the person's home (mileage claims start from here); seen by themself, finance and administrators only
   created_at             DateTime @default(now())
   updated_at             DateTime @updatedAt
 
@@ -882,6 +883,12 @@ model expense_claims {
   reimburse_note   String?
   payslip_id       String?   // set when the reimbursement was merged into a pay statement
   trip_id          String?   // the approved business trip this expense belongs to
+  // own-car claims (category 自家用車): what the amount was worked out from, kept as it was on the day (the rate and the home address may change later)
+  mileage_origin     String?
+  mileage_destination String?
+  mileage_distance_m Int?      // the whole round trip
+  mileage_rate       Int?      // yen per km
+  mileage_source     String?   // 'google' (route search) or 'manual' (typed in; only when no route service is set up)
   created_at       DateTime  @default(now())
   updated_at       DateTime  @updatedAt
 

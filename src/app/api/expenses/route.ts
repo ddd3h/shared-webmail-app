@@ -8,7 +8,9 @@ import { MAX_ATTACHMENT_BYTES } from '@/lib/attachment-limits';
 import { isValidDateString, isValidMonth, monthRange, toDbDate } from '@/lib/work';
 import { notifyExpenseSubmitted } from '@/lib/work-notify';
 import { checkTripLink } from '@/lib/trip-server';
-import { EXPENSE_CATEGORIES, MAX_AMOUNT, MAX_RECEIPTS, isReceiptType, summarize } from '@/lib/expense';
+import { EXPENSE_CATEGORIES, MAX_AMOUNT, MAX_RECEIPTS, MILEAGE_CATEGORY, isReceiptType, summarize } from '@/lib/expense';
+import { isMileageError, resolveMileage } from '@/lib/mileage-server';
+import { MAX_ADDRESS_LENGTH, mapsLink, metersToKm } from '@/lib/mileage';
 
 const include = {
   user: { select: { id: true, name: true } },
@@ -36,6 +38,10 @@ function serialize(c: any) {
     reimburse_note: c.reimburse_note,
     payslip: c.payslip ?? null,
     trip: c.trip ? { id: c.trip.id, destination: c.trip.destination, start_date: c.trip.start_date.toISOString().slice(0, 10), end_date: c.trip.end_date.toISOString().slice(0, 10) } : null,
+    mileage: c.mileage_distance_m != null && c.mileage_origin && c.mileage_destination ? {
+      origin: c.mileage_origin, destination: c.mileage_destination, round_trip_km: metersToKm(c.mileage_distance_m), rate_per_km: c.mileage_rate,
+      source: c.mileage_source, map_url: mapsLink(c.mileage_origin, c.mileage_destination),
+    } : null,
     receipts: c.receipts,
     created_at: c.created_at,
   };
@@ -91,10 +97,13 @@ const fieldsSchema = z.object({
   expense_date: z.string().refine(isValidDateString),
   category: z.enum(EXPENSE_CATEGORIES),
   title: z.string().trim().min(1).max(200),
-  amount: z.coerce.number().int().min(1).max(MAX_AMOUNT),
+  // not needed for an own-car claim: the server works it out from the distance
+  amount: z.coerce.number().int().min(1).max(MAX_AMOUNT).optional(),
   payment_method: z.enum(['personal', 'company']),
   description: z.string().trim().max(2000).optional(),
   trip_id: z.string().min(1).optional(),
+  destination: z.string().trim().min(1).max(MAX_ADDRESS_LENGTH).optional(),
+  manual_one_way_km: z.coerce.number().positive().max(1000).optional(),
 });
 
 // POST /api/expenses - submit a claim (multipart: fields + `file` receipts)
@@ -106,7 +115,7 @@ export async function POST(req: NextRequest) {
 
   let fd: FormData;
   try { fd = await req.formData(); } catch { return NextResponse.json({ error: 'file_too_large' }, { status: 413 }); }
-  const parsed = fieldsSchema.safeParse(Object.fromEntries(['expense_date', 'category', 'title', 'amount', 'payment_method', 'description', 'trip_id'].map(k => [k, fd.get(k) || undefined])));
+  const parsed = fieldsSchema.safeParse(Object.fromEntries(['expense_date', 'category', 'title', 'amount', 'payment_method', 'description', 'trip_id', 'destination', 'manual_one_way_km'].map(k => [k, fd.get(k) || undefined])));
   if (!parsed.success) return NextResponse.json({ error: 'invalid_body' }, { status: 400 });
   const files = fd.getAll('file').filter(f => f instanceof File && (f as File).size > 0) as File[];
   if (files.length > MAX_RECEIPTS) return NextResponse.json({ error: 'too_many_files' }, { status: 400 });
@@ -114,13 +123,23 @@ export async function POST(req: NextRequest) {
   if (files.some(f => !isReceiptType(f.type))) return NextResponse.json({ error: 'invalid_file_type' }, { status: 400 });
 
   const d = parsed.data;
+  // an own-car claim: the amount comes from the route (home -> destination, there and back) at the current rate, never from the form
+  let mileage: Awaited<ReturnType<typeof resolveMileage>> | null = null;
+  if (d.category === MILEAGE_CATEGORY) {
+    if (!d.destination) return NextResponse.json({ error: 'invalid_body' }, { status: 400 });
+    mileage = await resolveMileage(actor.id, { destination: d.destination, manual_one_way_km: d.manual_one_way_km });
+    if (isMileageError(mileage)) return NextResponse.json({ error: mileage.error }, { status: mileage.status });
+  } else if (d.amount === undefined) {
+    return NextResponse.json({ error: 'invalid_body' }, { status: 400 });
+  }
   if (d.trip_id && !(await checkTripLink(actor.id, d.trip_id))) return NextResponse.json({ error: 'invalid_trip' }, { status: 400 });
   const saved = await saveUploadedFiles(files);
   try {
     const row = await prisma.expense_claims.create({
       data: {
         user_id: actor.id, expense_date: toDbDate(d.expense_date), category: d.category, title: d.title,
-        amount: d.amount, payment_method: d.payment_method, description: d.description || null, trip_id: d.trip_id ?? null,
+        amount: mileage ? mileage.amount : d.amount!, payment_method: mileage ? 'personal' : d.payment_method, description: d.description || null, trip_id: d.trip_id ?? null,
+        ...(mileage ? { mileage_origin: mileage.origin, mileage_destination: mileage.destination, mileage_distance_m: mileage.distance_m, mileage_rate: mileage.rate, mileage_source: mileage.source } : {}),
         receipts: { create: saved },
       },
     });

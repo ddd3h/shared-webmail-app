@@ -7,17 +7,21 @@ import { deleteStoredFiles } from '@/lib/attachment-storage';
 import { isValidDateString, toDbDate } from '@/lib/work';
 import { notifyExpenseSubmitted } from '@/lib/work-notify';
 import { checkTripLink } from '@/lib/trip-server';
-import { EXPENSE_CATEGORIES, MAX_AMOUNT, isEditable } from '@/lib/expense';
+import { EXPENSE_CATEGORIES, MAX_AMOUNT, MILEAGE_CATEGORY, isEditable } from '@/lib/expense';
+import { homeAddressOf, isMileageError, resolveMileage } from '@/lib/mileage-server';
+import { MAX_ADDRESS_LENGTH } from '@/lib/mileage';
 
 const schema = z.object({
   expense_date: z.string().refine(isValidDateString),
   category: z.enum(EXPENSE_CATEGORIES),
   title: z.string().trim().min(1).max(200),
-  amount: z.number().int().min(1).max(MAX_AMOUNT),
+  amount: z.number().int().min(1).max(MAX_AMOUNT).optional(), // not needed for an own-car claim
   payment_method: z.enum(['personal', 'company']),
   description: z.string().trim().max(2000).nullable().optional(),
   // undefined = leave as is, null = detach from the trip
   trip_id: z.string().min(1).nullable().optional(),
+  destination: z.string().trim().min(1).max(MAX_ADDRESS_LENGTH).optional(),
+  manual_one_way_km: z.number().positive().max(1000).optional(),
 });
 
 // PATCH /api/expenses/:id - the claimant edits a pending or rejected claim.
@@ -36,11 +40,32 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   if (d.trip_id && d.trip_id !== claim.trip_id && !(await checkTripLink(session.userId, d.trip_id))) {
     return NextResponse.json({ error: 'invalid_trip' }, { status: 400 });
   }
+  // own-car claim: worked out again from the route, unless nothing about the trip changed (then the figures it was sent with stay, even if the rate has changed since)
+  let mileage: Record<string, unknown> = { mileage_origin: null, mileage_destination: null, mileage_distance_m: null, mileage_rate: null, mileage_source: null };
+  let amount = d.amount;
+  let paymentMethod: string = d.payment_method;
+  if (d.category === MILEAGE_CATEGORY) {
+    if (!d.destination) return NextResponse.json({ error: 'invalid_body' }, { status: 400 });
+    paymentMethod = 'personal';
+    const unchanged = claim.category === MILEAGE_CATEGORY && claim.mileage_destination === d.destination.trim() && d.manual_one_way_km === undefined
+      && claim.mileage_origin === (await homeAddressOf(session.userId));
+    if (unchanged) {
+      amount = claim.amount;
+      mileage = {};
+    } else {
+      const r = await resolveMileage(session.userId, { destination: d.destination, manual_one_way_km: d.manual_one_way_km });
+      if (isMileageError(r)) return NextResponse.json({ error: r.error }, { status: r.status });
+      amount = r.amount;
+      mileage = { mileage_origin: r.origin, mileage_destination: r.destination, mileage_distance_m: r.distance_m, mileage_rate: r.rate, mileage_source: r.source };
+    }
+  } else if (amount === undefined) {
+    return NextResponse.json({ error: 'invalid_body' }, { status: 400 });
+  }
   await prisma.expense_claims.update({
     where: { id },
     data: {
-      expense_date: toDbDate(d.expense_date), category: d.category, title: d.title, amount: d.amount,
-      payment_method: d.payment_method, description: d.description || null,
+      expense_date: toDbDate(d.expense_date), category: d.category, title: d.title, amount,
+      payment_method: paymentMethod, description: d.description || null, ...mileage,
       ...(d.trip_id !== undefined ? { trip_id: d.trip_id } : {}),
       status: 'pending', reviewed_by_id: null, reviewed_at: null, review_comment: null,
     },

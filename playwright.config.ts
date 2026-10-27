@@ -54,6 +54,8 @@ export default defineConfig({
       MATTERMOST_BASE_URL: MM_URL,
       MATTERMOST_BOT_TOKEN: 'e2e-bot-token',
       // the meaning search talks to a fake embedding service (see e2e/helpers/mattermost-mock.ts)
+      // the route search talks to a fake Google Routes service (same stand-in server)
+      MAPS_API_URL: `${MM_URL}/maps`,
       EMBEDDING_API_URL: `${MM_URL}/v1`,
       EMBEDDING_MODEL: 'e2e-concepts',
       CRON_SECRET: 'e2e-cron-secret',
