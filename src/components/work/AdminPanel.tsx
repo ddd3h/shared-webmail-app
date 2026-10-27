@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from 'react';
 import AttendancePanel from './AttendancePanel';
 import ReportsPanel from './ReportsPanel';
 import PayrollPanel from './PayrollPanel';
+import PayScheduleSettings from './PayScheduleSettings';
 import { paysSalary, usesAttendance, usesReports } from '@/lib/work';
 import { Notice, TYPE_LABEL, btnPrimary, inp, api, type WorkerType } from './ui';
 
@@ -12,6 +13,7 @@ const SECTIONS = [
   { key: 'attendance', label: '勤怠の確認' },
   { key: 'reports', label: '業務報告' },
   { key: 'payroll', label: '給与・報酬の管理' },
+  { key: 'schedule', label: '締め日・振込日' },
 ] as const;
 type Section = typeof SECTIONS[number]['key'];
 
@@ -129,6 +131,7 @@ export default function AdminPanel({ isAdmin = true }: { isAdmin?: boolean }) {
       )}
 
       {section === 'payroll' && <PayrollPanel manage members={members} />}
+      {section === 'schedule' && <PayScheduleSettings />}
     </div>
   );
 }

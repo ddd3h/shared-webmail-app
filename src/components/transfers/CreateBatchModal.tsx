@@ -6,10 +6,11 @@ import { todayJst } from '@/components/payments/shared';
 type Problem = { id: string; label: string; reason: string };
 
 // Asks for the 振込指定日 and makes the 全銀 file. If any line can't go into the file, nothing is made and every problem is listed.
-export default function CreateBatchModal({ kind, ids, total, hasBatched, onClose, onCreated }: {
-  kind: 'payment' | 'payroll'; ids: string[]; total: number; hasBatched: boolean; onClose: () => void; onCreated: (batchId: string, fileName: string) => void;
+export default function CreateBatchModal({ kind, ids, total, hasBatched, suggestedDate, onClose, onCreated }: {
+  kind: 'payment' | 'payroll'; ids: string[]; total: number; hasBatched: boolean; suggestedDate?: string; onClose: () => void; onCreated: (batchId: string, fileName: string) => void;
 }) {
-  const [date, setDate] = useState(todayJst());
+  // the statements' own pay date (set from 締め日・振込日) when it is still ahead; otherwise today
+  const [date, setDate] = useState(suggestedDate && suggestedDate >= todayJst() ? suggestedDate : todayJst());
   const [category, setCategory] = useState<'11' | '12'>('11');
   const [force, setForce] = useState(false);
   const [problems, setProblems] = useState<Problem[]>([]);

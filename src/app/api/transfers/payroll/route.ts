@@ -19,7 +19,7 @@ export async function GET(req: NextRequest) {
       const acct = p.user.bank_account;
       return {
         id: p.id, user: { id: p.user.id, name: p.user.name }, title: p.title, status: p.status, pay_month: p.pay_month,
-        net: payslipTotals(p.items).net, batch_id: p.batch_id,
+        net: payslipTotals(p.items).net, batch_id: p.batch_id, pay_date: p.pay_date ? p.pay_date.toISOString().slice(0, 10) : null,
         account: acct ? { registered: true, verified: !!acct.verified_at, bank_name: acct.bank_name, branch_name: acct.branch_name, bank_code: acct.bank_code, branch_code: acct.branch_code, last4: acct.account_last4 } : { registered: false, verified: false },
       };
     }),

@@ -2,7 +2,9 @@
 // caller's transaction client so a half-applied merge can never be committed.
 import type { Prisma } from '@prisma/client';
 import { EXPENSE_ITEM_KEY, EXPENSE_ITEM_LABEL, pickPayslip } from '@/lib/expense';
-import { jstDateString, toDbDate } from '@/lib/work';
+import { jstDateString, toDbDate, type WorkerType } from '@/lib/work';
+import { DEFAULT_SCHEDULES, payDate } from '@/lib/pay-schedule';
+import { loadSchedules } from '@/lib/pay-schedule-server';
 
 type Tx = Prisma.TransactionClient;
 
@@ -32,6 +34,7 @@ export async function attachClaimsToPayslips(
   for (const c of claims) byUser.set(c.user_id, [...(byUser.get(c.user_id) ?? []), c.id]);
 
   const touched: { user_id: string; payslip_id: string; created: boolean }[] = [];
+  const { schedules } = await loadSchedules();
   for (const [userId, ids] of byUser) {
     const candidates = await tx.payslips.findMany({
       // a statement already inside a 全銀 file is closed: adding a line would change an amount the file doesn't contain
@@ -42,8 +45,10 @@ export async function attachClaimsToPayslips(
     let target = pickPayslip(candidates);
     let created = false;
     if (!target) {
+      // a new statement gets the pay date of the claimant's kind of worker (締め日・振込日)
+      const type = ((await tx.users.findUnique({ where: { id: userId }, select: { worker_type: true } }))?.worker_type ?? 'employee') as WorkerType;
       target = await tx.payslips.create({
-        data: { user_id: userId, pay_month: payMonth, title: EXPENSE_ITEM_LABEL, status: 'planned', created_by_id: actorId },
+        data: { user_id: userId, pay_month: payMonth, title: EXPENSE_ITEM_LABEL, status: 'planned', created_by_id: actorId, pay_date: toDbDate(payDate(payMonth, schedules[type] ?? DEFAULT_SCHEDULES.employee)) },
         select: { id: true, title: true, status: true },
       });
       created = true;

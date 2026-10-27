@@ -10,20 +10,24 @@ import { notifyExpenseSubmitted } from '@/lib/work-notify';
 import { checkTripLink } from '@/lib/trip-server';
 import { EXPENSE_CATEGORIES, MAX_AMOUNT, MAX_RECEIPTS, MILEAGE_CATEGORY, isReceiptType, summarize } from '@/lib/expense';
 import { isMileageError, resolveMileage } from '@/lib/mileage-server';
+import { loadSchedules, planOf } from '@/lib/pay-schedule-server';
 import { MAX_ADDRESS_LENGTH, mapsLink, metersToKm } from '@/lib/mileage';
 
 const include = {
-  user: { select: { id: true, name: true } },
+  user: { select: { id: true, name: true, worker_type: true } },
   reviewer: { select: { name: true } },
   payslip: { select: { id: true, pay_month: true, title: true, status: true } },
   trip: { select: { id: true, destination: true, start_date: true, end_date: true } },
   receipts: { select: { id: true, filename: true, content_type: true, size: true }, orderBy: { created_at: 'asc' as const } },
 };
 
-function serialize(c: any) {
+function serialize(c: any, schedules: Awaited<ReturnType<typeof loadSchedules>>['schedules']) {
+  // when a claim still waiting or approved (and not yet in a pay statement) will be paid back, by the 締め日・振込日 of the claimant's kind of worker
+  const open = c.payment_method === 'personal' && !c.payslip_id && (c.status === 'pending' || c.status === 'approved');
   return {
     id: c.id,
-    user: c.user,
+    user: { id: c.user.id, name: c.user.name },
+    pay_plan: open ? planOf(schedules, c.user.worker_type, c.expense_date, c.created_at, 'expense') : null,
     expense_date: c.expense_date.toISOString().slice(0, 10),
     category: c.category,
     title: c.title,
@@ -75,9 +79,10 @@ export async function GET(req: NextRequest) {
   else if (status === 'owed') { filter.status = 'approved'; filter.payment_method = 'personal'; }
   else if (status) filter.status = status;
 
-  const [rows, scoped] = await Promise.all([
+  const [rows, scoped, { schedules }] = await Promise.all([
     prisma.expense_claims.findMany({ where: filter, include, orderBy: [{ expense_date: 'desc' }, { created_at: 'desc' }], take: 500 }),
     prisma.expense_claims.findMany({ where: scope, select: { status: true, payment_method: true, amount: true, payslip_id: true, user_id: true, user: { select: { name: true } } } }),
+    loadSchedules(),
   ]);
 
   let byUser: { user_id: string; name: string; count: number; amount: number }[] | undefined;
@@ -90,7 +95,7 @@ export async function GET(req: NextRequest) {
     }
     byUser = [...map.values()].sort((a, b) => b.amount - a.amount);
   }
-  return NextResponse.json({ items: rows.map(serialize), summary: summarize(scoped), to_reimburse_by_user: byUser });
+  return NextResponse.json({ items: rows.map(c => serialize(c, schedules)), summary: summarize(scoped), to_reimburse_by_user: byUser });
 }
 
 const fieldsSchema = z.object({

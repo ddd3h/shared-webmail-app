@@ -1,5 +1,6 @@
 'use client';
 import { dateLabel, yen } from '@/components/work/ui';
+import { shortDate, type Plan } from '@/lib/pay-schedule';
 
 export type Receipt = { id: string; filename: string; content_type: string; size: number };
 export type Claim = {
@@ -8,6 +9,7 @@ export type Claim = {
   reviewer: string | null; review_comment: string | null; reimbursed_at: string | null; reimburse_note: string | null; receipts: Receipt[];
   payslip: { id: string; pay_month: string; title: string; status: string } | null;
   trip: { id: string; destination: string; start_date: string; end_date: string } | null;
+  pay_plan: Plan | null;
   mileage: { origin: string; destination: string; round_trip_km: number; rate_per_km: number; source: 'google' | 'manual'; map_url: string } | null;
 };
 type Sum = { count: number; amount: number };
@@ -60,6 +62,13 @@ export function ClaimDetail({ c }: { c: Claim }) {
       {c.review_comment && (
         <p className={`rounded-lg px-3 py-2 text-xs ${c.status === 'rejected' ? 'bg-red-50 text-red-700' : 'bg-gray-50 text-gray-600'}`}>
           {c.reviewer ?? '管理者'} のコメント: {c.review_comment}
+        </p>
+      )}
+      {c.pay_plan && (c.status === 'pending' || c.status === 'approved') && (
+        <p className={`rounded-lg px-3 py-2 text-xs ${c.pay_plan.late ? 'bg-amber-50 text-amber-800' : 'bg-gray-50 text-gray-600'}`}>
+          {c.pay_plan.late
+            ? `申請の期限を過ぎたため、${Number(c.pay_plan.period.slice(5))}月分（締め ${shortDate(c.pay_plan.closing_date)}）として扱われ、${shortDate(c.pay_plan.pay_date)}の返金予定です。`
+            : `返金の予定: ${shortDate(c.pay_plan.pay_date)}（${Number(c.pay_plan.period.slice(5))}月分・締め ${shortDate(c.pay_plan.closing_date)}。この分の申請期限は ${shortDate(c.pay_plan.deadline)}）`}
         </p>
       )}
       {c.status === 'approved' && c.payslip && (

@@ -1088,6 +1088,20 @@ model user_bank_accounts {
 
 // A generated 全銀 (総合振込 / 給与振込) file. `content_b64` is the exact bytes that were downloaded.
 // kind 'payment' = payment requests, 'payroll' = pay statements. category_code is the 種別コード (21 総合 / 11 給与 / 12 賞与).
+// 締め日・振込日 per kind of worker (役員 / 正社員 / …). A kind without a row uses the defaults (src/lib/pay-schedule.ts).
+// Days: 0 = the last day of the month. The pay month is the closing month plus `pay_month_offset`.
+model pay_schedules {
+  worker_type          WorkerType @id
+  closing_day          Int        @default(0)
+  pay_month_offset     Int        @default(1)
+  pay_day              Int        @default(25)
+  pay_day_shift        String     @default("before") // when the pay day is a Saturday/Sunday: 'before' (the Friday), 'after' (the Monday) or 'none'
+  report_deadline_days Int        @default(5)        // 業務報告書: handed in this many days after the closing day (0 = on the closing day)
+  expense_deadline_days Int       @default(5)        // 経費: same
+  updated_by_id        String?
+  updated_at           DateTime   @updatedAt
+}
+
 model transfer_batches {
   id            String    @id @default(cuid())
   kind          String

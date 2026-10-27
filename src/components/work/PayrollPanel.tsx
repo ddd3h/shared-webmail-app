@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Modal, Notice, Stat, btn, btnPrimary, currentMonth, inp, yen, api, TYPE_LABEL, type WorkerType } from './ui';
 import Link from 'next/link';
+import { shortDate } from '@/lib/pay-schedule';
 
 type Item = { id?: string; kind: 'earning' | 'deduction'; label: string; amount: number; system?: boolean };
 type LinkedClaim = { id: string; title: string; amount: number; expense_date: string };
@@ -10,7 +11,7 @@ type Slip = {
   pay_date: string | null; note: string | null; items: Item[]; claims: LinkedClaim[]; earnings: number; deductions: number; net: number;
 };
 type Summary = { month: string; planned_total: number; paid_total: number; count: number };
-type Draft = { id?: string; userId: string; pay_month: string; title: string; status: 'planned' | 'paid'; pay_date: string; note: string; items: { kind: 'earning' | 'deduction'; label: string; amount: string }[]; system: { label: string; amount: number } | null };
+type Draft = { id?: string; userId: string; pay_month: string; title: string; status: 'planned' | 'paid'; pay_date: string; note: string; items: { kind: 'earning' | 'deduction'; label: string; amount: string }[]; system: { label: string; amount: number } | null ; date_touched?: boolean; hint?: string };
 
 const monthLabel = (m: string) => `${m.slice(0, 4)}年${Number(m.slice(5))}月`;
 const StatusBadge = ({ s }: { s: string }) => (
@@ -39,6 +40,19 @@ export default function PayrollPanel({ manage = false, members = [], noun = '給
     items: [{ kind: 'earning', label: '基本給', amount: '' }, { kind: 'deduction', label: '社会保険料', amount: '' }, { kind: 'deduction', label: '所得税', amount: '' }],
     system: null,
   });
+  // a new statement starts with the pay date of the person's kind of worker (締め日・振込日); a date typed by hand is left alone
+  const dUser = draft && !draft.id ? draft.userId : '', dMonth = draft && !draft.id ? draft.pay_month : '', dTouched = !!draft?.date_touched;
+  useEffect(() => {
+    if (!dUser || !/^\d{4}-\d{2}$/.test(dMonth)) return;
+    let stale = false;
+    fetch(`/api/work/schedule?${new URLSearchParams({ userId: dUser, month: dMonth })}`).then(r => r.ok ? r.json() : null).then(s => {
+      if (stale || !s) return;
+      setDraft(d => d && !d.id && d.userId === dUser && d.pay_month === dMonth
+        ? { ...d, hint: `${s.summary}（${Number(dMonth.slice(5))}月分は ${shortDate(s.period.closing_date)} 締め）`, ...(d.date_touched ? {} : { pay_date: s.period.pay_date }) }
+        : d);
+    }).catch(() => {});
+    return () => { stale = true; };
+  }, [dUser, dMonth, dTouched]);
   const draftNet = draft ? draft.items.reduce((s, i) => s + (i.kind === 'earning' ? 1 : -1) * (Number(i.amount) || 0), 0) + (draft.system?.amount ?? 0) : 0;
 
   async function save() {
@@ -130,8 +144,9 @@ export default function PayrollPanel({ manage = false, members = [], noun = '給
               <div><label className="text-xs text-gray-600">名称</label><input className={inp} value={draft.title} onChange={e => setDraft({ ...draft, title: e.target.value })} /></div>
               <div><label className="text-xs text-gray-600">状態</label>
                 <select className={inp} value={draft.status} onChange={e => setDraft({ ...draft, status: e.target.value as 'planned' | 'paid' })}><option value="planned">支払予定</option><option value="paid">支払済</option></select></div>
-              <div><label className="text-xs text-gray-600">支払日</label><input type="date" className={inp} value={draft.pay_date} onChange={e => setDraft({ ...draft, pay_date: e.target.value })} /></div>
+              <div><label className="text-xs text-gray-600">支払日</label><input type="date" className={inp} value={draft.pay_date} onChange={e => setDraft({ ...draft, pay_date: e.target.value, date_touched: true })} /></div>
             </div>
+            {draft.hint && !draft.id && <p className="text-xs text-gray-500">支払日の初期値は、この人の区分の「{draft.hint}」から入れています。</p>}
             {draft.system && draft.status === 'paid' && <p className="text-xs text-violet-700 bg-violet-50 rounded-lg px-3 py-2">支払済にすると、この明細に合算された立替金も返金済になります。</p>}
             <div>
               <div className="text-xs font-semibold text-gray-600 mb-1">明細項目（金額は円・0以上の整数）</div>

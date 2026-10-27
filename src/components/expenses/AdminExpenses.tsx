@@ -111,7 +111,7 @@ export default function AdminExpenses({ meId, canReview = true }: { meId: string
           <div className="flex-1" />
           <span className="text-gray-600">選択中 {selected.size}件 ・ <b className="tabular-nums">{yen(selectedTotal)}</b></span>
           {filter === 'to_reimburse'
-            ? <button className={btnPrimary} disabled={selected.size === 0} onClick={() => setPay({ mode: 'payslip', date: today(), month: today().slice(0, 7), note: '' })}>返金する…</button>
+            ? <button className={btnPrimary} disabled={selected.size === 0} onClick={() => setPay({ mode: 'payslip', date: today(), month: items.filter(i => selected.has(i.id) && i.pay_plan).map(i => i.pay_plan!.period).sort()[0] ?? today().slice(0, 7), note: '' })}>返金する…</button>
             : <button className={btn} disabled={selected.size === 0} onClick={unlink}>給与明細から外す</button>}
         </div>
       )}

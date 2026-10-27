@@ -1,4 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
+import { DEFAULT_SCHEDULES } from '@/lib/pay-schedule';
+
+vi.mock('@/lib/pay-schedule-server', () => ({ loadSchedules: vi.fn(async () => ({ schedules: DEFAULT_SCHEDULES, custom: new Set() })) }));
 import { attachClaimsToPayslips, settleClaimsOfPayslip, syncExpenseItem } from '@/lib/expense-payslip';
 
 function fakeTx(over: Record<string, any> = {}) {
@@ -6,6 +9,7 @@ function fakeTx(over: Record<string, any> = {}) {
     expense_claims: { findMany: vi.fn(), updateMany: vi.fn() },
     payslip_items: { deleteMany: vi.fn(), create: vi.fn() },
     payslips: { findMany: vi.fn(), create: vi.fn() },
+    users: { findUnique: vi.fn(async () => ({ worker_type: 'employee' })) },
     ...over,
   } as any;
 }
@@ -44,6 +48,8 @@ describe('attachClaimsToPayslips', () => {
     tx.expense_claims.findMany.mockResolvedValue([{ amount: 500 }]);
     const res = await attachClaimsToPayslips(tx, [{ id: 'c1', user_id: 'u2' }], '2026-10', 'admin');
     expect(tx.payslips.create.mock.calls[0][0].data).toMatchObject({ user_id: 'u2', pay_month: '2026-10', title: '立替金精算', status: 'planned' });
+    // the new statement is paid on the 振込日 of the claimant's kind of worker (末締め翌月25日払い: 10月分 -> 11/25)
+    expect(tx.payslips.create.mock.calls[0][0].data.pay_date.toISOString().slice(0, 10)).toBe('2026-11-25');
     expect(res[0]).toMatchObject({ payslip_id: 'new', created: true });
   });
   it('人ごとに別々の明細へ合算する', async () => {

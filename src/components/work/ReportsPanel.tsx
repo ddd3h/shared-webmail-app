@@ -1,8 +1,10 @@
 'use client';
 import { useCallback, useEffect, useState } from 'react';
+import { shortDate, type Plan } from '@/lib/pay-schedule';
 import { MonthNav, Modal, Notice, Stat, btn, btnPrimary, currentMonth, dateLabel, inp, api } from './ui';
 
-type Report = { id: string; report_date: string; title: string; content: string; hours: number | null; user?: { id: string; name: string } };
+type Report = { id: string; report_date: string; title: string; content: string; hours: number | null; user?: { id: string; name: string }; pay_plan: Plan };
+type Sched = { summary: string; today: string; period: { month: string; closing_date: string; report_deadline: string; pay_date: string } };
 type Draft = { id?: string; report_date: string; title: string; content: string; hours: string };
 
 // Contractors submit their 業務報告書 here. In `admin` mode it lists everyone's reports (read-only, deletable).
@@ -13,8 +15,11 @@ export default function ReportsPanel({ admin = false, userId }: { admin?: boolea
   const [draft, setDraft] = useState<Draft | null>(null);
   const [open, setOpen] = useState<string | null>(null);
   const [msg, setMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [sched, setSched] = useState<Sched | null>(null);
 
   useEffect(() => { setMonth(currentMonth()); }, []);
+  // my own 締め日・提出期限 (a contractor's view; the administrators' list is of everyone, each with their own)
+  useEffect(() => { if (!admin) fetch('/api/work/schedule').then(r => r.ok ? r.json() : null).then(setSched).catch(() => {}); }, [admin]);
   const load = useCallback(async () => {
     if (!month) return;
     const q = new URLSearchParams({ month, ...(userId ? { userId } : {}) });
@@ -46,6 +51,11 @@ export default function ReportsPanel({ admin = false, userId }: { admin?: boolea
         {!admin && <button className={btnPrimary} onClick={() => setDraft({ report_date: today(), title: '', content: '', hours: '' })}>＋ 報告書を作成</button>}
       </div>
       <Notice msg={msg} />
+      {sched && (
+        <p className="rounded-lg bg-sky-50 px-3 py-2 text-xs text-sky-900" data-testid="report-schedule">
+          {Number(sched.period.month.slice(5))}月分: 締め日 {shortDate(sched.period.closing_date)}・提出期限 {shortDate(sched.period.report_deadline)}・支払 {shortDate(sched.period.pay_date)}（{sched.summary}）。期限を過ぎて提出した報告書は、次の期間の分として扱われます。
+        </p>
+      )}
       <div className="grid grid-cols-2 gap-3 max-w-md">
         <Stat label="提出件数" value={`${items.length}件`} />
         <Stat label="報告した稼働時間" value={`${total}h`} />
@@ -58,6 +68,9 @@ export default function ReportsPanel({ admin = false, userId }: { admin?: boolea
               <div className="flex items-center gap-2 text-xs text-gray-500">
                 <span>{dateLabel(r.report_date)}</span>{admin && r.user && <span className="rounded-sm bg-gray-100 px-1.5 py-0.5">{r.user.name}</span>}
                 {r.hours !== null && <span>{r.hours}h</span>}
+                {r.pay_plan.late
+                  ? <span className="rounded-sm bg-amber-50 px-1.5 py-0.5 text-[11px] text-amber-800">期限後の提出 → {Number(r.pay_plan.period.slice(5))}月分（支払 {shortDate(r.pay_plan.pay_date)}）</span>
+                  : <span className="text-[11px] text-gray-400">支払 {shortDate(r.pay_plan.pay_date)}</span>}
               </div>
               <div className="text-sm font-medium text-gray-900 mt-0.5">{r.title}</div>
             </button>

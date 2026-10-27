@@ -4,7 +4,7 @@ import { Notice, Stat, btn, btnPrimary, currentMonth, MonthNav, yen } from '@/co
 import { dateLabel } from '@/components/work/ui';
 import CreateBatchModal from './CreateBatchModal';
 
-type Line = { id: string; who: string; title: string; amount: number; batched: boolean; blocker: string | null; sub: string };
+type Line = { id: string; who: string; title: string; amount: number; batched: boolean; blocker: string | null; sub: string; pay_date?: string | null };
 type Flash = { type: 'success' | 'error'; text: string } | null;
 
 // ---- data: one function per source, each returns the same Line shape ----
@@ -29,7 +29,7 @@ async function fetchPayrollLines(month: string): Promise<Line[]> {
   const res = await fetch(`/api/transfers/payroll?month=${month}`);
   if (!res.ok) return [];
   return (await res.json()).items.filter((p: any) => p.status === 'planned').map((p: any): Line => ({
-    id: p.id, who: p.user.name, title: p.title, amount: p.net, batched: !!p.batch_id, blocker: payslipBlocker(p),
+    id: p.id, who: p.user.name, title: p.title, amount: p.net, batched: !!p.batch_id, blocker: payslipBlocker(p), pay_date: p.pay_date,
     sub: p.account.registered ? `${p.account.bank_name} ${p.account.branch_name} ****${p.account.last4}` : '口座なし',
   }));
 }
@@ -95,7 +95,7 @@ export default function TransferList({ kind, onCreated }: { kind: 'payment' | 'p
         </>
       )}
       {creating && (
-        <CreateBatchModal kind={kind} ids={[...selected]} total={total} hasBatched={picked.some(l => l.batched)} onClose={() => setCreating(false)}
+        <CreateBatchModal kind={kind} ids={[...selected]} total={total} suggestedDate={picked.map(l => l.pay_date).filter((d): d is string => !!d).sort()[0]} hasBatched={picked.some(l => l.batched)} onClose={() => setCreating(false)}
           onCreated={(id, name) => { setCreating(false); setMsg({ type: 'success', text: `全銀データを作成しました（${name}）。「作成履歴」からダウンロードできます` }); onCreated(id, name); load(); }} />
       )}
     </div>
