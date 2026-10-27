@@ -279,9 +279,10 @@ function setViewCookie(view: 'personal' | 'team') {
   document.cookie = `${VIEW_COOKIE}=${view}; path=/; max-age=${VIEW_COOKIE_MAX_AGE}; SameSite=Lax`;
 }
 
-function buildThreadsKey(view: string, tab: string, q: string, cursor?: { last: string; id: string }, semantic = false) {
+function buildThreadsKey(view: string, tab: string, q: string, cursor?: { last: string; id: string }, semantic = false, mailboxId = '') {
   const params = new URLSearchParams();
   params.set('type', view);
+  if (view === 'team' && mailboxId && !q) params.set('mailbox_id', mailboxId);
   if (tab === 'unread') params.set('unread', '1');
   else if (tab === 'mine') params.set('mine', '1');
   else if (tab === 'sent') params.set('sent', '1');
@@ -326,6 +327,13 @@ function ThreadList() {
   const [semanticOn, setSemanticOn] = useState(true);
   useEffect(() => { try { if (localStorage.getItem(SEMANTIC_KEY) === '0') setSemanticOn(false); } catch {} }, []);
   const semanticSearch = !!semanticStatus?.enabled && semanticOn;
+  // 共有メール: which shared mailboxes are shown (the person's own choice), and the chip that narrows the list to one of them
+  const [mailboxFilter, setMailboxFilter] = useState('');
+  const [showMailboxPicker, setShowMailboxPicker] = useState(false);
+  const [pickerHidden, setPickerHidden] = useState<Set<string>>(new Set());
+  const [pickerError, setPickerError] = useState('');
+  const { data: teamView, mutate: mutateTeamView } = useSWR<{ items: { id: string; name: string; shown: boolean; unread: number }[] }>(mailboxView === 'team' ? '/api/mailboxes/team-view' : null, fetcher, { refreshInterval: 30_000 });
+  const shownTeamMailboxes = (teamView?.items ?? []).filter(m => m.shown);
   const [showCompose, setShowCompose] = useState(false);
   const [openDraftId, setOpenDraftId] = useState<string | undefined>(undefined);
   const [initialTo, setInitialTo] = useState<string[] | undefined>(undefined);
@@ -365,7 +373,7 @@ function ThreadList() {
 
   const currentCursor = cursorStack[cursorStack.length - 1];
   const isSearching = search.trim().length > 0;
-  const threadsKey = initialized && tab !== 'drafts' && !isSearching ? buildThreadsKey(mailboxView, tab, search, currentCursor) : null;
+  const threadsKey = initialized && tab !== 'drafts' && !isSearching ? buildThreadsKey(mailboxView, tab, search, currentCursor, false, mailboxFilter) : null;
   const searchPersonalKey = initialized && isSearching ? buildThreadsKey('personal', '', search, undefined, semanticSearch) : null;
   const searchTeamKey = initialized && isSearching ? buildThreadsKey('team', '', search, undefined, semanticSearch) : null;
   const draftsKey = initialized && tab === 'drafts' ? '/api/drafts' : null;
@@ -456,6 +464,7 @@ function ThreadList() {
     const filters = {
       status: (!isSearching && (tab === 'all' || tab === 'unread' || tab === 'sent' || tab === 'mine' || tab === 'assigned' || tab === 'spam')) ? undefined : tab,
       type: mailboxView,
+      mailbox_id: mailboxView === 'team' && !search ? mailboxFilter || undefined : undefined,
       q: search || undefined,
       mine: tab === 'mine' ? '1' : '0',
       unread: tab === 'unread' ? '1' : '0',
@@ -577,6 +586,7 @@ function ThreadList() {
   function switchView(view: 'personal' | 'team') {
     setViewCookie(view);
     setMailboxView(view);
+    setMailboxFilter('');
     setTab('unread');
     setCursorStack([]);
     resetFilters();
@@ -1004,6 +1014,61 @@ function ThreadList() {
           )}
         </button>
       </div>
+
+      {/* 共有メール: which mailboxes — a chip per shown mailbox (narrows the list), and the person's own choice of what is shown */}
+      {mailboxView === 'team' && !isSearching && (teamView?.items.length ?? 0) > 1 && (
+        <div className="mb-3 -mt-1 flex items-center gap-1.5" data-testid="team-mailbox-chips">
+          <div className="flex min-w-0 flex-1 gap-1.5 overflow-x-auto pb-1" role="group" aria-label="表示するメールボックス">
+            <button type="button" onClick={() => { setMailboxFilter(''); setCursorStack([]); }} aria-pressed={mailboxFilter === ''}
+              className={`shrink-0 rounded-full border px-3 py-1 text-xs font-medium whitespace-nowrap ${mailboxFilter === '' ? 'border-violet-600 bg-violet-600 text-white' : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'}`}>
+              すべて{teamUnread > 0 && <span className="ml-1 opacity-80">{teamUnread}</span>}
+            </button>
+            {shownTeamMailboxes.map(m => (
+              <button key={m.id} type="button" onClick={() => { setMailboxFilter(m.id); setCursorStack([]); }} aria-pressed={mailboxFilter === m.id}
+                className={`flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium whitespace-nowrap ${mailboxFilter === m.id ? 'border-violet-600 bg-violet-50 text-violet-800' : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'}`}>
+                {mailboxDot(m.id, m.name)}{m.name}{m.unread > 0 && <span className="rounded-full bg-violet-600 px-1.5 text-[10px] font-bold text-white">{m.unread}</span>}
+              </button>
+            ))}
+          </div>
+          <button type="button" className="shrink-0 rounded-lg border border-gray-200 bg-white px-2.5 py-1 text-xs text-gray-600 hover:bg-gray-50"
+            onClick={() => { setPickerHidden(new Set((teamView?.items ?? []).filter(m => !m.shown).map(m => m.id))); setPickerError(''); setShowMailboxPicker(true); }}>
+            表示を選ぶ
+          </button>
+        </div>
+      )}
+
+      {showMailboxPicker && (
+        <div className="fixed inset-0 z-[90] flex items-end justify-center bg-black/40 p-0 sm:items-center sm:p-4" role="dialog" aria-modal="true" aria-labelledby="mb-picker-title" onClick={() => setShowMailboxPicker(false)}>
+          <div className="w-full max-w-md rounded-t-2xl bg-white p-5 shadow-xl sm:rounded-2xl" onClick={e => e.stopPropagation()}>
+            <h2 id="mb-picker-title" className="text-base font-semibold text-gray-900">共有メールに表示するメールボックス</h2>
+            <p className="mt-1 text-xs text-gray-500">チェックを外したメールボックスは、共有メールの一覧・未読の数に出ません（検索には出ます）。自分だけの設定です。</p>
+            <ul className="mt-3 max-h-72 space-y-1 overflow-y-auto">
+              {(teamView?.items ?? []).map(m => (
+                <li key={m.id}>
+                  <label className="flex items-center gap-2 rounded-lg px-2 py-2 text-sm hover:bg-gray-50">
+                    <input type="checkbox" className="h-4 w-4" checked={!pickerHidden.has(m.id)}
+                      onChange={e => setPickerHidden(prev => { const n = new Set(prev); if (e.target.checked) n.delete(m.id); else n.add(m.id); return n; })} />
+                    {mailboxDot(m.id, m.name)}<span className="min-w-0 flex-1 truncate">{m.name}</span>
+                    {m.unread > 0 && <span className="text-xs text-gray-400">未読 {m.unread}</span>}
+                  </label>
+                </li>
+              ))}
+            </ul>
+            {pickerError && <p role="alert" className="mt-2 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700">{pickerError}</p>}
+            <div className="mt-4 flex justify-end gap-2">
+              <button type="button" className="rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50" onClick={() => setShowMailboxPicker(false)}>閉じる</button>
+              <button type="button" className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700" onClick={async () => {
+                const res = await fetch('/api/mailboxes/team-view', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ hidden: [...pickerHidden] }) });
+                if (!res.ok) { setPickerError('少なくとも1つは表示してください'); return; }
+                if (pickerHidden.has(mailboxFilter)) setMailboxFilter('');
+                setCursorStack([]); setSelected(new Set());
+                await mutateTeamView(); await mutateThreads(); refreshMail();
+                setShowMailboxPicker(false);
+              }}>保存</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Tab bar — hidden while searching */}
       <div className={`border-b border-gray-200 mb-0 ${isSearching ? 'hidden' : ''}`}>

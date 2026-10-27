@@ -78,6 +78,7 @@ model users {
   thread_visibility          thread_visibility[]
   thread_reads               thread_reads[]
   mailbox_permissions        mailbox_permissions[]
+  hidden_team_mailboxes      hidden_team_mailboxes[]
   messages_sent              message_sends[]          @relation("sent_by_user")
   mattermost_links_created   mattermost_links[]       @relation("mm_link_created_by")
   mattermost_notifications   mattermost_notifications[]
@@ -157,6 +158,7 @@ model mailboxes {
 
   credentials mailbox_credentials?
   permissions mailbox_permissions[]
+  hidden_by   hidden_team_mailboxes[]
   threads     threads[]
   messages    messages[]
   sends       message_sends[]
@@ -188,6 +190,18 @@ model mailbox_credentials {
   updated_at             DateTime  @updatedAt
 
   mailbox mailboxes @relation(fields: [mailbox_id], references: [id])
+}
+
+// The shared mailboxes a person has chosen NOT to see in their 共有メール view (nothing hidden = all they may view are shown).
+model hidden_team_mailboxes {
+  user_id    String
+  mailbox_id String
+  created_at DateTime @default(now())
+
+  user    users     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  mailbox mailboxes @relation(fields: [mailbox_id], references: [id], onDelete: Cascade)
+
+  @@id([user_id, mailbox_id])
 }
 
 model mailbox_permissions {

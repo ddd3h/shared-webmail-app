@@ -4,6 +4,7 @@ import { prisma } from '@/lib/db';
 import { getSession, requireAuth } from '@/lib/auth';
 import { buildThreadsWhere, queryText, queryWithoutText } from '@/lib/threads-filter';
 import { findSimilarThreads } from '@/lib/semantic-search';
+import { hiddenTeamMailboxIds } from '@/lib/team-view';
 
 const PAGE_LIMIT = 50;
 
@@ -49,6 +50,7 @@ export async function GET(req: NextRequest) {
   const assigned = url.searchParams.get('assigned') === '1';
   const spam = url.searchParams.get('spam') === '1';
   const semantic = url.searchParams.get('semantic') === '1';
+  const mailboxId = url.searchParams.get('mailbox_id') || undefined;
   const cursorLast = url.searchParams.get('cursor') || undefined;
   const cursorId = url.searchParams.get('cursor_id') || undefined;
 
@@ -62,7 +64,9 @@ export async function GET(req: NextRequest) {
     teamUnreadIds = rows.map(r => r.id);
   }
 
-  const filterParams = { session, status, type, mine, unread, sent, assigned, teamUnreadIds, spam };
+  // the 共有メール list leaves out the mailboxes the person chose not to see; a search looks everywhere
+  const hiddenMailboxIds = type === 'team' && !q && !mailboxId ? await hiddenTeamMailboxIds(session!.userId) : undefined;
+  const filterParams = { session, status, type, mine, unread, sent, assigned, teamUnreadIds, spam, mailboxId: type === 'team' ? mailboxId : undefined, hiddenMailboxIds };
   const threadsWhere = buildThreadsWhere({ ...filterParams, q });
 
   const threads = await prisma.threads.findMany({

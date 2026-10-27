@@ -71,9 +71,12 @@ export function buildThreadsWhere(params: {
   sent?: boolean,
   assigned?: boolean,
   teamUnreadIds?: string[],
-  spam?: boolean
+  spam?: boolean,
+  // the 共有メール view: one mailbox only (a chip), or every mailbox except the ones the person left out
+  mailboxId?: string,
+  hiddenMailboxIds?: string[]
 }): Prisma.threadsWhereInput {
-  const { session, status, type, q, mine, unread, sent, assigned, teamUnreadIds, spam } = params;
+  const { session, status, type, q, mine, unread, sent, assigned, teamUnreadIds, spam, mailboxId, hiddenMailboxIds } = params;
 
   let messageWhere: Prisma.messagesWhereInput | undefined;
   const threadSearchClauses: Prisma.threadsWhereInput[] = [];
@@ -159,6 +162,7 @@ export function buildThreadsWhere(params: {
     mailbox: {
       is: {
         ...(type ? { type: type as any } : {}),
+        ...(mailboxId ? { id: mailboxId } : hiddenMailboxIds && hiddenMailboxIds.length > 0 ? { id: { notIn: hiddenMailboxIds } } : {}),
         OR: [
           { type: 'personal', owner_user_id: session.userId },
           { permissions: { some: { user_id: session.userId, can_view: true } } }

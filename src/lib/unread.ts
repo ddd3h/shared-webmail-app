@@ -19,6 +19,7 @@ export async function getUnreadCount(userId: string) {
         AND p.user_id = ${userId}
         AND p.can_view = true
         AND t.is_spam = false
+        AND NOT EXISTS (SELECT 1 FROM hidden_team_mailboxes h WHERE h.user_id = ${userId} AND h.mailbox_id = m.id)
         AND (r.id IS NULL OR t.last_message_at > r.last_read_at)
     `
   ]);

@@ -28,6 +28,8 @@ export async function POST(req: NextRequest) {
   const filters = JSON.parse(request.filters_json);
   const where = buildThreadsWhere({
     session: { userId: request.user_id },
+    mailboxId: filters.type === 'team' ? filters.mailbox_id || undefined : undefined,
+    hiddenMailboxIds: filters.hidden_mailbox_ids,
     status: filters.status,
     type: filters.type,
     q: filters.q,
@@ -122,6 +124,8 @@ export async function GET(req: NextRequest) {
   const filters = JSON.parse(request.filters_json);
   const where = buildThreadsWhere({
     session: { userId: request.user_id },
+    mailboxId: filters.type === 'team' ? filters.mailbox_id || undefined : undefined,
+    hiddenMailboxIds: filters.hidden_mailbox_ids,
     status: filters.status,
     type: filters.type,
     q: filters.q,
