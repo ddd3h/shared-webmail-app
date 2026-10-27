@@ -20,6 +20,7 @@ vi.mock('@/lib/work-notify', () => ({
 vi.mock('@/lib/work-auth', () => ({
   getActor: vi.fn(),
   isAdmin: (a: any) => a.role === 'admin',
+  isFinance: (a: any) => a.role === 'admin' || !!a.is_accounting,
   getWorkSettings: vi.fn(async () => ({ daily_minutes: 480, auto_break_minutes: 60 })),
 }));
 

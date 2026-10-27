@@ -13,7 +13,7 @@ vi.mock('@/lib/db', () => ({
 }));
 vi.mock('@/lib/auth', () => ({ getSession: vi.fn(async () => ({ userId: 'u1' })), requireAuth: vi.fn() }));
 vi.mock('@/lib/audit', () => ({ logAudit: vi.fn() }));
-vi.mock('@/lib/work-auth', () => ({ getActor: vi.fn(async () => ({ id: 'u1', role: 'admin' })), isAdmin: (a: any) => a.role === 'admin' }));
+vi.mock('@/lib/work-auth', () => ({ getActor: vi.fn(async () => ({ id: 'u1', role: 'admin' })), isAdmin: (a: any) => a.role === 'admin', isFinance: (a: any) => a.role === 'admin' || !!a.is_accounting }));
 vi.mock('@/lib/work-notify', () => ({
   notifyPayslip: vi.fn(), notifyExpenseReimbursed: vi.fn(), notifyExpenseAddedToPayslip: vi.fn(),
 }));

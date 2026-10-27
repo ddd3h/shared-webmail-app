@@ -11,7 +11,7 @@ vi.mock('@/lib/db', () => ({
 }));
 vi.mock('@/lib/auth', () => ({ getSession: vi.fn(async () => ({ userId: 'u1' })), requireAuth: vi.fn() }));
 vi.mock('@/lib/audit', () => ({ logAudit: vi.fn() }));
-vi.mock('@/lib/work-auth', () => ({ getActor: vi.fn(), isAdmin: (a: any) => a.role === 'admin' }));
+vi.mock('@/lib/work-auth', () => ({ getActor: vi.fn(), isAdmin: (a: any) => a.role === 'admin', isFinance: (a: any) => a.role === 'admin' || !!a.is_accounting }));
 vi.mock('@/lib/org-server', () => ({ canReviewUser: vi.fn(async (a: any) => a.role === 'admin') }));
 vi.mock('@/lib/work-notify', () => ({ notifyTripSubmitted: vi.fn(), notifyTripReviewed: vi.fn() }));
 
