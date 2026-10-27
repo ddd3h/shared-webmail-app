@@ -43,6 +43,7 @@ test.describe('スマホ: 長い画面は項目ごとに折りたたむ', () => 
   test('セキュリティ: 項目は閉じていて、タップで開く。上の数字は見えたまま', async ({ page }) => {
     await page.goto('/admin/security');
     await expect(page.getByText('ログイン失敗（24時間）')).toBeVisible();
+    await page.getByRole('tab', { name: 'アカウントと端末' }).click();
     const login = page.getByRole('region', { name: 'ログイン方法' });
     const header = login.getByRole('button', { name: /ログイン方法/ });
     await expect(header).toHaveAttribute('aria-expanded', 'false');

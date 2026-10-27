@@ -94,7 +94,7 @@ test.describe('管理者の設定', () => {
     const admin = await asRole('admin');
     try {
       const page = await ctx.newPage();
-      await page.goto('/admin/security');
+      await page.goto('/admin/security#access');
       const box = page.getByLabel('アクセスの条件', { exact: true }).getByLabel(/ロボットからの接続を拒否する/);
       await expect(box).toBeChecked();
       await box.uncheck();

@@ -2,8 +2,10 @@
 import FoldCard from '@/components/mobile/FoldCard';
 import { useCallback, useEffect, useState } from 'react';
 import BlocksPanel from '@/components/security/BlocksPanel';
+import LoginHistoryPanel from '@/components/security/LoginHistoryPanel';
 import PolicyPanel from '@/components/security/PolicyPanel';
-import { EVENT_LABEL, SEVERITY_LABEL, SEVERITY_STYLE, reasonLabel, type Overview } from '@/components/security/types';
+import SessionsPanel from '@/components/security/SessionsPanel';
+import { EVENT_LABEL, SEVERITY_LABEL, SEVERITY_STYLE, type Overview, type People } from '@/components/security/types';
 
 const when = (iso: string) => new Date(iso).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 
@@ -20,52 +22,20 @@ function TopList({ title, rows }: { title: string; rows: Overview['top_ips'] }) 
   );
 }
 
-export default function SecurityAdminPage() {
+// 概要: the last 24 hours at a glance
+function OverviewTab() {
   const [data, setData] = useState<Overview | null>(null);
-  const load = useCallback(async () => { const r = await fetch('/api/admin/security/overview'); if (r.ok) setData(await r.json()); }, []);
-  useEffect(() => { load(); }, [load]);
-
-  async function resetMfa(id: string, name: string) {
-    if (!confirm(`${name} さんの2段階認証をリセットします。ログイン中の端末はすべてログアウトされ、次回のログインで設定し直します。よろしいですか？`)) return;
-    await fetch(`/api/admin/security/users/${id}/mfa-reset`, { method: 'POST' });
-    load();
-  }
-  async function unlock(id: string) { await fetch(`/api/admin/security/users/${id}/lock`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ locked: false }) }); load(); }
-
+  const load = useCallback(async () => { const r = await fetch('/api/admin/security/overview?lite=1', { cache: 'no-store' }); if (r.ok) setData(await r.json()); }, []);
+  useEffect(() => { void load(); }, [load]);
   if (!data) return <p className="text-sm text-gray-400">読み込み中…</p>;
   return (
     <div className="space-y-5">
-      <div><h1 className="text-xl font-bold text-gray-900">セキュリティ</h1><p className="hidden md:block text-xs text-gray-500 mt-0.5">ログインの状況、不審なアクセスの検知、アクセスの条件</p></div>
-
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
         <Stat label="ログイン失敗（24時間）" value={data.summary.failed_24h} tone="bad" /><Stat label="ログイン成功（24時間）" value={data.summary.succeeded_24h} />
         <Stat label="ログイン中のセッション" value={data.summary.active_sessions} /><Stat label="ブロック中のアドレス" value={data.summary.blocked} tone="bad" /><Stat label="ロック中のアカウント" value={data.summary.locked} tone="bad" />
       </div>
-
       <div className="grid gap-3 sm:grid-cols-2"><TopList title="失敗が多いアドレス（24時間）" rows={data.top_ips} /><TopList title="狙われているアカウント（24時間）" rows={data.top_accounts} /></div>
-
       <BlocksPanel blocks={data.blocks} onChanged={load} />
-
-      {data.locked.length > 0 && (
-        <FoldCard title="ロック中のアカウント" label="ロック中のアカウント" defaultOpen badge={`${data.locked.length}件`}>
-          <ul className="divide-y divide-gray-100">{data.locked.map(u => <li key={u.id} className="flex items-center gap-3 py-2 text-sm"><span className="flex-1">{u.name}<span className="ml-2 text-xs text-gray-400">{u.email}</span></span><button onClick={() => unlock(u.id)} className="btn btn-secondary btn-sm" aria-label={`${u.name}のロックを解除`}>解除</button></li>)}</ul>
-        </FoldCard>
-      )}
-
-      <FoldCard title="ログイン方法（2段階認証・パスキー）" label="ログイン方法" badge={`未設定 ${data.people.filter(p => !p.mfa && p.passkeys === 0).length}人`}>
-        <p className="text-xs text-gray-500">パスワードでログインするには2段階認証が必要です。どちらもない人は、次回のログイン時に2段階認証を設定します。</p>
-        <ul className="divide-y divide-gray-100">
-          {data.people.map(p => (
-            <li key={p.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2 text-sm">
-              <span className="min-w-32 flex-1">{p.name}<span className="ml-2 text-xs text-gray-400">{p.email}</span></span>
-              <span className={`rounded-sm px-1.5 py-0.5 text-[11px] ${p.mfa ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>{p.mfa ? '2段階認証 有効' : '2段階認証 未設定'}</span>
-              <span className={`rounded-sm px-1.5 py-0.5 text-[11px] ${p.passkeys > 0 ? 'bg-blue-50 text-blue-700' : 'bg-gray-100 text-gray-500'}`}>パスキー {p.passkeys}</span>
-              {p.mfa && <button onClick={() => resetMfa(p.id, p.name)} className="btn btn-secondary btn-sm" aria-label={`${p.name}の2段階認証をリセット`}>リセット</button>}
-            </li>
-          ))}
-        </ul>
-      </FoldCard>
-
       <FoldCard title="検知したできごと" label="セキュリティイベント" badge={`${data.events.length}件`}>
         {data.events.length === 0 ? <p className="text-sm text-gray-400">まだありません</p> : (
           <ul className="divide-y divide-gray-100">
@@ -81,20 +51,80 @@ export default function SecurityAdminPage() {
           </ul>
         )}
       </FoldCard>
+    </div>
+  );
+}
 
-      <PolicyPanel />
+// アカウントと端末: locked accounts, how everybody logs in, who is logged in right now
+function AccountsTab() {
+  const [data, setData] = useState<People | null>(null);
+  const load = useCallback(async () => { const r = await fetch('/api/admin/security/people', { cache: 'no-store' }); if (r.ok) setData(await r.json()); }, []);
+  useEffect(() => { void load(); }, [load]);
 
-      <FoldCard title="最近のログイン" label="最近のログイン">
-        <div className="overflow-x-auto"><table className="w-full text-sm">
-          <thead className="text-xs text-gray-500"><tr><th className="py-1 text-left">日時</th><th className="py-1 text-left">アカウント</th><th className="py-1 text-left">結果</th><th className="py-1 text-left">アドレス / 場所</th><th className="py-1 text-left">端末</th></tr></thead>
-          <tbody className="divide-y divide-gray-100">
-            {data.recent_logins.map(l => (
-              <tr key={l.id}><td className="py-1.5 whitespace-nowrap text-gray-600">{when(l.at)}</td><td className="py-1.5">{l.name ?? l.email}</td>
-                <td className="py-1.5"><span className={`rounded-sm px-1.5 py-0.5 text-[11px] ${l.success ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'}`}>{l.success ? '成功' : `失敗${l.reason ? `（${reasonLabel(l.reason)}）` : ''}`}</span></td>
-                <td className="py-1.5 text-gray-600"><span className="font-mono text-xs">{l.ip}</span> {l.place}</td><td className="py-1.5 text-gray-500">{l.device}</td></tr>
-            ))}
-          </tbody></table></div>
-      </FoldCard>
+  async function resetMfa(id: string, name: string) {
+    if (!confirm(`${name} さんの2段階認証をリセットします。ログイン中の端末はすべてログアウトされ、次回のログインで設定し直します。よろしいですか？`)) return;
+    await fetch(`/api/admin/security/users/${id}/mfa-reset`, { method: 'POST' });
+    void load();
+  }
+  async function unlock(id: string) { await fetch(`/api/admin/security/users/${id}/lock`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ locked: false }) }); void load(); }
+
+  return (
+    <div className="space-y-5">
+      {!data ? <p className="text-sm text-gray-400">読み込み中…</p> : (
+        <>
+          {data.locked.length > 0 && (
+            <FoldCard title="ロック中のアカウント" label="ロック中のアカウント" defaultOpen badge={`${data.locked.length}件`}>
+              <ul className="divide-y divide-gray-100">{data.locked.map(u => <li key={u.id} className="flex items-center gap-3 py-2 text-sm"><span className="flex-1">{u.name}<span className="ml-2 text-xs text-gray-400">{u.email}</span></span><button onClick={() => unlock(u.id)} className="btn btn-secondary btn-sm" aria-label={`${u.name}のロックを解除`}>解除</button></li>)}</ul>
+            </FoldCard>
+          )}
+          <FoldCard title="ログイン方法（2段階認証・パスキー）" label="ログイン方法" badge={`未設定 ${data.people.filter(p => !p.mfa && p.passkeys === 0).length}人`}>
+            <p className="text-xs text-gray-500">パスワードでログインするには2段階認証が必要です。どちらもない人は、次回のログイン時に2段階認証を設定します。</p>
+            <ul className="divide-y divide-gray-100">
+              {data.people.map(p => (
+                <li key={p.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2 text-sm">
+                  <span className="min-w-32 flex-1">{p.name}<span className="ml-2 text-xs text-gray-400">{p.email}</span></span>
+                  <span className={`rounded-sm px-1.5 py-0.5 text-[11px] ${p.mfa ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>{p.mfa ? '2段階認証 有効' : '2段階認証 未設定'}</span>
+                  <span className={`rounded-sm px-1.5 py-0.5 text-[11px] ${p.passkeys > 0 ? 'bg-blue-50 text-blue-700' : 'bg-gray-100 text-gray-500'}`}>パスキー {p.passkeys}</span>
+                  {p.mfa && <button onClick={() => resetMfa(p.id, p.name)} className="btn btn-secondary btn-sm" aria-label={`${p.name}の2段階認証をリセット`}>リセット</button>}
+                </li>
+              ))}
+            </ul>
+          </FoldCard>
+        </>
+      )}
+      <SessionsPanel />
+    </div>
+  );
+}
+
+const TABS = [
+  { k: 'overview', l: '概要' },
+  { k: 'accounts', l: 'アカウントと端末' },
+  { k: 'history', l: 'ログイン履歴' },
+  { k: 'access', l: 'アクセスの条件' },
+] as const;
+type Tab = typeof TABS[number]['k'];
+
+export default function SecurityAdminPage() {
+  const [tab, setTab] = useState<Tab>('overview');
+  // a link such as /admin/security#access opens that tab
+  useEffect(() => { const h = window.location.hash.slice(1) as Tab; if (TABS.some(t => t.k === h)) setTab(h); }, []);
+  const choose = (k: Tab) => { setTab(k); window.history.replaceState(null, '', `#${k}`); };
+
+  return (
+    <div className="space-y-5">
+      <div><h1 className="text-xl font-bold text-gray-900">セキュリティ</h1><p className="hidden md:block text-xs text-gray-500 mt-0.5">ログインの状況、不審なアクセスの検知、アクセスの条件（システム管理者だけが見られます）</p></div>
+      <div role="tablist" aria-label="セキュリティの項目" className="flex gap-1 overflow-x-auto rounded-xl bg-gray-100 p-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        {TABS.map(t => (
+          <button key={t.k} role="tab" aria-selected={tab === t.k} onClick={() => choose(t.k)}
+            className={`shrink-0 flex-1 whitespace-nowrap rounded-lg px-3 py-2 text-sm font-medium ${tab === t.k ? 'bg-white text-gray-900 shadow-xs' : 'text-gray-500 hover:text-gray-800'}`}>{t.l}</button>
+        ))}
+      </div>
+      {/* only the selected tab is on the page, so only its data is asked for */}
+      {tab === 'overview' && <OverviewTab />}
+      {tab === 'accounts' && <AccountsTab />}
+      {tab === 'history' && <LoginHistoryPanel />}
+      {tab === 'access' && <PolicyPanel />}
     </div>
   );
 }

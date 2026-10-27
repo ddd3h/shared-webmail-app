@@ -601,11 +601,18 @@ test.describe('画面', () => {
   test.describe('管理者', () => {
     test.use({ storageState: AUTH.admin });
 
-    test('セキュリティ画面に概要・ブロック・条件・検知したできごとが出る', async ({ page }) => {
+    test('セキュリティ画面は4つの項目に分かれ、選んだ項目だけが出る', async ({ page }) => {
       await page.goto('/admin/security');
       await expect(page.getByRole('heading', { level: 1, name: 'セキュリティ' })).toBeVisible();
-      for (const name of ['ブロック中のアドレス', 'セキュリティイベント', 'アクセスの条件', '最近のログイン']) await expect(page.getByLabel(name, { exact: true })).toBeVisible();
+      for (const name of ['ブロック中のアドレス', 'セキュリティイベント']) await expect(page.getByLabel(name, { exact: true })).toBeVisible();
       await expect(page.getByText('ログイン失敗（24時間）')).toBeVisible();
+      await expect(page.getByLabel('アクセスの条件', { exact: true })).toHaveCount(0); // not on the page until chosen
+      await page.getByRole('tab', { name: 'アカウントと端末' }).click();
+      for (const name of ['ログイン方法', 'ログイン中の端末']) await expect(page.getByLabel(name, { exact: true })).toBeVisible();
+      await page.getByRole('tab', { name: 'ログイン履歴' }).click();
+      await expect(page.getByLabel('ログイン履歴', { exact: true })).toBeVisible();
+      await page.getByRole('tab', { name: 'アクセスの条件' }).click();
+      await expect(page.getByLabel('アクセスの条件', { exact: true })).toBeVisible();
     });
 
     test('画面からアドレスをブロック・解除でき、自分のアドレスは拒否される', async ({ page }) => {
@@ -625,7 +632,7 @@ test.describe('画面', () => {
     });
 
     test('許可ネットワークに自分のアドレスがないと保存できず、理由が出る', async ({ page }) => {
-      await page.goto('/admin/security');
+      await page.goto('/admin/security#access');
       const policy = page.getByLabel('アクセスの条件', { exact: true });
       // the panel fills the form with the saved settings a moment after it opens, which would wipe what was typed too early: type again until it sticks
       await expect(async () => {
@@ -635,10 +642,13 @@ test.describe('画面', () => {
       }).toPass({ timeout: 15000 });
     });
 
-    test('メニューの「セキュリティ」から開ける', async ({ page }) => {
+    test('メニューの「管理」から開き、管理のタブの「セキュリティ」に着く（メニューに別の「セキュリティ」はない）', async ({ page }) => {
       await page.goto('/threads');
       await page.locator('header').getByRole('button', { name: 'アカウントメニュー' }).click();
-      await page.locator('header').getByRole('link', { name: /^セキュリティ/ }).click();
+      await expect(page.locator('header').getByRole('link', { name: /^セキュリティ/ })).toHaveCount(0);
+      await page.locator('header').getByRole('link', { name: /^管理/ }).click();
+      await expect(page).toHaveURL(/\/admin\/settings/);
+      await page.getByRole('navigation', { name: '管理メニュー' }).getByRole('link', { name: 'セキュリティ' }).click();
       await expect(page).toHaveURL(/\/admin\/security/);
     });
   });

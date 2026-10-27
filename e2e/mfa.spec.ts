@@ -501,14 +501,15 @@ test.describe('画面', () => {
       const acct = await accountWithMfa();
       const name = `一覧確認${acct.id.slice(-6)}`; // the other test accounts are all called 試験用
       await db.users.update({ where: { id: acct.id }, data: { name } });
-      await page.goto('/admin/security');
+      await page.goto('/admin/security#accounts');
       const list = page.getByLabel('ログイン方法', { exact: true });
       await expect(list.getByText('2段階認証 有効').first()).toBeVisible();
       await expect(list.getByText('2段階認証 未設定').first()).toBeVisible();
-      await expect(page.getByLabel('アクセスの条件', { exact: true }).getByLabel(/パスキー」または「パスワード＋2段階認証」だけにする/)).toBeChecked();
       page.once('dialog', d => d.accept());
       await list.getByRole('button', { name: `${name}の2段階認証をリセット` }).click();
       await expect.poll(async () => (await db.users.findUnique({ where: { id: acct.id } }))!.totp_enabled_at, { timeout: 15000 }).toBeNull();
+      await page.getByRole('tab', { name: 'アクセスの条件' }).click();
+      await expect(page.getByLabel('アクセスの条件', { exact: true }).getByLabel(/パスキー」または「パスワード＋2段階認証」だけにする/)).toBeChecked();
     });
   });
 });

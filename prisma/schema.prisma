@@ -654,6 +654,7 @@ model login_logs {
 
   @@index([created_at])
   @@index([ip_address])
+  @@index([success, created_at]) // the 24-hour failure counts of the security overview
 }
 
 // Emails scheduled to be sent at a future time. Kept separate from `messages`

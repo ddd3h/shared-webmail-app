@@ -55,7 +55,7 @@ export const ACCOUNT_ITEMS: NavItem[] = [
   item('/scheduled', '予約送信', 'clock'),
   item('/profile', 'プロフィール', 'user'),
 ];
-export const ADMIN_ITEM = item('/admin/settings', '管理', 'gear', 'ユーザー・メールボックス・各種設定');
+export const ADMIN_ITEM = item('/admin/settings', '管理', 'gear', 'ユーザー・メール・セキュリティ・各種設定');
 
 // 「組織・人事」: the organisation chart and evaluations (everybody has at least their own evaluation)
 export const ORG_ITEMS: NavItem[] = [
@@ -65,9 +65,9 @@ export const ORG_ITEMS: NavItem[] = [
 // Only for people who can decide on their team's requests
 export const APPROVALS_ITEM = item('/approvals', 'チームの承認', 'check', 'メンバーの経費・出張の承認待ち');
 
-export const SECURITY_ITEM = item('/admin/security', 'セキュリティ', 'shield', 'ログインの状況・ブロック・アクセスの条件');
 
 export const WORK_GROUP_LABEL = '申請・給与';
 export const ORG_GROUP_LABEL = '組織・人事';
 
-export const isActivePath = (pathname: string, href: string) => (href === '/' ? pathname === '/' : pathname.startsWith(href));
+// 管理 is one place with several screens (/admin/settings, /admin/users, /admin/security ...): all of them light up its menu entry
+export const isActivePath = (pathname: string, href: string) => (href === '/' ? pathname === '/' : href.startsWith('/admin/') ? pathname.startsWith('/admin') : pathname.startsWith(href));
