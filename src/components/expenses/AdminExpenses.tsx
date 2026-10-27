@@ -6,7 +6,7 @@ import { ClaimDetail, ClaimHeader, type Claim, type Summary } from './shared';
 type ByUser = { user_id: string; name: string; count: number; amount: number };
 const FILTERS = [{ k: 'pending', l: '承認待ち' }, { k: 'to_reimburse', l: '返金待ち' }, { k: 'in_payslip', l: '給与に合算済' }, { k: 'paid', l: '返金済' }, { k: 'rejected', l: '却下' }, { k: '', l: 'すべて' }];
 
-export default function AdminExpenses({ meId }: { meId: string }) {
+export default function AdminExpenses({ meId, canReview = true }: { meId: string; canReview?: boolean }) {
   const [filter, setFilter] = useState('pending');
   const [userId, setUserId] = useState('');
   const [items, setItems] = useState<Claim[]>([]);
@@ -127,7 +127,7 @@ export default function AdminExpenses({ meId }: { meId: string }) {
             {(open === c.id || c.status === 'pending') && (
               <div className="border-t border-gray-100 p-3 space-y-3">
                 <ClaimDetail c={c} />
-                {c.status === 'pending' && (
+                {c.status === 'pending' && canReview && (
                   <div className="flex flex-wrap items-center gap-2">
                     <button className={btnPrimary} onClick={() => approve(c.id)}>承認</button>
                     <button className={btn} onClick={() => setReject({ id: c.id, comment: '' })}>却下…</button>

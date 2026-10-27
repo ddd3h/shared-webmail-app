@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { getSession, requireAuth } from '@/lib/auth';
-import { getActor, isAdmin } from '@/lib/work-auth';
+import { getActor, isFinance } from '@/lib/work-auth';
 import { toDbDate } from '@/lib/work';
 import { z } from 'zod';
 import { isValidDateString } from '@/lib/work';
@@ -46,7 +46,7 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
   requireAuth(session);
   const { actor, report } = await loadOwned(id, session.userId);
   if (!actor || !report) return NextResponse.json({ error: 'not_found' }, { status: 404 });
-  if (report.user_id !== actor.id && !isAdmin(actor)) return NextResponse.json({ error: 'forbidden' }, { status: 403 });
+  if (report.user_id !== actor.id && !isFinance(actor)) return NextResponse.json({ error: 'forbidden' }, { status: 403 });
   await prisma.work_reports.delete({ where: { id } });
   return NextResponse.json({ ok: true });
 }

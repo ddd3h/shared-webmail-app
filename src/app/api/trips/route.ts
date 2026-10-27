@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/db';
 import { getSession, requireAuth } from '@/lib/auth';
-import { getActor, isAdmin } from '@/lib/work-auth';
+import { getActor, isFinance } from '@/lib/work-auth';
 import { isValidDateString, toDbDate } from '@/lib/work';
 import { MAX_TRIP_DAYS, tripDays } from '@/lib/trip';
 import { findOverlap, linesData, loadSelection, serializeTrip, tripInclude } from '@/lib/trip-server';
@@ -17,7 +17,7 @@ export async function GET(req: NextRequest) {
 
   const sp = new URL(req.url).searchParams;
   const all = sp.get('scope') === 'all';
-  if (all && !isAdmin(actor)) return NextResponse.json({ error: 'forbidden' }, { status: 403 });
+  if (all && !isFinance(actor)) return NextResponse.json({ error: 'forbidden' }, { status: 403 });
   const status = sp.get('status');
   if (status && !['pending', 'approved', 'rejected', 'cancelled'].includes(status)) {
     return NextResponse.json({ error: 'invalid_query' }, { status: 400 });

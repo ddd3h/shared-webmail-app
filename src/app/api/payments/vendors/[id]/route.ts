@@ -4,7 +4,7 @@ import { prisma } from '@/lib/db';
 import { getSession, requireAuth } from '@/lib/auth';
 import { logAudit } from '@/lib/audit';
 import { decrypt, encrypt } from '@/lib/crypto';
-import { getActor, isAdmin } from '@/lib/work-auth';
+import { getActor, isFinance } from '@/lib/work-auth';
 import { isValidAccountNumber, last4 } from '@/lib/payment';
 
 const optional = (re: RegExp) => z.string().trim().regex(re).optional().or(z.literal('').transform(() => undefined));
@@ -26,7 +26,7 @@ async function adminOnly() {
   const session = await getSession();
   requireAuth(session);
   const actor = await getActor(session.userId);
-  return actor && isAdmin(actor) ? actor : null;
+  return actor && isFinance(actor) ? actor : null;
 }
 
 // PUT /api/payments/vendors/:id (admin only).

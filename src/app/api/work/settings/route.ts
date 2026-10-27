@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { getSession, requireAuth } from '@/lib/auth';
 import { setSetting } from '@/lib/settings';
 import { logAudit } from '@/lib/audit';
-import { getActor, getWorkSettings, isAdmin } from '@/lib/work-auth';
+import { getActor, getWorkSettings, isFinance } from '@/lib/work-auth';
 
 export async function GET() {
   const session = await getSession();
@@ -21,7 +21,7 @@ export async function PUT(req: NextRequest) {
   const session = await getSession();
   requireAuth(session);
   const actor = await getActor(session.userId);
-  if (!actor || !isAdmin(actor)) return NextResponse.json({ error: 'forbidden' }, { status: 403 });
+  if (!actor || !isFinance(actor)) return NextResponse.json({ error: 'forbidden' }, { status: 403 });
   const parsed = schema.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) return NextResponse.json({ error: 'invalid_body' }, { status: 400 });
   await setSetting('WORK_DAILY_MINUTES', String(parsed.data.daily_minutes), false, session.userId);

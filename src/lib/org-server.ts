@@ -14,17 +14,20 @@ const toCaps = (permissions: string[] | undefined): Capability[] => (permissions
 
 /** Permissions granted by a person's 役職 (admins are handled separately: they can do everything). */
 export async function capabilitiesOf(userId: string): Promise<Capability[]> {
-  const u = await prisma.users.findUnique({ where: { id: userId }, select: { position: { select: { permissions: true } } } });
-  return toCaps(u?.position?.permissions);
+  const u = await prisma.users.findUnique({ where: { id: userId }, select: { is_hr: true, position: { select: { permissions: true } } } });
+  return withHr(toCaps(u?.position?.permissions), !!u?.is_hr);
 }
+
+// 人事担当 (the flag) can run evaluations for the whole company, whatever their 役職 or unit
+const withHr = (caps: Capability[], isHr: boolean): Capability[] => (isHr && !caps.includes('hr_admin') ? [...caps, 'hr_admin'] : caps);
 
 /** Loads units and everybody's permissions once, for code that needs to ask about many people. */
 export async function loadOrg(): Promise<Loaded> {
   const [units, users] = await Promise.all([
     loadUnits(),
-    prisma.users.findMany({ select: { id: true, role: true, position: { select: { permissions: true } } } }),
+    prisma.users.findMany({ select: { id: true, role: true, is_hr: true, position: { select: { permissions: true } } } }),
   ]);
-  const caps = new Map(users.map(u => [u.id, u.role === 'admin' ? (['approve_requests', 'evaluate', 'hr_admin'] as Capability[]) : toCaps(u.position?.permissions)]));
+  const caps = new Map(users.map(u => [u.id, u.role === 'admin' ? (['approve_requests', 'evaluate', 'hr_admin'] as Capability[]) : withHr(toCaps(u.position?.permissions), u.is_hr)]));
   return { units, capsOf: id => caps.get(id) ?? [] };
 }
 

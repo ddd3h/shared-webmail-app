@@ -5,7 +5,7 @@ import AdminTrips from '@/components/trips/AdminTrips';
 import AllowanceSettings from '@/components/trips/AllowanceSettings';
 import type { RateType } from '@/components/trips/shared';
 
-type Me = { id: string; name: string; role: string };
+type Me = { id: string; name: string; role: string; is_finance?: boolean };
 type TabKey = 'mine' | 'admin' | 'settings';
 
 export default function TripsPage() {
@@ -20,7 +20,7 @@ export default function TripsPage() {
   useEffect(() => { fetch('/api/work/me').then(r => r.json()).then(setMe).catch(() => {}); loadTypes(); }, [loadTypes]);
 
   if (!me || !types) return <p className="text-sm text-gray-400">読み込み中…</p>;
-  const tabs: { k: TabKey; l: string }[] = [{ k: 'mine', l: '自分の出張' }, ...(me.role === 'admin' ? [{ k: 'admin' as const, l: '承認' }, { k: 'settings' as const, l: '手当の設定' }] : [])];
+  const tabs: { k: TabKey; l: string }[] = [{ k: 'mine', l: '自分の出張' }, ...(me.is_finance ? [{ k: 'admin' as const, l: me.role === 'admin' ? '承認' : '全員の出張' }, { k: 'settings' as const, l: '手当の設定' }] : [])];
   return (
     <div className="space-y-4">
       <div>
@@ -33,7 +33,7 @@ export default function TripsPage() {
         ))}
       </div>
       {tab === 'mine' && <MyTrips types={types} />}
-      {tab === 'admin' && <AdminTrips meId={me.id} types={types} />}
+      {tab === 'admin' && <AdminTrips meId={me.id} types={types} canReview={me.role === 'admin'} />}
       {tab === 'settings' && <AllowanceSettings onChanged={loadTypes} />}
     </div>
   );

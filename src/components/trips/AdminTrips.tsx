@@ -6,7 +6,8 @@ import { TripDetail, TripHeader, type RateType, type Trip } from './shared';
 
 const FILTERS = [{ k: 'pending', l: '承認待ち' }, { k: 'approved', l: '承認済' }, { k: 'rejected', l: '却下' }, { k: 'cancelled', l: '取消' }, { k: '', l: 'すべて' }];
 
-export default function AdminTrips({ meId, types }: { meId: string; types: RateType[] }) {
+// `canReview`: approving is for administrators; 経理担当 sees every trip and adjusts the allowances
+export default function AdminTrips({ meId, types, canReview = true }: { meId: string; types: RateType[]; canReview?: boolean }) {
   const [filter, setFilter] = useState('pending');
   const [items, setItems] = useState<Trip[]>([]);
   const [pending, setPending] = useState(0);
@@ -59,14 +60,14 @@ export default function AdminTrips({ meId, types }: { meId: string; types: RateT
               <div className="border-t border-gray-100 p-3 space-y-3">
                 <TripDetail t={t} />
                 <div className="flex flex-wrap items-center gap-2">
-                  {t.status === 'pending' && (
+                  {t.status === 'pending' && canReview && (
                     <>
                       <button className={btnPrimary} onClick={() => approve(t.id)}>承認</button>
                       <button className={btn} onClick={() => setReject({ id: t.id, comment: '' })}>却下…</button>
                     </>
                   )}
                   {(t.status === 'pending' || t.status === 'approved') && <button className={btn} onClick={() => setAdjust(draftFromTrip(t))}>手当を調整</button>}
-                  {t.status === 'pending' && t.user.id === meId && <span className="text-xs text-amber-600">自分の申請です（管理者が複数いる場合は他の管理者が承認します）</span>}
+                  {t.status === 'pending' && canReview && t.user.id === meId && <span className="text-xs text-amber-600">自分の申請です（管理者が複数いる場合は他の管理者が承認します）</span>}
                 </div>
               </div>
             )}

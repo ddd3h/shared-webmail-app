@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { prisma } from '@/lib/db';
 import { getSession, requireAuth } from '@/lib/auth';
 import { logAudit } from '@/lib/audit';
-import { getActor, isAdmin } from '@/lib/work-auth';
+import { getActor, isFinance } from '@/lib/work-auth';
 import { syncExpenseItem } from '@/lib/expense-payslip';
 
 const schema = z.object({ ids: z.array(z.string().min(1)).min(1).max(200) });
@@ -13,7 +13,7 @@ export async function POST(req: NextRequest) {
   const session = await getSession();
   requireAuth(session);
   const actor = await getActor(session.userId);
-  if (!actor || !isAdmin(actor)) return NextResponse.json({ error: 'forbidden' }, { status: 403 });
+  if (!actor || !isFinance(actor)) return NextResponse.json({ error: 'forbidden' }, { status: 403 });
   const parsed = schema.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) return NextResponse.json({ error: 'invalid_body' }, { status: 400 });
 

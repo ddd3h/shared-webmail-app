@@ -108,6 +108,7 @@ model users {
   business_trips             business_trips[]         @relation("trip_applicant")
   trips_reviewed             business_trips[]         @relation("trip_reviewer")
   is_accounting              Boolean                  @default(false)
+  is_hr          Boolean  @default(false) // 人事担当: sees and finalizes every evaluation, whatever the unit or 役職
   bank_account               user_bank_accounts?      @relation("bank_owner")
   org_unit_id                String?
   position_id                String?

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/db';
 import { getSession, requireAuth } from '@/lib/auth';
-import { getActor, isAdmin } from '@/lib/work-auth';
+import { getActor, isFinance } from '@/lib/work-auth';
 import { saveUploadedFiles, deleteStoredFiles } from '@/lib/attachment-storage';
 import { MAX_ATTACHMENT_BYTES } from '@/lib/attachment-limits';
 import { isValidDateString, isValidMonth, monthRange, toDbDate } from '@/lib/work';
@@ -52,7 +52,7 @@ export async function GET(req: NextRequest) {
 
   const sp = new URL(req.url).searchParams;
   const all = sp.get('scope') === 'all';
-  if (all && !isAdmin(actor)) return NextResponse.json({ error: 'forbidden' }, { status: 403 });
+  if (all && !isFinance(actor)) return NextResponse.json({ error: 'forbidden' }, { status: 403 });
   const month = sp.get('month');
   if (month && !isValidMonth(month)) return NextResponse.json({ error: 'invalid_query' }, { status: 400 });
   const status = sp.get('status');

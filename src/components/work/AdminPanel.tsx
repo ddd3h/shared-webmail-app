@@ -5,17 +5,19 @@ import ReportsPanel from './ReportsPanel';
 import PayrollPanel from './PayrollPanel';
 import { Notice, TYPE_LABEL, btnPrimary, inp, api, type WorkerType } from './ui';
 
-type Member = { id: string; name: string; email: string; role: string; worker_type: WorkerType; is_accounting: boolean };
+type Member = { id: string; name: string; email: string; role: string; worker_type: WorkerType; is_accounting: boolean; is_hr: boolean };
 const SECTIONS = [
-  { key: 'members', label: '区分・設定' },
+  { key: 'members', label: '区分・設定', adminOnly: true },
   { key: 'attendance', label: '勤怠の確認' },
   { key: 'reports', label: '業務報告' },
   { key: 'payroll', label: '給与・報酬の管理' },
 ] as const;
 type Section = typeof SECTIONS[number]['key'];
 
-export default function AdminPanel() {
-  const [section, setSection] = useState<Section>('members');
+// `isAdmin`: 区分 and the 経理担当 / 人事担当 flags are the administrator's to change; 経理担当 sees and handles the rest.
+export default function AdminPanel({ isAdmin = true }: { isAdmin?: boolean }) {
+  const sections = SECTIONS.filter(s => isAdmin || !('adminOnly' in s));
+  const [section, setSection] = useState<Section>(isAdmin ? 'members' : 'attendance');
   const [members, setMembers] = useState<Member[]>([]);
   const [target, setTarget] = useState('');
   const [reportTarget, setReportTarget] = useState('');
@@ -36,7 +38,11 @@ export default function AdminPanel() {
   }
   async function setAccounting(id: string, is_accounting: boolean) {
     const res = await api(`/api/work/users/${id}`, 'PATCH', { is_accounting });
-    if (res.ok) { setMembers(ms => ms.map(m => m.id === id ? { ...m, is_accounting } : m)); flash('success', is_accounting ? '経理担当にしました（全銀データの作成・口座の確認ができます）' : '経理担当を外しました'); } else flash('error', '更新に失敗しました');
+    if (res.ok) { setMembers(ms => ms.map(m => m.id === id ? { ...m, is_accounting } : m)); flash('success', is_accounting ? '経理担当にしました（経費・出張・勤怠・給与・振込など、お金まわりを全社分扱えます）' : '経理担当を外しました'); } else flash('error', '更新に失敗しました');
+  }
+  async function setHr(id: string, is_hr: boolean) {
+    const res = await api(`/api/work/users/${id}`, 'PATCH', { is_hr });
+    if (res.ok) { setMembers(ms => ms.map(m => m.id === id ? { ...m, is_hr } : m)); flash('success', is_hr ? '人事担当にしました（全員の人事評価を見て、確定できます）' : '人事担当を外しました'); } else flash('error', '更新に失敗しました');
   }
   async function saveSettings() {
     if (!settings) return;
@@ -51,7 +57,7 @@ export default function AdminPanel() {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap gap-1.5">
-        {SECTIONS.map(s => (
+        {sections.map(s => (
           <button key={s.key} onClick={() => setSection(s.key)} className={`rounded-full px-3 py-1.5 text-sm ${section === s.key ? 'bg-gray-900 text-white' : 'bg-white border border-gray-200 text-gray-700'}`}>{s.label}</button>
         ))}
       </div>
@@ -61,7 +67,7 @@ export default function AdminPanel() {
         <div className="space-y-4">
           <div className="rounded-xl border border-gray-200 bg-white overflow-x-auto">
             <table className="w-full text-sm">
-              <thead className="bg-gray-50 text-xs text-gray-500"><tr><th className="px-3 py-2 text-left">名前</th><th className="px-3 py-2 text-left">区分</th><th className="px-3 py-2 text-left">経理担当</th><th className="px-3 py-2 text-left hidden sm:table-cell">使える機能</th></tr></thead>
+              <thead className="bg-gray-50 text-xs text-gray-500"><tr><th className="px-3 py-2 text-left">名前</th><th className="px-3 py-2 text-left">区分</th><th className="px-3 py-2 text-left">経理担当</th><th className="px-3 py-2 text-left">人事担当</th><th className="px-3 py-2 text-left hidden sm:table-cell">使える機能</th></tr></thead>
               <tbody className="divide-y divide-gray-100">
                 {members.map(m => (
                   <tr key={m.id}>
@@ -75,6 +81,11 @@ export default function AdminPanel() {
                       {m.role === 'admin'
                         ? <span className="text-xs text-gray-400">管理者</span>
                         : <input type="checkbox" className="h-4 w-4" checked={m.is_accounting} onChange={e => setAccounting(m.id, e.target.checked)} aria-label={`${m.name}を経理担当にする`} />}
+                    </td>
+                    <td className="px-3 py-2">
+                      {m.role === 'admin'
+                        ? <span className="text-xs text-gray-400">管理者</span>
+                        : <input type="checkbox" className="h-4 w-4" checked={m.is_hr} onChange={e => setHr(m.id, e.target.checked)} aria-label={`${m.name}を人事担当にする`} />}
                     </td>
                     <td className="px-3 py-2 text-xs text-gray-500 hidden sm:table-cell">{m.worker_type === 'employee' ? '打刻・勤怠・給与明細' : m.worker_type === 'contractor' ? '業務報告書・報酬明細' : '報酬明細'}</td>
                   </tr>

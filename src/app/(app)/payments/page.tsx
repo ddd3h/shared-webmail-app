@@ -5,7 +5,7 @@ import AdminPayments from '@/components/payments/AdminPayments';
 import VendorsPanel from '@/components/payments/VendorsPanel';
 import type { Vendor } from '@/components/payments/shared';
 
-type Me = { id: string; name: string; role: string };
+type Me = { id: string; name: string; role: string; is_finance?: boolean };
 type TabKey = 'mine' | 'vendors' | 'admin';
 
 export default function PaymentsPage() {
@@ -20,8 +20,8 @@ export default function PaymentsPage() {
   useEffect(() => { fetch('/api/work/me').then(r => r.json()).then(setMe).catch(() => {}); loadVendors(); }, [loadVendors]);
 
   if (!me || !vendors) return <p className="text-sm text-gray-400">読み込み中…</p>;
-  const admin = me.role === 'admin';
-  const tabs: { k: TabKey; l: string }[] = [{ k: 'mine', l: '自分の申請' }, { k: 'vendors', l: '取引先' }, ...(admin ? [{ k: 'admin' as const, l: '承認・振込' }] : [])];
+  const admin = !!me.is_finance; // administrators and 経理担当 see every request and every vendor
+  const tabs: { k: TabKey; l: string }[] = [{ k: 'mine', l: '自分の申請' }, { k: 'vendors', l: '取引先' }, ...(admin ? [{ k: 'admin' as const, l: me.role === 'admin' ? '承認・振込' : '全員の申請・振込' }] : [])];
   return (
     <div className="space-y-4">
       <div>
@@ -35,7 +35,7 @@ export default function PaymentsPage() {
       </div>
       {tab === 'mine' && <MyPayments vendors={vendors} onVendorsChanged={loadVendors} />}
       {tab === 'vendors' && <VendorsPanel key={String(admin)} admin={admin} onChanged={loadVendors} />}
-      {tab === 'admin' && <AdminPayments meId={me.id} onVendorsChanged={loadVendors} />}
+      {tab === 'admin' && <AdminPayments meId={me.id} onVendorsChanged={loadVendors} canReview={me.role === 'admin'} />}
     </div>
   );
 }

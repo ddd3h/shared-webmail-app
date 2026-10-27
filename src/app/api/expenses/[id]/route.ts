@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/db';
 import { getSession, requireAuth } from '@/lib/auth';
-import { getActor, isAdmin } from '@/lib/work-auth';
+import { getActor, isFinance } from '@/lib/work-auth';
 import { deleteStoredFiles } from '@/lib/attachment-storage';
 import { isValidDateString, toDbDate } from '@/lib/work';
 import { notifyExpenseSubmitted } from '@/lib/work-notify';
@@ -58,7 +58,7 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
   const claim = await prisma.expense_claims.findUnique({ where: { id }, include: { receipts: true } });
   if (!actor || !claim) return NextResponse.json({ error: 'not_found' }, { status: 404 });
   const own = claim.user_id === actor.id;
-  if (!own && !isAdmin(actor)) return NextResponse.json({ error: 'forbidden' }, { status: 403 });
+  if (!own && !isFinance(actor)) return NextResponse.json({ error: 'forbidden' }, { status: 403 });
   // Paid claims are the record of a payment; approved ones only an admin may remove.
   if (claim.status === 'paid' || (own && !isEditable(claim))) return NextResponse.json({ error: 'not_deletable' }, { status: 409 });
   await prisma.expense_claims.delete({ where: { id } });

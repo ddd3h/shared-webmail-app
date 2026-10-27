@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { prisma } from '@/lib/db';
 import { getSession, requireAuth } from '@/lib/auth';
 import { logAudit } from '@/lib/audit';
-import { getActor, getWorkSettings, isAdmin } from '@/lib/work-auth';
+import { getActor, getWorkSettings, isFinance } from '@/lib/work-auth';
 import { notifyAttendanceEdited } from '@/lib/work-notify';
 import {
   allowedPunches, isValidDateString, isValidMonth, jstDateString, monthRange, summarizeMonth, toDbDate, workedMinutes,
@@ -23,8 +23,8 @@ export async function GET(req: NextRequest) {
 
   const targetId = sp.get('userId') || actor.id;
   const isSelf = targetId === actor.id;
-  if (!isSelf && !isAdmin(actor)) return NextResponse.json({ error: 'forbidden' }, { status: 403 });
-  if (isSelf && actor.worker_type !== 'employee' && !isAdmin(actor)) {
+  if (!isSelf && !isFinance(actor)) return NextResponse.json({ error: 'forbidden' }, { status: 403 });
+  if (isSelf && actor.worker_type !== 'employee' && !isFinance(actor)) {
     return NextResponse.json({ error: 'not_employee' }, { status: 403 });
   }
   const target = isSelf ? actor : await getActor(targetId);
@@ -89,7 +89,7 @@ export async function PUT(req: NextRequest) {
   const session = await getSession();
   requireAuth(session);
   const actor = await getActor(session.userId);
-  if (!actor || !isAdmin(actor)) return NextResponse.json({ error: 'forbidden' }, { status: 403 });
+  if (!actor || !isFinance(actor)) return NextResponse.json({ error: 'forbidden' }, { status: 403 });
   const parsed = upsertSchema.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) return NextResponse.json({ error: 'invalid_body' }, { status: 400 });
   const d = parsed.data;
@@ -117,7 +117,7 @@ export async function DELETE(req: NextRequest) {
   const session = await getSession();
   requireAuth(session);
   const actor = await getActor(session.userId);
-  if (!actor || !isAdmin(actor)) return NextResponse.json({ error: 'forbidden' }, { status: 403 });
+  if (!actor || !isFinance(actor)) return NextResponse.json({ error: 'forbidden' }, { status: 403 });
   const id = new URL(req.url).searchParams.get('id') || '';
   const row = await prisma.attendance_records.findUnique({ where: { id } });
   if (!row) return NextResponse.json({ error: 'not_found' }, { status: 404 });

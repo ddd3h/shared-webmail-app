@@ -2,19 +2,20 @@ import { prisma } from '@/lib/db';
 import { getSetting } from '@/lib/settings';
 import { DEFAULT_AUTO_BREAK_MINUTES, DEFAULT_DAILY_MINUTES, type WorkerType } from '@/lib/work';
 
-export type Actor = { id: string; name: string; role: string; worker_type: WorkerType; is_accounting?: boolean };
+export type Actor = { id: string; name: string; role: string; worker_type: WorkerType; is_accounting?: boolean; is_hr?: boolean };
 
 export async function getActor(userId: string): Promise<Actor | null> {
   const u = await prisma.users.findUnique({
     where: { id: userId },
-    select: { id: true, name: true, role: true, worker_type: true, is_accounting: true },
+    select: { id: true, name: true, role: true, worker_type: true, is_accounting: true, is_hr: true },
   });
   return u as Actor | null;
 }
 
 export const isAdmin = (a: Actor) => a.role === 'admin';
-// 経理担当: admins plus people flagged as accounting staff. They handle bank transfers (全銀 files, marking paid)
-// but approving requests stays with admins.
+// 経理担当: admins plus people flagged as accounting staff. They see and handle everything about money and pay, whatever
+// the organisation: expenses and reimbursement, trips and allowances, attendance, payslips, vendors and bank transfers.
+// Only approving / rejecting requests stays with admins and the heads of units (docs/23).
 export const isFinance = (a: Actor) => a.role === 'admin' || !!a.is_accounting;
 
 function intSetting(v: string | null, fallback: number, max: number) {

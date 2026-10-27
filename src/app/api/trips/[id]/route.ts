@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { prisma } from '@/lib/db';
 import { getSession, requireAuth } from '@/lib/auth';
 import { logAudit } from '@/lib/audit';
-import { getActor, isAdmin } from '@/lib/work-auth';
+import { getActor, isFinance } from '@/lib/work-auth';
 import { isValidDateString, toDbDate } from '@/lib/work';
 import { MAX_TRIP_DAYS, tripDays } from '@/lib/trip';
 import { findOverlap, linesData, loadSelection } from '@/lib/trip-server';
@@ -35,9 +35,9 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const body = await req.json().catch(() => ({}));
 
   const ownerEdit = trip.user_id === actor.id && (trip.status === 'pending' || trip.status === 'rejected');
-  const adminAdjust = !ownerEdit && isAdmin(actor) && (trip.status === 'pending' || trip.status === 'approved');
+  const adminAdjust = !ownerEdit && isFinance(actor) && (trip.status === 'pending' || trip.status === 'approved');
   if (!ownerEdit && !adminAdjust) {
-    const involved = trip.user_id === actor.id || isAdmin(actor);
+    const involved = trip.user_id === actor.id || isFinance(actor);
     return NextResponse.json({ error: involved ? 'not_editable' : 'forbidden' }, { status: involved ? 409 : 403 });
   }
 

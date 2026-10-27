@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/db';
 import { getSession, requireAuth } from '@/lib/auth';
-import { getActor, isAdmin } from '@/lib/work-auth';
+import { getActor, isFinance } from '@/lib/work-auth';
 import { notifyWorkReportSubmitted } from '@/lib/work-notify';
 import { isValidDateString, isValidMonth, jstDateString, monthRange, toDbDate } from '@/lib/work';
 
@@ -24,7 +24,7 @@ export async function GET(req: NextRequest) {
   requireAuth(session);
   const actor = await getActor(session.userId);
   if (!actor) return NextResponse.json({ error: 'not_found' }, { status: 404 });
-  const admin = isAdmin(actor);
+  const admin = isFinance(actor);
   if (!admin && actor.worker_type !== 'contractor') return NextResponse.json({ error: 'not_contractor' }, { status: 403 });
 
   const sp = new URL(req.url).searchParams;

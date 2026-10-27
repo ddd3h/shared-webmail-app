@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { prisma } from '@/lib/db';
 import { getSession, requireAuth } from '@/lib/auth';
 import { logAudit } from '@/lib/audit';
-import { getActor, isAdmin } from '@/lib/work-auth';
+import { getActor, isFinance } from '@/lib/work-auth';
 
 // GET /api/trips/allowance-types - the 日当 / 加算金 rate master. Admins can pass ?all=1 to include inactive ones.
 export async function GET(req: NextRequest) {
@@ -11,7 +11,7 @@ export async function GET(req: NextRequest) {
   requireAuth(session);
   const actor = await getActor(session.userId);
   if (!actor) return NextResponse.json({ error: 'not_found' }, { status: 404 });
-  const all = new URL(req.url).searchParams.get('all') === '1' && isAdmin(actor);
+  const all = new URL(req.url).searchParams.get('all') === '1' && isFinance(actor);
   const items = await prisma.trip_allowance_types.findMany({
     where: all ? {} : { is_active: true },
     orderBy: [{ sort: 'asc' }, { created_at: 'asc' }],
@@ -34,7 +34,7 @@ export async function POST(req: NextRequest) {
   const session = await getSession();
   requireAuth(session);
   const actor = await getActor(session.userId);
-  if (!actor || !isAdmin(actor)) return NextResponse.json({ error: 'forbidden' }, { status: 403 });
+  if (!actor || !isFinance(actor)) return NextResponse.json({ error: 'forbidden' }, { status: 403 });
   const parsed = typeSchema.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) return NextResponse.json({ error: 'invalid_body' }, { status: 400 });
   const d = parsed.data;

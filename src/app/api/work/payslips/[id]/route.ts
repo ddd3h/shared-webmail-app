@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { prisma } from '@/lib/db';
 import { getSession, requireAuth } from '@/lib/auth';
 import { logAudit } from '@/lib/audit';
-import { getActor, isAdmin } from '@/lib/work-auth';
+import { getActor, isFinance } from '@/lib/work-auth';
 import { notifyExpenseReimbursed, notifyPayslip } from '@/lib/work-notify';
 import { settleClaimsOfPayslip, syncExpenseItem } from '@/lib/expense-payslip';
 import { isValidDateString, isValidMonth, jstDateString, payslipTotals, toDbDate } from '@/lib/work';
@@ -29,7 +29,7 @@ async function adminOnly() {
   const session = await getSession();
   requireAuth(session);
   const actor = await getActor(session.userId);
-  return actor && isAdmin(actor) ? actor : null;
+  return actor && isFinance(actor) ? actor : null;
 }
 
 // PUT /api/work/payslips/:id - replace a statement (admin only)

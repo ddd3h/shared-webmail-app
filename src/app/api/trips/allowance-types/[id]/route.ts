@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { prisma } from '@/lib/db';
 import { getSession, requireAuth } from '@/lib/auth';
 import { logAudit } from '@/lib/audit';
-import { getActor, isAdmin } from '@/lib/work-auth';
+import { getActor, isFinance } from '@/lib/work-auth';
 
 const schema = z.object({
   name: z.string().trim().min(1).max(100),
@@ -19,7 +19,7 @@ async function adminOnly() {
   const session = await getSession();
   requireAuth(session);
   const actor = await getActor(session.userId);
-  return actor && isAdmin(actor) ? actor : null;
+  return actor && isFinance(actor) ? actor : null;
 }
 
 // PUT /api/trips/allowance-types/:id - change a rate. Existing trip requests keep the amounts they were calculated with.

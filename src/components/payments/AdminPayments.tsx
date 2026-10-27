@@ -5,7 +5,8 @@ import { RequestDetail, RequestHeader, todayJst, type Request, type Summary } fr
 
 const FILTERS = [{ k: 'pending', l: '承認待ち' }, { k: 'approved', l: '振込待ち' }, { k: 'paid', l: '振込済' }, { k: 'rejected', l: '却下' }, { k: '', l: 'すべて' }];
 
-export default function AdminPayments({ meId, onVendorsChanged }: { meId: string; onVendorsChanged: () => void }) {
+// `canReview`: approving is for administrators; 経理担当 sees every request and makes the transfers
+export default function AdminPayments({ meId, onVendorsChanged, canReview = true }: { meId: string; onVendorsChanged: () => void; canReview?: boolean }) {
   const [filter, setFilter] = useState('pending');
   const [items, setItems] = useState<Request[]>([]);
   const [summary, setSummary] = useState<Summary | null>(null);
@@ -103,11 +104,11 @@ export default function AdminPayments({ meId, onVendorsChanged }: { meId: string
                         <button className="rounded-sm bg-emerald-600 px-2 py-1 text-white hover:bg-emerald-700" onClick={() => verify(r.vendor.id)}>口座を確認済にする</button>
                       </div>
                     )}
-                    <div className="flex flex-wrap items-center gap-2">
+                    {canReview && <div className="flex flex-wrap items-center gap-2">
                       <button className={btnPrimary} disabled={!r.vendor.verified} onClick={() => approve(r.id)}>承認</button>
                       <button className={btn} onClick={() => setReject({ id: r.id, comment: '' })}>却下…</button>
                       {r.user.id === meId && <span className="text-xs text-amber-600">自分の申請です（管理者が複数いる場合は他の管理者が承認します）</span>}
-                    </div>
+                    </div>}
                   </div>
                 )}
               </div>
