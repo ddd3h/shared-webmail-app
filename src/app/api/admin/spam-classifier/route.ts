@@ -5,8 +5,8 @@ import { getModelStats } from '@/lib/spam-classifier';
 
 export async function checkAdmin(session: Awaited<ReturnType<typeof getSession>>) {
   requireAuth(session);
-  const actor = await prisma.users.findUnique({ where: { id: session!.userId }, select: { role: true } });
-  if (actor?.role !== 'admin') throw Object.assign(new Error('forbidden'), { status: 403 });
+  // the role is the one getSession read from the database a moment ago
+  if (session!.role !== 'admin') throw Object.assign(new Error('forbidden'), { status: 403 });
 }
 
 // GET /api/admin/spam-classifier — model stats

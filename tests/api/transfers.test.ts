@@ -19,7 +19,8 @@ vi.mock('@/lib/db', () => {
     },
   };
 });
-vi.mock('@/lib/auth', () => ({ getSession: vi.fn(async () => ({ userId: 'u1' })), requireAuth: vi.fn(), freshLoginRequired: vi.fn(() => null) }));
+// adminActor() reads the role from the session; here the session follows whichever actor a test sets up
+vi.mock('@/lib/auth', () => ({ getSession: vi.fn(async () => ({ userId: 'u1', role: (await (await import('@/lib/work-auth')).getActor('u1'))?.role })), requireAuth: vi.fn(), freshLoginRequired: vi.fn(() => null) }));
 vi.mock('@/lib/audit', () => ({ logAudit: vi.fn() }));
 vi.mock('@/lib/crypto', () => ({ encrypt: vi.fn(async (s: string) => `enc:${s}`), decrypt: vi.fn(async (s: string) => s.replace(/^enc:/, '')) }));
 vi.mock('@/lib/settings', () => ({

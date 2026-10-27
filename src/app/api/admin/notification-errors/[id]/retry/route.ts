@@ -1,12 +1,11 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
-import { getSession, requireAuth } from '@/lib/auth';
+import { adminActor, forbidden } from '@/lib/finance-guard';
 import { queues } from '@/lib/queue';
 
 export async function POST(_: Request, { params }: { params: Promise<{ id: string }> }) {
+  if (!(await adminActor())) return forbidden();
   const { id } = await params;
-  const session = await getSession();
-  requireAuth(session);
   const d = await prisma.notification_deliveries.findUnique({ where: { id }, include: { event: true } });
   if (!d || !d.event) return NextResponse.json({ error: 'not_found' }, { status: 404 });
   if (d.channel === 'webpush') {

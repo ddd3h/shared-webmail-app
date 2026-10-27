@@ -9,6 +9,7 @@ export async function GET() {
     where: { expires_at: { gt: new Date() } },
     orderBy: { created_at: 'desc' },
     take: 300,
+    relationLoadStrategy: 'join',
     select: {
       id: true, ip_address: true, user_agent: true, network_type: true, expires_at: true, last_activity_at: true, created_at: true,
       user: { select: { id: true, name: true, email: true } },

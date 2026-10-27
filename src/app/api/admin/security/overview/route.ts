@@ -16,9 +16,8 @@ export async function GET(req: NextRequest) {
   const failedSince = { success: false, created_at: { gt: since } };
   const now = new Date();
 
-  const [failed, succeeded, topIps, topAccounts, events, blocks, lockedCount, sessions] = await Promise.all([
-    prisma.login_logs.count({ where: failedSince }),
-    prisma.login_logs.count({ where: { success: true, created_at: { gt: since } } }),
+  const [byResult, topIps, topAccounts, events, blocks, lockedCount, sessions] = await Promise.all([
+    prisma.login_logs.groupBy({ by: ['success'], where: { created_at: { gt: since } }, _count: { _all: true } }), // successes and failures in one query
     prisma.login_logs.groupBy({ by: ['ip_address'], where: failedSince, _count: { _all: true }, orderBy: { _count: { ip_address: 'desc' } }, take: TOP }),
     prisma.login_logs.groupBy({ by: ['email'], where: failedSince, _count: { _all: true }, orderBy: { _count: { email: 'desc' } }, take: TOP }),
     prisma.security_events.findMany({ orderBy: { created_at: 'desc' }, take: 50 }),
@@ -27,8 +26,9 @@ export async function GET(req: NextRequest) {
     prisma.sessions.count({ where: { expires_at: { gt: now } } }),
   ]);
 
+  const count = (ok: boolean) => byResult.find(r => r.success === ok)?._count._all ?? 0;
   const body = {
-    summary: { failed_24h: failed, succeeded_24h: succeeded, active_sessions: sessions, blocked: blocks.length, locked: lockedCount },
+    summary: { failed_24h: count(false), succeeded_24h: count(true), active_sessions: sessions, blocked: blocks.length, locked: lockedCount },
     top_ips: topIps.map(r => ({ key: r.ip_address, count: r._count._all })),
     top_accounts: topAccounts.map(r => ({ key: r.email, count: r._count._all })),
     events: events.map(e => ({ id: e.id, type: e.type, severity: e.severity, ip: e.ip, email: e.email, detail: e.detail ? JSON.parse(e.detail) : null, at: e.created_at })),

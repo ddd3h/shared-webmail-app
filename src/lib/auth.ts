@@ -121,8 +121,10 @@ export async function getSession(): Promise<Session | null> {
 
   // DB check: the session must still exist (revoked, user deleted) and the account must still be allowed in.
   // The role comes from the DB, not the cookie, so a demotion or lock takes effect at once.
+  // one query: the session and its user (role, lock) together
   const dbSession = await prisma.sessions.findUnique({
     where: { id: payload.sessionId },
+    relationLoadStrategy: 'join',
     select: { id: true, expires_at: true, created_at: true, ip_address: true, user: { select: { role: true, locked_at: true } } },
   });
   if (!dbSession) return null;

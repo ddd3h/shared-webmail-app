@@ -23,6 +23,7 @@ export async function GET(req: NextRequest) {
     where,
     orderBy: [{ created_at: 'desc' }, { id: 'desc' }],
     take: limit + 1,
+    relationLoadStrategy: 'join',
     select: {
       id: true, success: true, failure_reason: true, ip_address: true, user_agent: true, network_type: true, org_name: true, country: true, city: true, created_at: true, email: true,
       user: { select: { name: true } },

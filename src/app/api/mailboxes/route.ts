@@ -25,6 +25,7 @@ export async function GET(req: NextRequest) {
 
   const boxes = await prisma.mailboxes.findMany({
     where,
+    relationLoadStrategy: 'join', // the mailboxes with owner, sync state, credentials and permissions in one query
     select: {
       id: true, type: true, display_name: true, email_address: true,
       is_active: true, sync_mode: true, created_at: true, updated_at: true, owner_user_id: true,

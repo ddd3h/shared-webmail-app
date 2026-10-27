@@ -1,7 +1,8 @@
 // Prisma schema for the MVP based on the spec
 
 generator client {
-  provider = "prisma-client-js"
+  provider        = "prisma-client-js"
+  previewFeatures = ["relationJoins"] // `relationLoadStrategy: 'join'` reads a row and its relations in one query
 }
 
 datasource db {

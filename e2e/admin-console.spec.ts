@@ -1,6 +1,9 @@
 import { test, expect } from './fixtures';
 import { AUTH, USERS } from './helpers/constants';
 import { db } from './helpers/db';
+import { deleteAccountsWithPrefix, newAccount } from './helpers/accounts';
+import { PASSWORD, BASE_URL } from './helpers/constants';
+import { request as pwRequest } from '@playwright/test';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -16,7 +19,7 @@ async function seedLogs() {
   await db.login_logs.createMany({ data: rows });
 }
 test.beforeEach(seedLogs);
-test.afterAll(async () => { await db.login_logs.deleteMany({}); });
+test.afterAll(async () => { await db.login_logs.deleteMany({}); await db.known_devices.deleteMany({ where: { user_id: { startsWith: 'u_demoted-' } } }); await deleteAccountsWithPrefix('demoted'); });
 
 test.describe('管理画面のAPI', () => {
   test('概要: 件数と「多い順」は集計で出る（24時間より前は数えない）', async ({ as }) => {
@@ -78,6 +81,31 @@ test.describe('管理画面のAPI', () => {
   });
 });
 
+test.describe('管理者から外された人は、古いCookieでも管理のAPIに入れない', () => {
+  test('どの管理APIも、その場でDBの役割を見て断る（設定の変更・管理者の作成も）', async () => {
+    const acct = await newAccount('demoted');
+    await db.users.update({ where: { id: acct.id }, data: { role: 'admin' } });
+    const c = await pwRequest.newContext({ baseURL: BASE_URL, extraHTTPHeaders: { 'x-forwarded-for': '10.88.0.1' } });
+    expect((await c.post('/api/auth/login', { data: { email: acct.email, password: PASSWORD } })).ok()).toBeTruthy();
+    expect((await c.get('/api/admin/settings')).status()).toBe(200); // still an administrator: allowed
+    await db.users.update({ where: { id: acct.id }, data: { role: 'user' } }); // demoted; the cookie still says admin
+    const before = await db.users.count();
+    for (const [method, url, data] of [
+      ['GET', '/api/admin/settings'], ['PUT', '/api/admin/settings', { updates: [{ key: 'SYNC_DEFAULT_INTERVAL_SEC', value: '30', isSecret: false }] }],
+      ['POST', '/api/admin/settings/generate-vapid'], ['GET', '/api/admin/audit-logs'], ['GET', '/api/admin/connection-errors'],
+      ['GET', '/api/admin/notification-errors'], ['POST', '/api/admin/notification-errors/x/retry'],
+      ['POST', '/api/admin/users', { name: 'x', email: 'evil@e2e.test', password: 'Passw0rd!Passw0rd', role: 'admin' }],
+      ['GET', '/api/admin/security/overview'], ['GET', '/api/admin/sessions'], ['GET', '/api/admin/login-logs'], ['GET', '/api/admin/spam-senders'],
+    ] as const) {
+      const res = await c.fetch(url, { method, ...(data ? { data } : {}), maxRedirects: 0 });
+      expect(res.status(), `${method} ${url}`).toBe(403);
+    }
+    expect(await db.users.count()).toBe(before); // no account was made
+    expect(await db.app_settings.count({ where: { key: 'SYNC_DEFAULT_INTERVAL_SEC', value: '30' } })).toBe(0);
+    await c.dispose();
+  });
+});
+
 test.describe('管理画面の画面', () => {
   test.use({ storageState: AUTH.admin });
 
@@ -124,7 +152,7 @@ test.describe('管理画面の画面', () => {
     const panel = page.getByLabel('ログイン中の端末', { exact: true });
     await expect(panel.getByText('203.0.113.50')).toBeVisible();
     page.once('dialog', d => d.accept());
-    await panel.getByRole('button', { name: `${USERS.guest.name}のこの端末を遮断` }).click();
+    await panel.getByRole('listitem').filter({ hasText: '203.0.113.50' }).getByRole('button', { name: /のこの端末を遮断/ }).click();
     await expect(panel.getByText('203.0.113.50')).toHaveCount(0);
     expect(await db.sessions.count({ where: { id: victim.id } })).toBe(0);
     expect(await db.audit_logs.count({ where: { action_type: 'session_revoked', target_id: victim.id } })).toBe(1);
