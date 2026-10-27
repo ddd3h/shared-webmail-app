@@ -126,4 +126,5 @@ export async function resetSecurity() {
   await db.app_settings.deleteMany({ where: { key: { in: ['SECURITY_ALLOWED_CIDRS', 'SECURITY_ALLOWED_COUNTRIES', 'SECURITY_SESSION_MAX_DAYS', 'SECURITY_NEW_DEVICE_ALERT', 'SECURITY_MFA_TRUST_DAYS'] } } });
   await db.app_settings.upsert({ where: { key: 'SECURITY_REQUIRE_2FA' }, create: { key: 'SECURITY_REQUIRE_2FA', value: 'off' }, update: { value: 'off' } });
   await db.app_settings.upsert({ where: { key: 'SECURITY_DEVICE_BINDING' }, create: { key: 'SECURITY_DEVICE_BINDING', value: 'off' }, update: { value: 'off' } });
+  await db.app_settings.upsert({ where: { key: 'SECURITY_IDLE_MINUTES' }, create: { key: 'SECURITY_IDLE_MINUTES', value: '0' }, update: { value: '0' } });
 }

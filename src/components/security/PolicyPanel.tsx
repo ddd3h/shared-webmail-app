@@ -11,7 +11,7 @@ export default function PolicyPanel() {
 
   async function save() {
     if (!p) return;
-    const res = await fetch('/api/admin/security/policy', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ allowed_cidrs: p.allowed_cidrs, allowed_countries: p.allowed_countries, session_max_days: Number(p.session_max_days), new_device_alert: p.new_device_alert, device_binding: p.device_binding, require_2fa: p.require_2fa, mfa_trust_days: Number(p.mfa_trust_days), block_bots: p.block_bots, remember_days: Number(p.remember_days) }) });
+    const res = await fetch('/api/admin/security/policy', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ allowed_cidrs: p.allowed_cidrs, allowed_countries: p.allowed_countries, session_max_days: Number(p.session_max_days), new_device_alert: p.new_device_alert, device_binding: p.device_binding, require_2fa: p.require_2fa, mfa_trust_days: Number(p.mfa_trust_days), block_bots: p.block_bots, remember_days: Number(p.remember_days), idle_minutes: Number(p.idle_minutes) }) });
     const e = await res.json().catch(() => ({}));
     setMsg(res.ok ? { ok: true, text: '保存しました' } : { ok: false, text: e.message ?? '保存できませんでした。入力を確認してください' });
   }
@@ -33,6 +33,10 @@ export default function PolicyPanel() {
         <label className="flex items-start gap-2 text-sm font-medium text-gray-900"><input type="checkbox" className="mt-1" checked={p.require_2fa} onChange={e => setP({ ...p, require_2fa: e.target.checked })} />ログインは「パスキー」または「パスワード＋2段階認証」だけにする（推奨）</label>
         <p className="text-xs text-gray-500">オフにすると、パスワードだけでログインできてしまいます。2段階認証が未設定の人は、パスワードでのログイン時にその場で設定します。</p>
         <div className="max-w-xs"><label className="label text-xs">「このブラウザを信頼する」の日数（0=使わせない）</label><input className="input" type="number" min={0} max={90} value={p.mfa_trust_days} onChange={e => setP({ ...p, mfa_trust_days: Number(e.target.value) })} /></div>
+      </div>
+      <div className="rounded-xl border border-gray-200 p-3 space-y-2">
+        <div className="max-w-xs"><label className="label text-xs">操作がないときに自動ログアウトするまでの分数（0=しない）</label><input className="input" type="number" min={0} max={1440} value={p.idle_minutes} onChange={e => setP({ ...p, idle_minutes: Number(e.target.value) })} /></div>
+        <p className="text-xs text-gray-500">キーボード・タップ・マウス・スクロールがこの分数ないと、自動でログアウトします（1分前に「ログインを続ける」の確認が出ます）。画面を閉じたままでも、サーバー側でログインが切れます。ホーム画面のアプリ（PWA）は端末の鍵で自動的にログインし直すため、ログイン画面は出ません。</p>
       </div>
       <div className="rounded-xl border border-gray-200 p-3 space-y-2">
         <div className="max-w-xs"><label className="label text-xs">アプリ（PWA）のログインを維持する日数（0=使わせない）</label><input className="input" type="number" min={0} max={90} value={p.remember_days} onChange={e => setP({ ...p, remember_days: Number(e.target.value) })} /></div>

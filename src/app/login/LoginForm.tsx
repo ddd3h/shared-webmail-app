@@ -198,6 +198,12 @@ export default function LoginForm() {
       )}
       {step === 'codes' && <RecoveryCodesView codes={codes} onDone={redirect} doneLabel="ログインを続ける" />}
 
+      {step === 'credentials' && !error && searchParams.get('reason') === 'idle' && (
+        <div role="status" className="mb-4 rounded-lg bg-blue-50 border border-blue-200 p-3 text-sm text-blue-800">
+          しばらく操作がなかったため、自動的にログアウトしました。もう一度ログインしてください。
+        </div>
+      )}
+
       {step === 'credentials' && error && (
         <div className="mb-4 rounded-lg bg-red-50 border border-red-200 p-3 text-sm text-red-700">
           {error}

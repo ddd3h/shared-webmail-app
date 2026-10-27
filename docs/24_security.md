@@ -160,6 +160,7 @@
 | `API_BUDGET_EXEMPT_USER_IDS` | 利用上限の対象外にするユーザーID（カンマ区切り） |
 | `SECURITY_REQUIRE_2FA` | 設定キー（画面から変更）。`off` で2段階認証ルールを無効化。E2Eは既定で `off` |
 | `SECURITY_REMEMBER_DAYS` | 設定キー（画面から変更）。アプリ（PWA）のログインを維持する日数（既定30・0で無効・最大90） |
+| `SECURITY_IDLE_MINUTES` | 設定キー（画面から変更）。操作がないときに自動ログアウトするまでの分数（既定10・0で無効・最大1440） |
 | `SECURITY_BLOCK_BOTS` | 設定キー（画面から変更）。`off` でロボットの遮断を無効化（既定はオン） |
 | `BOT_BLOCK` | `off` でロボットの遮断を、画面の設定に関わらず全体で無効化 |
 | `BOT_ALLOW_UA` | ロボット遮断の例外にする User-Agent の一部（カンマ区切り。監視ツールなど）。E2Eは `Playwright/,HeadlessChrome`（Playwright のAPIクライアントと、手で開くヘッドレスのブラウザ） |
@@ -174,3 +175,12 @@
 
 ## テスト
 アプリのログイン維持は `e2e/remember-login.spec.ts`（実際のブラウザの WebCrypto で、鍵の作成・署名・自動の入り直し・盗難・リプレイ・別端末・期限・ログアウト・重要操作の制限）と `tests/unit/remember-login.test.ts`。ロボットの遮断は `e2e/bots.spec.ts` と `tests/unit/bot-guard.test.ts`。`e2e/security.spec.ts`（ログイン・総当たり・スイーピング・新しい端末・セッション・ロック・アクセス制限・Cookie使い回し・CSRF・ヘッダー・画面）、`tests/api/auth-login.test.ts`、`tests/unit/security-basics.test.ts`（TOTPはRFC 6238のテストベクトル付き）。2段階認証は `e2e/mfa.spec.ts`（設定・コード誤り・使い回し・総当たり・回復コード・信頼ブラウザ・管理者リセット・画面）と `tests/api/mfa-login.test.ts`。
+
+## 無操作の自動ログアウト
+
+キーボード・タップ・マウス・スクロールが一定時間（既定10分）ないと、ログアウトになります。管理画面の「セキュリティ → アクセスの条件」で分数を変えられます（0で無効）。
+
+- **画面側**（`src/components/IdleLogout.tsx`）: 本人の操作だけを数えます（画面が自動で行う取得は数えません）。切れる1分前に「ログインを続ける」の確認を出し、時間が来たらログアウトしてログイン画面（`?reason=idle`）へ移ります。同じブラウザの複数タブは操作時刻を共有します（`localStorage`）。
+- **サーバー側**: 画面が操作のたびに（30秒に1回まで）`POST /api/auth/activity` を送り、`sessions.last_input_at` を進めます。`getSession()` が、この時刻から（設定の分数＋猶予1分）たったセッションを消します。画面を閉じたまま・ノートPCを閉じたままでも切れ、盗まれたCookieも使えなくなります。切れたあとに「生きてます」を送っても復活しません。
+- **ホーム画面のアプリ（PWA）**: 「ログインを維持する」を選んだアプリは、端末の鍵で自動的にログインし直すので、ログイン画面は出ません（セキュリティ上の効果は、盗まれたCookieを止めることです）。
+- E2E は、保存したセッションを長時間APIだけで使うため、既定では無効にしています（`e2e/global-setup.ts`）。`e2e/idle-logout.spec.ts` がオンにして確かめます。

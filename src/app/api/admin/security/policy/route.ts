@@ -5,7 +5,7 @@ import { matchesAny, parseRules, isValidRule } from '@/lib/cidr';
 import { getClientIp } from '@/lib/rate-limit';
 import { adminActor, forbidden } from '@/lib/finance-guard';
 import { getSetting } from '@/lib/settings';
-import { loadSecurityPolicy, saveSecurityPolicy } from '@/lib/security-settings';
+import { loadSecurityPolicy, saveSecurityPolicy, MAX_IDLE_MINUTES } from '@/lib/security-settings';
 import { recordSecurityEvent } from '@/lib/security-events';
 
 const schema = z.object({
@@ -19,6 +19,7 @@ const schema = z.object({
   mfa_trust_days: z.number().int().min(0).max(90).optional(),
   block_bots: z.boolean().optional(),
   remember_days: z.number().int().min(0).max(90).optional(),
+  idle_minutes: z.number().int().min(0).max(MAX_IDLE_MINUTES).optional(),
 });
 
 // GET /api/admin/security/policy - the current rules, and which address the admin is calling from
@@ -26,7 +27,7 @@ export async function GET(req: NextRequest) {
   if (!(await adminActor())) return forbidden();
   const p = await loadSecurityPolicy();
   const [cidrs, countries] = await Promise.all([getSetting('SECURITY_ALLOWED_CIDRS'), getSetting('SECURITY_ALLOWED_COUNTRIES')]);
-  return NextResponse.json({ allowed_cidrs: cidrs ?? '', allowed_countries: countries ?? '', session_max_days: p.sessionMaxDays, new_device_alert: p.newDeviceAlert, device_binding: p.deviceBinding, require_2fa: p.require2fa, mfa_trust_days: p.mfaTrustDays, block_bots: p.blockBots, remember_days: p.rememberDays, your_ip: getClientIp(req) });
+  return NextResponse.json({ allowed_cidrs: cidrs ?? '', allowed_countries: countries ?? '', session_max_days: p.sessionMaxDays, new_device_alert: p.newDeviceAlert, device_binding: p.deviceBinding, require_2fa: p.require2fa, mfa_trust_days: p.mfaTrustDays, block_bots: p.blockBots, remember_days: p.rememberDays, idle_minutes: p.idleMinutes, your_ip: getClientIp(req) });
 }
 
 // PUT /api/admin/security/policy
@@ -48,11 +49,12 @@ export async function PUT(req: NextRequest) {
   const require_2fa = d.require_2fa ?? current.require2fa;
   const block_bots = d.block_bots ?? current.blockBots;
   const remember_days = d.remember_days ?? current.rememberDays;
-  await saveSecurityPolicy({ ...d, require_2fa, mfa_trust_days: d.mfa_trust_days ?? current.mfaTrustDays, block_bots, remember_days }, actor.id);
+  const idle_minutes = d.idle_minutes ?? current.idleMinutes;
+  await saveSecurityPolicy({ ...d, require_2fa, mfa_trust_days: d.mfa_trust_days ?? current.mfaTrustDays, block_bots, remember_days, idle_minutes }, actor.id);
   if (require_2fa !== current.require2fa) {
     // turning the second step off is the one change that weakens every account at once: leave a loud record
     await recordSecurityEvent({ type: require_2fa ? 'policy_2fa_on' : 'policy_2fa_off', severity: require_2fa ? 'info' : 'alert', userId: actor.id });
   }
-  await logAudit({ actorUserId: actor.id, actionType: 'security_policy_update', targetType: 'app_settings', metadata: { rules: lines.length, countries: d.allowed_countries, session_max_days: d.session_max_days, new_device_alert: d.new_device_alert, device_binding: d.device_binding, require_2fa, mfa_trust_days: d.mfa_trust_days ?? current.mfaTrustDays, block_bots, remember_days } });
+  await logAudit({ actorUserId: actor.id, actionType: 'security_policy_update', targetType: 'app_settings', metadata: { rules: lines.length, countries: d.allowed_countries, session_max_days: d.session_max_days, new_device_alert: d.new_device_alert, device_binding: d.device_binding, require_2fa, mfa_trust_days: d.mfa_trust_days ?? current.mfaTrustDays, block_bots, remember_days, idle_minutes } });
   return NextResponse.json({ ok: true });
 }

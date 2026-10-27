@@ -100,6 +100,7 @@ async function unsealToken(token: string): Promise<SealedPayload | null> {
 }
 
 const DAY_MS = 24 * 3600 * 1000;
+export const IDLE_GRACE_MINUTES = 1;
 
 /** Ends a session and leaves a note (used when a cookie fails one of the extra checks). */
 export async function revokeSuspicious(sessionId: string, userId: string, type: string, detail: Record<string, unknown>): Promise<null> {
@@ -125,7 +126,7 @@ export async function getSession(): Promise<Session | null> {
   const dbSession = await prisma.sessions.findUnique({
     where: { id: payload.sessionId },
     relationLoadStrategy: 'join',
-    select: { id: true, expires_at: true, created_at: true, ip_address: true, user: { select: { role: true, locked_at: true } } },
+    select: { id: true, expires_at: true, created_at: true, ip_address: true, last_input_at: true, user: { select: { role: true, locked_at: true } } },
   });
   if (!dbSession) return null;
   const hdrs = await headers();
@@ -143,6 +144,13 @@ export async function getSession(): Promise<Session | null> {
   const policy = await loadSecurityPolicy();
   const issuedAt = payload.issuedAt ?? dbSession.created_at.getTime();
   if (Date.now() - issuedAt > policy.sessionMaxDays * DAY_MS) return revokeSuspicious(payload.sessionId, payload.userId, 'session_max_age', { days: policy.sessionMaxDays });
+
+  // No input for too long: the session ends, quietly (nothing suspicious happened). The page sends a sign of life while the person works;
+  // background requests (polling) do not count. A minute of grace covers the page's own throttling.
+  if (policy.idleMinutes > 0 && Date.now() - dbSession.last_input_at.getTime() > (policy.idleMinutes + IDLE_GRACE_MINUTES) * 60_000) {
+    await prisma.sessions.delete({ where: { id: payload.sessionId } }).catch(() => {});
+    return null;
+  }
 
   if (payload.fp && policy.deviceBinding) {
     const now = deviceFingerprint(hdrs.get('user-agent'));

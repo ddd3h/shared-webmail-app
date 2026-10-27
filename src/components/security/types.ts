@@ -9,7 +9,7 @@ export type Overview = {
   recent_logins: { id: string; success: boolean; reason: string | null; ip: string; device: string; place: string | null; at: string; email: string; name: string | null }[];
 };
 export type People = { locked: { id: string; name: string; email: string }[]; people: { id: string; name: string; email: string; mfa: boolean; passkeys: number }[] };
-export type Policy = { allowed_cidrs: string; allowed_countries: string; session_max_days: number; new_device_alert: boolean; device_binding: boolean; require_2fa: boolean; mfa_trust_days: number; block_bots: boolean; remember_days: number; your_ip: string };
+export type Policy = { allowed_cidrs: string; allowed_countries: string; session_max_days: number; new_device_alert: boolean; device_binding: boolean; require_2fa: boolean; mfa_trust_days: number; block_bots: boolean; remember_days: number; idle_minutes: number; your_ip: string };
 
 export const EVENT_LABEL: Record<string, string> = {
   login_sweep: '多数のアカウントを試行（スイーピング）', ip_blocked: 'アドレスを自動ブロック', sweep_detected: '大量アクセスを検知', bad_origin: '他サイトからの更新リクエストを拒否',
