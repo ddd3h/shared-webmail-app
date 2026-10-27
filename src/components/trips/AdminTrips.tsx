@@ -1,6 +1,6 @@
 'use client';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Modal, Notice, Stat, api, btn, btnPrimary, inp } from '@/components/work/ui';
+import { Modal, Notice, Stat, api, btn, btnPrimary, inp, PanelSkeleton } from '@/components/work/ui';
 import TripForm, { draftFromTrip, type TripDraft } from './TripForm';
 import { TripDetail, TripHeader, type RateType, type Trip } from './shared';
 
@@ -10,6 +10,7 @@ const FILTERS = [{ k: 'pending', l: '承認待ち' }, { k: 'approved', l: '承�
 export default function AdminTrips({ meId, types, canReview = true }: { meId: string; types: RateType[]; canReview?: boolean }) {
   const [filter, setFilter] = useState('pending');
   const [items, setItems] = useState<Trip[]>([]);
+  const [loaded, setLoaded] = useState(false);   // the first answer has arrived (until then: a placeholder, not "nothing here")
   const [pending, setPending] = useState(0);
   const [open, setOpen] = useState<string | null>(null);
   const [reject, setReject] = useState<{ id: string; comment: string } | null>(null);
@@ -22,6 +23,7 @@ export default function AdminTrips({ meId, types, canReview = true }: { meId: st
     const res = await fetch(`/api/trips?scope=all${filter ? `&status=${filter}` : ''}`);
     if (mine !== seq.current) return;
     if (res.ok) { const d = await res.json(); setItems(d.items); setPending(d.pending_count); }
+    setLoaded(true);
   }, [filter]);
   useEffect(() => { load(); }, [load]);
   function flash(type: 'success' | 'error', text: string) { setMsg({ type, text }); setTimeout(() => setMsg(null), 5000); }
@@ -41,18 +43,20 @@ export default function AdminTrips({ meId, types, canReview = true }: { meId: st
   const totalPending = items.filter(t => t.status === 'pending').reduce((s, t) => s + t.allowance_total, 0);
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-2 gap-2 sm:gap-3 max-w-md">
+      {!loaded ? <PanelSkeleton cols={2} /> : (
+      <div className="tab-fade grid grid-cols-2 gap-2 sm:gap-3 max-w-md">
         <Stat label="承認待ちの出張" value={`${pending}件`} />
         {filter === 'pending' && <Stat label="承認待ちの手当合計" value={`¥${totalPending.toLocaleString('ja-JP')}`} />}
       </div>
+      )}
       <Notice msg={msg} />
       <div className="flex flex-wrap gap-2">
         {FILTERS.map(f => (
           <button key={f.k} onClick={() => setFilter(f.k)} className={`rounded-full px-3 py-1.5 text-sm ${filter === f.k ? 'bg-gray-900 text-white' : 'bg-white border border-gray-200 text-gray-700'}`}>{f.l}</button>
         ))}
       </div>
-      <div className="space-y-2">
-        {items.length === 0 && <p className="text-sm text-gray-400">該当する出張はありません</p>}
+      <div className={`space-y-2 ${loaded ? 'tab-fade' : ''}`}>
+        {loaded && items.length === 0 && <p className="text-sm text-gray-400">該当する出張はありません</p>}
         {items.map(t => (
           <div key={t.id} className="rounded-xl border border-gray-200 bg-white">
             <button className="w-full p-3 text-left" onClick={() => setOpen(open === t.id ? null : t.id)}><TripHeader t={t} showUser /></button>

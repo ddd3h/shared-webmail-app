@@ -33,13 +33,15 @@ export default function TransfersPage() {
           <button key={t.k} onClick={() => setTab(t.k)} className={`px-4 py-2 text-sm font-medium -mb-px border-b-2 whitespace-nowrap ${tab === t.k ? 'border-blue-600 text-blue-700' : 'border-transparent text-gray-500 hover:text-gray-800'}`}>{t.l}</button>
         ))}
       </div>
-      {tab === 'monthly' && <TransferList key="monthly" kind="monthly" onCreated={created} />}
-      {tab === 'payroll' && <TransferList key="payroll" kind="payroll" onCreated={created} />}
-      {tab === 'payment' && <TransferList key="payment" kind="payment" onCreated={created} />}
-      {tab === 'history' && <BatchHistory refreshKey={refresh} />}
-      {tab === 'freee' && <FreeeSync />}
-      {tab === 'accounts' && <AccountsReview meId={me.id} />}
-      {tab === 'settings' && <ZenginSettingsPanel admin={me.role === 'admin'} />}
+      <div key={tab} className="tab-fade">
+        {tab === 'monthly' && <TransferList key="monthly" kind="monthly" onCreated={created} />}
+        {tab === 'payroll' && <TransferList key="payroll" kind="payroll" onCreated={created} />}
+        {tab === 'payment' && <TransferList key="payment" kind="payment" onCreated={created} />}
+        {tab === 'history' && <BatchHistory refreshKey={refresh} />}
+        {tab === 'freee' && <FreeeSync />}
+        {tab === 'accounts' && <AccountsReview meId={me.id} />}
+        {tab === 'settings' && <ZenginSettingsPanel admin={me.role === 'admin'} />}
+      </div>
     </div>
   );
 }

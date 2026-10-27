@@ -1,6 +1,6 @@
 'use client';
 import { useCallback, useEffect, useState } from 'react';
-import { Modal, Notice, Stat, btn, btnPrimary, currentMonth, inp, yen, api, TYPE_LABEL, type WorkerType } from './ui';
+import { Modal, Notice, Stat, btn, btnPrimary, currentMonth, inp, yen, api, TYPE_LABEL, type WorkerType, PanelSkeleton } from './ui';
 import Link from 'next/link';
 import { shortDate } from '@/lib/pay-schedule';
 
@@ -21,6 +21,7 @@ const StatusBadge = ({ s }: { s: string }) => (
 // Own pay statements (default) or, for admins (`manage`), everyone's with create/edit.
 export default function PayrollPanel({ manage = false, members = [], noun = '給与' }: { manage?: boolean; members?: { id: string; name: string; worker_type: WorkerType }[]; noun?: string }) {
   const [items, setItems] = useState<Slip[]>([]);
+  const [loaded, setLoaded] = useState(false);   // the first answer has arrived (until then: a placeholder, not "nothing here")
   const [summary, setSummary] = useState<Summary | null>(null);
   const [filter, setFilter] = useState('');
   const [open, setOpen] = useState<string | null>(null);
@@ -31,6 +32,7 @@ export default function PayrollPanel({ manage = false, members = [], noun = '給
     const q = new URLSearchParams(manage ? (filter ? { userId: filter } : {}) : { mine: '1' });
     const res = await fetch(`/api/work/payslips?${q}`);
     if (res.ok) { const d = await res.json(); setItems(d.items); setSummary(d.summary); }
+    setLoaded(true);
   }, [filter, manage]);
   useEffect(() => { load(); }, [load]);
   function flash(type: 'success' | 'error', text: string) { setMsg({ type, text }); setTimeout(() => setMsg(null), 4000); }
@@ -75,8 +77,9 @@ export default function PayrollPanel({ manage = false, members = [], noun = '給
 
   return (
     <div className="space-y-4">
+      {!loaded && <PanelSkeleton />}
       {summary && (
-        <div className="grid grid-cols-3 gap-2 sm:gap-3">
+        <div className="tab-fade grid grid-cols-3 gap-2 sm:gap-3">
           <Stat label={`${monthLabel(summary.month)}の支払予定額`} value={yen(summary.planned_total)} sub={manage ? '全員の未払い分の合計（手取り）' : 'まだ支払われていない金額（手取り）'} />
           <Stat label={`${monthLabel(summary.month)}の支払済`} value={yen(summary.paid_total)} />
           <Stat label="今月の合計" value={yen(summary.planned_total + summary.paid_total)} sub={`${summary.count}件`} />
@@ -95,8 +98,8 @@ export default function PayrollPanel({ manage = false, members = [], noun = '給
         </div>
       )}
 
-      <div className="space-y-2">
-        {items.length === 0 && <p className="text-sm text-gray-400">明細はまだありません</p>}
+      <div className={`space-y-2 ${loaded ? 'tab-fade' : ''}`}>
+        {loaded && items.length === 0 && <p className="text-sm text-gray-400">明細はまだありません</p>}
         {items.map(p => (
           <div key={p.id} className="rounded-xl border border-gray-200 bg-white">
             <button className="w-full flex flex-wrap items-center gap-x-3 gap-y-1 p-3 text-left" onClick={() => setOpen(open === p.id ? null : p.id)}>

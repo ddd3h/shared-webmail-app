@@ -1,6 +1,6 @@
 'use client';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Modal, Notice, Stat, api, btn, btnPrimary, inp, yen } from '@/components/work/ui';
+import { Modal, Notice, Stat, api, btn, btnPrimary, inp, yen, PanelSkeleton } from '@/components/work/ui';
 import { CATEGORIES, ClaimDetail, ClaimHeader, type Claim, type Summary } from './shared';
 import FilterBar from '@/components/mobile/FilterBar';
 import { MILEAGE_CATEGORY } from '@/lib/expense';
@@ -23,6 +23,7 @@ const MAX_FILES = 5;
 
 export default function MyExpenses({ initialTripId }: { initialTripId?: string }) {
   const [items, setItems] = useState<Claim[]>([]);
+  const [loaded, setLoaded] = useState(false);   // the first answer has arrived (until then: a placeholder, not "nothing here")
   const [summary, setSummary] = useState<Summary | null>(null);
   const [filter, setFilter] = useState('');
   const [open, setOpen] = useState<string | null>(null);
@@ -46,6 +47,7 @@ export default function MyExpenses({ initialTripId }: { initialTripId?: string }
     const res = await fetch(`/api/expenses${filter ? `?status=${filter}` : ''}`);
     if (mine !== seq.current) return; // ignore a stale response
     if (res.ok) { const d = await res.json(); setItems(d.items); setSummary(d.summary); }
+    setLoaded(true);
   }, [filter]);
   useEffect(() => { load(); }, [load]);
   useEffect(() => { fetch('/api/expenses/mileage').then(r => r.json()).then(setMi).catch(() => {}); fetch('/api/expenses/transit').then(r => r.json()).then(d => setTransitInApp(!!d.in_app)).catch(() => {}); }, []);
@@ -153,8 +155,9 @@ export default function MyExpenses({ initialTripId }: { initialTripId?: string }
 
   return (
     <div className="space-y-4">
+      {!loaded && <PanelSkeleton />}
       {summary && (
-        <div className="grid grid-cols-3 gap-2 sm:gap-3">
+        <div className="tab-fade grid grid-cols-3 gap-2 sm:gap-3">
           <Stat label="承認待ち" value={yen(summary.pending.amount)} sub={`${summary.pending.count}件`} />
           <Stat label="返金待ちの立替金" value={yen(summary.to_reimburse.amount + summary.in_payslip.amount)} sub={summary.in_payslip.count > 0 ? `うち給与明細に合算済 ${yen(summary.in_payslip.amount)}` : `${summary.to_reimburse.count}件・承認済で、まだ返金されていない分`} />
           <Stat label="返金済みの合計" value={yen(summary.paid.amount)} sub={`${summary.paid.count}件`} />
@@ -163,8 +166,8 @@ export default function MyExpenses({ initialTripId }: { initialTripId?: string }
       <Notice msg={msg} />
       <FilterBar filters={FILTERS} value={filter} onChange={setFilter} action={{ label: '＋ 経費を申請', className: btnPrimary, onClick: () => openForm(blank()) }} />
 
-      <div className="space-y-2">
-        {items.length === 0 && <p className="text-sm text-gray-400">申請はありません</p>}
+      <div className={`space-y-2 ${loaded ? 'tab-fade' : ''}`}>
+        {loaded && items.length === 0 && <p className="text-sm text-gray-400">申請はありません</p>}
         {items.map(c => (
           <div key={c.id} className="rounded-xl border border-gray-200 bg-white">
             <button className="w-full p-3 text-left" onClick={() => setOpen(open === c.id ? null : c.id)}><ClaimHeader c={c} /></button>

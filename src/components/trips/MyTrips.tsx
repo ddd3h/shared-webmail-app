@@ -1,7 +1,7 @@
 'use client';
 import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Notice, api, btnPrimary } from '@/components/work/ui';
+import { Notice, api, btnPrimary, PanelSkeleton } from '@/components/work/ui';
 import TripForm, { draftFromTrip, type TripDraft } from './TripForm';
 import { TripDetail, TripHeader, type RateType, type Trip } from './shared';
 import FilterBar from '@/components/mobile/FilterBar';
@@ -10,6 +10,7 @@ const FILTERS = [{ k: '', l: 'すべて' }, { k: 'pending', l: '承認待ち' },
 
 export default function MyTrips({ types }: { types: RateType[] }) {
   const [items, setItems] = useState<Trip[]>([]);
+  const [loaded, setLoaded] = useState(false);   // the first answer has arrived (until then: a placeholder, not "nothing here")
   const [filter, setFilter] = useState('');
   const [open, setOpen] = useState<string | null>(null);
   const [form, setForm] = useState<{ draft: TripDraft; resubmit: boolean } | null>(null);
@@ -21,6 +22,7 @@ export default function MyTrips({ types }: { types: RateType[] }) {
     const res = await fetch(`/api/trips${filter ? `?status=${filter}` : ''}`);
     if (mine !== seq.current) return;
     if (res.ok) setItems((await res.json()).items);
+    setLoaded(true);
   }, [filter]);
   useEffect(() => { load(); }, [load]);
   function flash(type: 'success' | 'error', text: string) { setMsg({ type, text }); setTimeout(() => setMsg(null), 5000); }
@@ -43,8 +45,8 @@ export default function MyTrips({ types }: { types: RateType[] }) {
       <Notice msg={msg} />
       <FilterBar filters={FILTERS} value={filter} onChange={setFilter} action={{ label: '＋ 出張を申請', className: btnPrimary, onClick: () => setForm({ draft: blank(), resubmit: false }) }} />
 
-      <div className="space-y-2">
-        {items.length === 0 && <p className="text-sm text-gray-400">出張の申請はありません</p>}
+      <div className={`space-y-2 ${loaded ? 'tab-fade' : ''}`}>
+        {loaded && items.length === 0 && <p className="text-sm text-gray-400">出張の申請はありません</p>}
         {items.map(t => (
           <div key={t.id} className="rounded-xl border border-gray-200 bg-white">
             <button className="w-full p-3 text-left" onClick={() => setOpen(open === t.id ? null : t.id)}><TripHeader t={t} /></button>

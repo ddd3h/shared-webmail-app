@@ -1,7 +1,7 @@
 'use client';
 import { useCallback, useEffect, useState } from 'react';
 import { shortDate, type Plan } from '@/lib/pay-schedule';
-import { MonthNav, Modal, Notice, Stat, btn, btnPrimary, currentMonth, dateLabel, inp, api } from './ui';
+import { MonthNav, Modal, Notice, Stat, btn, btnPrimary, currentMonth, dateLabel, inp, api, PanelSkeleton } from './ui';
 
 type Report = { id: string; report_date: string; title: string; content: string; hours: number | null; user?: { id: string; name: string }; pay_plan: Plan };
 type Sched = { summary: string; today: string; period: { month: string; closing_date: string; report_deadline: string; pay_date: string } };
@@ -11,6 +11,7 @@ type Draft = { id?: string; report_date: string; title: string; content: string;
 export default function ReportsPanel({ admin = false, userId }: { admin?: boolean; userId?: string }) {
   const [month, setMonth] = useState('');
   const [items, setItems] = useState<Report[]>([]);
+  const [loaded, setLoaded] = useState(false);   // the first answer has arrived (until then: a placeholder, not "nothing here")
   const [total, setTotal] = useState(0);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [open, setOpen] = useState<string | null>(null);
@@ -25,6 +26,7 @@ export default function ReportsPanel({ admin = false, userId }: { admin?: boolea
     const q = new URLSearchParams({ month, ...(userId ? { userId } : {}) });
     const res = await fetch(`/api/work/reports?${q}`);
     if (res.ok) { const d = await res.json(); setItems(d.items); setTotal(d.total_hours); }
+    setLoaded(true);
   }, [month, userId]);
   useEffect(() => { load(); }, [load]);
 
@@ -56,12 +58,14 @@ export default function ReportsPanel({ admin = false, userId }: { admin?: boolea
           {Number(sched.period.month.slice(5))}月分: 締め日 {shortDate(sched.period.closing_date)}・提出期限 {shortDate(sched.period.report_deadline)}・支払 {shortDate(sched.period.pay_date)}（{sched.summary}）。期限を過ぎて提出した報告書は、次の期間の分として扱われます。
         </p>
       )}
-      <div className="grid grid-cols-2 gap-3 max-w-md">
-        <Stat label="提出件数" value={`${items.length}件`} />
-        <Stat label="報告した稼働時間" value={`${total}h`} />
-      </div>
-      <div className="space-y-2">
-        {items.length === 0 && <p className="text-sm text-gray-400">この月の報告書はありません</p>}
+      {!loaded ? <PanelSkeleton cols={2} /> : (
+        <div className="tab-fade grid grid-cols-2 gap-3 max-w-md">
+          <Stat label="提出件数" value={`${items.length}件`} />
+          <Stat label="報告した稼働時間" value={`${total}h`} />
+        </div>
+      )}
+      <div className={`space-y-2 ${loaded ? 'tab-fade' : ''}`}>
+        {loaded && items.length === 0 && <p className="text-sm text-gray-400">この月の報告書はありません</p>}
         {items.map(r => (
           <div key={r.id} className="rounded-xl border border-gray-200 bg-white p-3">
             <button className="w-full text-left" onClick={() => setOpen(open === r.id ? null : r.id)}>

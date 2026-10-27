@@ -46,6 +46,13 @@
   &::-webkit-scrollbar { display: none; }
 }
 
+/* A tab's content (and a list that has just loaded) comes in softly instead of popping in */
+@keyframes tab-fade-in { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
+@utility tab-fade {
+  animation: tab-fade-in 160ms ease-out backwards; /* no fill-forwards: a finished animation would keep a stacking context that puts modals under the header */
+  @media (prefers-reduced-motion: reduce) { animation: none; }
+}
+
 @utility btn {
   @apply inline-flex items-center justify-center gap-1.5 rounded-lg px-4 py-2 text-sm font-medium transition-all duration-150 focus:outline-hidden focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed;
 }

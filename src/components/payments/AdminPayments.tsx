@@ -1,6 +1,6 @@
 'use client';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Modal, Notice, Stat, api, btn, btnPrimary, inp, yen } from '@/components/work/ui';
+import { Modal, Notice, Stat, api, btn, btnPrimary, inp, yen, PanelSkeleton } from '@/components/work/ui';
 import { RequestDetail, RequestHeader, todayJst, type Request, type Summary } from './shared';
 
 const FILTERS = [{ k: 'pending', l: '承認待ち' }, { k: 'approved', l: '振込待ち' }, { k: 'paid', l: '振込済' }, { k: 'rejected', l: '却下' }, { k: '', l: 'すべて' }];
@@ -9,6 +9,7 @@ const FILTERS = [{ k: 'pending', l: '承認待ち' }, { k: 'approved', l: '振�
 export default function AdminPayments({ meId, onVendorsChanged, canReview = true }: { meId: string; onVendorsChanged: () => void; canReview?: boolean }) {
   const [filter, setFilter] = useState('pending');
   const [items, setItems] = useState<Request[]>([]);
+  const [loaded, setLoaded] = useState(false);   // the first answer has arrived (until then: a placeholder, not "nothing here")
   const [summary, setSummary] = useState<Summary | null>(null);
   const [open, setOpen] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -22,6 +23,7 @@ export default function AdminPayments({ meId, onVendorsChanged, canReview = true
     const res = await fetch(`/api/payments?scope=all${filter ? `&status=${filter}` : ''}`);
     if (mine !== seq.current) return;
     if (res.ok) { const d = await res.json(); setItems(d.items); setSummary(d.summary); setSelected(new Set()); }
+    setLoaded(true);
   }, [filter]);
   useEffect(() => { load(); }, [load]);
   function flash(type: 'success' | 'error', text: string) { setMsg({ type, text }); setTimeout(() => setMsg(null), 6000); }
@@ -60,8 +62,9 @@ export default function AdminPayments({ meId, onVendorsChanged, canReview = true
 
   return (
     <div className="space-y-4">
+      {!loaded && <PanelSkeleton />}
       {summary && (
-        <div className="grid grid-cols-3 gap-2 sm:gap-3">
+        <div className="tab-fade grid grid-cols-3 gap-2 sm:gap-3">
           <Stat label="承認待ち" value={`${summary.pending.count}件`} sub={yen(summary.pending.amount)} />
           <Stat label="振込待ち（全員）" value={yen(summary.approved.amount)} sub={`${summary.approved.count}件${summary.overdue ? ` ・ 期日超過 ${summary.overdue}件` : ''}`} />
           <Stat label="振込済の合計" value={yen(summary.paid.amount)} sub={`${summary.paid.count}件`} />
@@ -85,8 +88,8 @@ export default function AdminPayments({ meId, onVendorsChanged, canReview = true
         </div>
       )}
 
-      <div className="space-y-2">
-        {items.length === 0 && <p className="text-sm text-gray-400">該当する申請はありません</p>}
+      <div className={`space-y-2 ${loaded ? 'tab-fade' : ''}`}>
+        {loaded && items.length === 0 && <p className="text-sm text-gray-400">該当する申請はありません</p>}
         {items.map(r => (
           <div key={r.id} className="rounded-xl border border-gray-200 bg-white">
             <div className="flex items-start gap-2 p-3">

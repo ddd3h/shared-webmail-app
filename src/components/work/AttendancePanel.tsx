@@ -1,6 +1,6 @@
 'use client';
 import { useCallback, useEffect, useState } from 'react';
-import { MonthNav, Modal, Notice, Stat, btn, btnPrimary, currentMonth, dateLabel, fmtMin, fmtTime, fromJstInput, inp, toJstInput, api } from './ui';
+import { MonthNav, Modal, Notice, Stat, btn, btnPrimary, currentMonth, dateLabel, fmtMin, fmtTime, fromJstInput, inp, toJstInput, api, PanelSkeleton } from './ui';
 
 type Rec = {
   id: string; work_date: string; clock_in_at: string | null; clock_out_at: string | null; break_started_at: string | null;
@@ -95,9 +95,10 @@ export default function AttendancePanel({ userId }: { userId?: string }) {
       </div>
       <Notice msg={msg} />
 
+      {!data && <PanelSkeleton />}
       {data && (
         <>
-          <div className="grid grid-cols-3 gap-3">
+          <div className="tab-fade grid grid-cols-3 gap-3">
             <Stat label="出勤日数" value={`${data.summary.days}日`} />
             <Stat label="総労働時間" value={fmtMin(data.summary.workedMinutes)} />
             <Stat label="残業時間" value={fmtMin(data.summary.overtimeMinutes)} sub={`所定 ${fmtMin(data.settings.daily_minutes)}/日 超過分`} />

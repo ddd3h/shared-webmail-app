@@ -1,6 +1,6 @@
 'use client';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Modal, Notice, Stat, api, btn, btnPrimary, inp, yen } from '@/components/work/ui';
+import { Modal, Notice, Stat, api, btn, btnPrimary, inp, yen, PanelSkeleton } from '@/components/work/ui';
 import { ClaimDetail, ClaimHeader, type Claim, type Summary } from './shared';
 
 type ByUser = { user_id: string; name: string; count: number; amount: number };
@@ -10,6 +10,7 @@ export default function AdminExpenses({ meId, canReview = true }: { meId: string
   const [filter, setFilter] = useState('pending');
   const [userId, setUserId] = useState('');
   const [items, setItems] = useState<Claim[]>([]);
+  const [loaded, setLoaded] = useState(false);   // the first answer has arrived (until then: a placeholder, not "nothing here")
   const [summary, setSummary] = useState<Summary | null>(null);
   const [byUser, setByUser] = useState<ByUser[]>([]);
   const [open, setOpen] = useState<string | null>(null);
@@ -26,6 +27,7 @@ export default function AdminExpenses({ meId, canReview = true }: { meId: string
     // a slower, older request must not overwrite the list of the filter chosen since
     if (mine !== seq.current) return;
     if (res.ok) { const d = await res.json(); setItems(d.items); setSummary(d.summary); setByUser(d.to_reimburse_by_user || []); setSelected(new Set()); }
+    setLoaded(true);
   }, [filter, userId]);
   useEffect(() => { load(); }, [load]);
   function flash(type: 'success' | 'error', text: string) { setMsg({ type, text }); setTimeout(() => setMsg(null), 5000); }
@@ -71,8 +73,9 @@ export default function AdminExpenses({ meId, canReview = true }: { meId: string
 
   return (
     <div className="space-y-4">
+      {!loaded && <PanelSkeleton />}
       {summary && (
-        <div className="grid grid-cols-3 gap-2 sm:gap-3">
+        <div className="tab-fade grid grid-cols-3 gap-2 sm:gap-3">
           <Stat label="承認待ち" value={`${summary.pending.count}件`} sub={yen(summary.pending.amount)} />
           <Stat label="返金待ちの立替金（全員）" value={yen(summary.to_reimburse.amount)} sub={`${summary.to_reimburse.count}件${summary.in_payslip.count ? ` ・ 給与に合算済 ${yen(summary.in_payslip.amount)}` : ''}`} />
           <Stat label="返金済みの合計" value={yen(summary.paid.amount)} sub={`${summary.paid.count}件`} />
@@ -116,8 +119,8 @@ export default function AdminExpenses({ meId, canReview = true }: { meId: string
         </div>
       )}
 
-      <div className="space-y-2">
-        {items.length === 0 && <p className="text-sm text-gray-400">該当する申請はありません</p>}
+      <div className={`space-y-2 ${loaded ? 'tab-fade' : ''}`}>
+        {loaded && items.length === 0 && <p className="text-sm text-gray-400">該当する申請はありません</p>}
         {items.map(c => (
           <div key={c.id} className="rounded-xl border border-gray-200 bg-white">
             <div className="flex items-start gap-2 p-3">

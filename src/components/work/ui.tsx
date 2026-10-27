@@ -52,6 +52,15 @@ export function MonthNav({ month, onChange }: { month: string; onChange: (m: str
   );
 }
 
+/** What stands in for the figures while a panel is loading: the same size, so nothing jumps when the real ones arrive. */
+export function PanelSkeleton({ cols = 3 }: { cols?: 2 | 3 }) {
+  return (
+    <div data-testid="panel-skeleton" aria-busy="true" aria-label="読み込み中" className={`grid ${cols === 2 ? 'grid-cols-2 max-w-md' : 'grid-cols-3'} gap-2 sm:gap-3 animate-pulse`}>
+      {Array.from({ length: cols }, (_, i) => <div key={i} className="h-[58px] rounded-xl border border-gray-200 bg-gray-100 sm:h-[74px]" />)}
+    </div>
+  );
+}
+
 export function Stat({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
     <div className="rounded-xl border border-gray-200 bg-white p-2.5 sm:p-3">

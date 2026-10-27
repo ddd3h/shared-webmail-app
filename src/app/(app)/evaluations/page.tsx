@@ -24,9 +24,11 @@ export default function EvaluationsPage() {
           {tabs.map(t => <button key={t.k} onClick={() => setTab(t.k)} className={`px-4 py-2 text-sm font-medium -mb-px border-b-2 whitespace-nowrap ${tab === t.k ? 'border-blue-600 text-blue-700' : 'border-transparent text-gray-500 hover:text-gray-800'}`}>{t.l}</button>)}
         </div>
       )}
-      {tab === 'mine' && <EvaluationList scope="mine" />}
-      {tab === 'team' && <EvaluationList scope="team" />}
-      {tab === 'hr' && <HrPanel />}
+      <div key={tab} className="tab-fade">
+        {tab === 'mine' && <EvaluationList scope="mine" />}
+        {tab === 'team' && <EvaluationList scope="team" />}
+        {tab === 'hr' && <HrPanel />}
+      </div>
     </div>
   );
 }

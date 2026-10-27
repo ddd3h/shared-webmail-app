@@ -47,10 +47,12 @@ export default function WorkPage() {
             className={`px-4 py-2 text-sm font-medium -mb-px border-b-2 ${tab === t.key ? 'border-blue-600 text-blue-700' : 'border-transparent text-gray-500 hover:text-gray-800'}`}>{t.label}</button>
         ))}
       </div>
-      {tab === 'attendance' && <AttendancePanel />}
-      {tab === 'reports' && <ReportsPanel />}
-      {tab === 'payroll' && <PayrollPanel noun={paysSalary(me.worker_type) ? '給与' : '報酬'} />}
-      {tab === 'admin' && <AdminPanel isAdmin={me.role === 'admin'} />}
+      <div key={tab} className="tab-fade">
+        {tab === 'attendance' && <AttendancePanel />}
+        {tab === 'reports' && <ReportsPanel />}
+        {tab === 'payroll' && <PayrollPanel noun={paysSalary(me.worker_type) ? '給与' : '報酬'} />}
+        {tab === 'admin' && <AdminPanel isAdmin={me.role === 'admin'} />}
+      </div>
     </div>
   );
 }

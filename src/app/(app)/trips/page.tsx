@@ -32,9 +32,11 @@ export default function TripsPage() {
           <button key={t.k} onClick={() => setTab(t.k)} className={`px-4 py-2 text-sm font-medium -mb-px border-b-2 ${tab === t.k ? 'border-blue-600 text-blue-700' : 'border-transparent text-gray-500 hover:text-gray-800'}`}>{t.l}</button>
         ))}
       </div>
-      {tab === 'mine' && <MyTrips types={types} />}
-      {tab === 'admin' && <AdminTrips meId={me.id} types={types} canReview={me.role === 'admin'} />}
-      {tab === 'settings' && <AllowanceSettings onChanged={loadTypes} />}
+      <div key={tab} className="tab-fade">
+        {tab === 'mine' && <MyTrips types={types} />}
+        {tab === 'admin' && <AdminTrips meId={me.id} types={types} canReview={me.role === 'admin'} />}
+        {tab === 'settings' && <AllowanceSettings onChanged={loadTypes} />}
+      </div>
     </div>
   );
 }
