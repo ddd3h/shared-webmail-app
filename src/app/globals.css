@@ -39,6 +39,13 @@
   }
 }
 
+/* A row that scrolls sideways (tabs, chips) without drawing a scrollbar: on a computer a visible bar looks like the page can be scrolled there */
+@utility scrollbar-none {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  &::-webkit-scrollbar { display: none; }
+}
+
 @utility btn {
   @apply inline-flex items-center justify-center gap-1.5 rounded-lg px-4 py-2 text-sm font-medium transition-all duration-150 focus:outline-hidden focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed;
 }

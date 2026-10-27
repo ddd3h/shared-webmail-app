@@ -41,7 +41,7 @@ export default function WorkPage() {
           <p className="hidden md:block text-xs text-gray-500 mt-0.5">{me.name} さん（{TYPE_LABEL[me.worker_type]}）</p>
         </div>
       </div>
-      <div className="flex gap-1 overflow-x-auto whitespace-nowrap border-b border-gray-200">
+      <div className="flex gap-1 overflow-x-auto whitespace-nowrap border-b border-gray-200 scrollbar-none">
         {tabs.map(t => (
           <button key={t.key} onClick={() => setTab(t.key)}
             className={`px-4 py-2 text-sm font-medium -mb-px border-b-2 ${tab === t.key ? 'border-blue-600 text-blue-700' : 'border-transparent text-gray-500 hover:text-gray-800'}`}>{t.label}</button>

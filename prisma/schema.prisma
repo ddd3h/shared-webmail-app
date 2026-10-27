@@ -40,7 +40,7 @@ enum NotificationPriority {
   low
 }
 
-// 役員 / 正社員 / パート / 派遣 / 従業員（従来からの区分） / 業務委託
+// 役員 / 正社員 / パート / 派遣 / 従業員（従来からの区分） / 業務委託 / 準業務委託
 enum WorkerType {
   executive
   employee
@@ -48,6 +48,7 @@ enum WorkerType {
   regular
   part
   dispatch
+  quasi_contractor
 }
 
 enum AuthType {

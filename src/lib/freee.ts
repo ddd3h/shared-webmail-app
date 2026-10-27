@@ -19,7 +19,7 @@ const TIMEOUT_MS = 15_000;
 export const MAP_KINDS = {
   salary: '給与（正社員・パート・派遣・従業員）',
   executive: '役員報酬',
-  contractor: '業務委託費（外注費）',
+  contractor: '業務委託費・準業務委託費（外注費）',
   payment: '振込申請（取引先への支払）',
   expense: '経費の立替金（科目ごとの指定がないとき）',
 } as const;

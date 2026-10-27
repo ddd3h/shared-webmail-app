@@ -98,7 +98,7 @@ export async function resetWork() {
   await db.work_reports.deleteMany({});
   await db.app_settings.deleteMany({ where: { key: { in: ['WORK_DAILY_MINUTES', 'WORK_AUTO_BREAK_MINUTES'] } } });
 }
-export async function setWorkerType(userId: string, worker_type: 'employee' | 'contractor' | 'executive' | 'regular' | 'part' | 'dispatch') {
+export async function setWorkerType(userId: string, worker_type: 'employee' | 'contractor' | 'quasi_contractor' | 'executive' | 'regular' | 'part' | 'dispatch') {
   await db.users.update({ where: { id: userId }, data: { worker_type } });
 }
 export async function clearNotifications() {

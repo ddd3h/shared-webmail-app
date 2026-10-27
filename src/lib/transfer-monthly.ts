@@ -7,7 +7,7 @@ import { prisma } from '@/lib/db';
 import { payDate } from '@/lib/pay-schedule';
 import { loadSchedules, planOf } from '@/lib/pay-schedule-server';
 import { transferAmount } from '@/lib/payment';
-import { WORKER_TYPE_LABEL, jstDateString, payslipTotals, type WorkerType } from '@/lib/work';
+import { WORKER_TYPE_LABEL, isContractorLike, jstDateString, payslipTotals, type WorkerType } from '@/lib/work';
 import { DEFAULT_SCHEDULES } from '@/lib/pay-schedule';
 import type { ItemRef } from '@/lib/transfer-server';
 
@@ -25,7 +25,7 @@ const accountSub = (a: Account) => (a ? `${a.bank_name} ${a.branch_name} ****${a
 
 /** What a pay statement is called in the list: by whom it is for, and what it is. */
 function slipKind(type: WorkerType, title: string): string {
-  if (type === 'contractor') return '業務委託費';
+  if (isContractorLike(type)) return '業務委託費';
   if (type === 'executive') return '役員報酬';
   return title; // 給与 / 賞与 / 立替金精算 ...
 }

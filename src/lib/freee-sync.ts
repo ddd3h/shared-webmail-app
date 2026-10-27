@@ -3,7 +3,7 @@
 // as an expense deal paid from the company's bank account. The accounts (勘定科目) come from the administrator's mapping.
 import { prisma } from '@/lib/db';
 import { transferAmount } from '@/lib/payment';
-import { jstDateString, payslipTotals, type WorkerType } from '@/lib/work';
+import { isContractorLike, jstDateString, payslipTotals, type WorkerType } from '@/lib/work';
 import { createDeal, freeeReady, loadFreeeConfig, type AccountMap, type FreeeConfig } from '@/lib/freee';
 
 export type Movement = {
@@ -31,7 +31,7 @@ export async function collectMovements(from: string): Promise<Movement[]> {
   for (const p of slips) {
     const net = payslipTotals(p.items).net;
     const type = p.user.worker_type as WorkerType;
-    const mainKey = type === 'contractor' ? 'contractor' : type === 'executive' ? 'executive' : 'salary';
+    const mainKey = isContractorLike(type) ? 'contractor' : type === 'executive' ? 'executive' : 'salary';
     const date = p.pay_date ? ymd(p.pay_date) : jstDateString(p.updated_at);
     const label = `${p.title} ${p.pay_month} ${p.user.name}`;
     // the part of the statement that is expense reimbursement is booked as expenses, the rest as pay

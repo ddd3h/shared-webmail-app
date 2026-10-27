@@ -23,8 +23,8 @@ test.describe('設定（API）', () => {
     const res = await (await as('keiri')).get('/api/work/schedules');
     expect(res.status()).toBe(200);
     const { items } = await res.json();
-    expect(items.map((i: { worker_type: string }) => i.worker_type)).toEqual(['executive', 'regular', 'part', 'dispatch', 'employee', 'contractor']);
-    for (const i of items) expect(i).toMatchObject({ closing_day: 0, pay_month_offset: 1, pay_day: i.worker_type === 'contractor' ? 0 : 25, pay_day_shift: 'before', report_deadline_days: 5, expense_deadline_days: 5, custom: false });
+    expect(items.map((i: { worker_type: string }) => i.worker_type)).toEqual(['executive', 'regular', 'part', 'dispatch', 'employee', 'contractor', 'quasi_contractor']);
+    for (const i of items) expect(i).toMatchObject({ closing_day: 0, pay_month_offset: 1, pay_day: i.worker_type === 'contractor' || i.worker_type === 'quasi_contractor' ? 0 : 25, pay_day_shift: 'before', report_deadline_days: 5, expense_deadline_days: 5, custom: false });
     expect(items.find((i: { worker_type: string }) => i.worker_type === 'contractor').summary).toBe('末日締め・翌月末日払い');
     expect(items[0].label).toBe('役員');
   });
@@ -157,9 +157,9 @@ test.describe('設定画面', () => {
     await expect(page.getByText('正社員の締め日・振込日を保存しました')).toBeVisible();
     await expect(card).toContainText('設定済み');
     expect(await db.pay_schedules.findUnique({ where: { worker_type: 'regular' } })).toMatchObject({ closing_day: 15, pay_month_offset: 0, pay_day: 20, pay_day_shift: 'none', expense_deadline_days: 3, report_deadline_days: 5 });
-    // 業務報告書の期限は、業務委託の行だけにある
+    // 業務報告書の期限は、業務委託・準業務委託の行だけにある
     await expect(card.getByLabel(/業務報告書の提出期限/)).toHaveCount(0);
-    await expect(page.getByRole('region', { name: '業務委託の締め日・振込日' }).getByLabel(/業務報告書の提出期限/)).toBeVisible();
+    await expect(page.getByRole('region', { name: '業務委託の締め日・振込日', exact: true }).getByLabel(/業務報告書の提出期限/)).toBeVisible();
     await ctx.close();
   });
 

@@ -16,10 +16,11 @@ export type PaySchedule = {
 };
 
 export const DEFAULT_SCHEDULE: PaySchedule = { closing_day: 0, pay_month_offset: 1, pay_day: 25, pay_day_shift: 'before', report_deadline_days: 5, expense_deadline_days: 5 };
-/** 業務委託 are usually paid at the end of the next month. */
+/** 業務委託 and 準業務委託 are usually paid at the end of the next month. */
 export const DEFAULT_SCHEDULES: Record<WorkerType, PaySchedule> = {
   executive: DEFAULT_SCHEDULE, regular: DEFAULT_SCHEDULE, part: DEFAULT_SCHEDULE, dispatch: DEFAULT_SCHEDULE, employee: DEFAULT_SCHEDULE,
   contractor: { ...DEFAULT_SCHEDULE, pay_day: 0 },
+  quasi_contractor: { ...DEFAULT_SCHEDULE, pay_day: 0 },
 };
 
 export function isValidSchedule(s: PaySchedule): boolean {

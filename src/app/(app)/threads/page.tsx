@@ -1018,7 +1018,7 @@ function ThreadList() {
       {/* 共有メール: which mailboxes — a chip per shown mailbox (narrows the list), and the person's own choice of what is shown */}
       {mailboxView === 'team' && !isSearching && (teamView?.items.length ?? 0) > 1 && (
         <div className="mb-3 -mt-1 flex items-center gap-1.5" data-testid="team-mailbox-chips">
-          <div className="flex min-w-0 flex-1 gap-1.5 overflow-x-auto pb-1" role="group" aria-label="表示するメールボックス">
+          <div className="flex min-w-0 flex-1 gap-1.5 overflow-x-auto pb-1 scrollbar-none" role="group" aria-label="表示するメールボックス">
             <button type="button" onClick={() => { setMailboxFilter(''); setCursorStack([]); }} aria-pressed={mailboxFilter === ''}
               className={`shrink-0 rounded-full border px-3 py-1 text-xs font-medium whitespace-nowrap ${mailboxFilter === '' ? 'border-violet-600 bg-violet-600 text-white' : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'}`}>
               すべて{teamUnread > 0 && <span className="ml-1 opacity-80">{teamUnread}</span>}
@@ -1072,7 +1072,7 @@ function ThreadList() {
 
       {/* Tab bar — hidden while searching */}
       <div className={`border-b border-gray-200 mb-0 ${isSearching ? 'hidden' : ''}`}>
-        <nav className="flex overflow-x-auto">
+        <nav className="flex overflow-x-auto scrollbar-none">
           {currentTabs.map((t) => (
             <button
               key={t.id}

@@ -51,6 +51,22 @@ test.describe('区分ごとに使える機能（タブ）', () => {
     });
   }
 
+  test('管理者が「準業務委託」にすると、業務報告と報酬明細が使え、打刻はできない', async ({ browser, as }) => {
+    const res = await (await as('admin')).patch(`/api/work/users/${USERS.tanaka.id}`, { data: { worker_type: 'quasi_contractor' } });
+    expect(res.status()).toBe(200);
+    const ctx = await browser.newContext({ storageState: AUTH.tanaka, locale: 'ja-JP', timezoneId: 'Asia/Tokyo' });
+    const page = await ctx.newPage();
+    await page.goto('/work');
+    await expect(page.getByText(`${USERS.tanaka.name} さん（準業務委託）`)).toBeVisible();
+    await expect(tab(page, '業務報告')).toBeVisible();
+    await expect(tab(page, '報酬明細')).toBeVisible();
+    for (const t of ['勤怠', '給与明細', '管理']) await expect(tab(page, t)).toHaveCount(0);
+    expect((await ctx.request.post('/api/work/attendance/punch', { data: { action: 'clock_in' } })).status()).toBe(403);
+    const report = await ctx.request.post('/api/work/reports', { data: { report_date: today(), title: '4月の作業', content: '作業内容', hours: 20 } });
+    expect(report.status()).toBe(201);
+    await ctx.close();
+  });
+
   test('管理者が区分を変えると、画面のタブが変わる', async ({ browser, as }) => {
     const res = await (await as('admin')).patch(`/api/work/users/${USERS.tanaka.id}`, { data: { worker_type: 'contractor' } });
     expect(res.status()).toBe(200);

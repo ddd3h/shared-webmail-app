@@ -70,3 +70,21 @@ describe('payslipTotals', () => {
     ])).toEqual({ earnings: 320000, deductions: 45000, net: 275000 });
   });
 });
+
+import { WORKER_TYPES, WORKER_TYPE_LABEL, isContractorLike, paysSalary, usesAttendance, usesReports } from '@/lib/work';
+import { DEFAULT_SCHEDULES, describeSchedule } from '@/lib/pay-schedule';
+
+describe('区分ごとに使える機能', () => {
+  it('準業務委託は、業務委託と同じく報告書を出し、報酬明細で、打刻はしない', () => {
+    expect(WORKER_TYPE_LABEL.quasi_contractor).toBe('準業務委託');
+    expect([usesAttendance('quasi_contractor'), usesReports('quasi_contractor'), paysSalary('quasi_contractor'), isContractorLike('quasi_contractor')]).toEqual([false, true, false, true]);
+    expect([usesAttendance('contractor'), usesReports('contractor'), paysSalary('contractor'), isContractorLike('contractor')]).toEqual([false, true, false, true]);
+  });
+  it('どの区分にも、表示名と締め日・振込日の初期値がある', () => {
+    for (const t of WORKER_TYPES) {
+      expect(WORKER_TYPE_LABEL[t], t).toBeTruthy();
+      expect(describeSchedule(DEFAULT_SCHEDULES[t]), t).toMatch(/締め・/);
+    }
+    expect(describeSchedule(DEFAULT_SCHEDULES.quasi_contractor)).toBe('末日締め・翌月末日払い');
+  });
+});
