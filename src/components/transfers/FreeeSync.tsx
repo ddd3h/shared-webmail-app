@@ -63,10 +63,10 @@ export default function FreeeSync() {
         <section className="space-y-1.5" aria-label="送信待ち">
           <h3 className="text-sm font-semibold text-gray-900">送信待ち</h3>
           {d.waiting.map(w => (
-            <div key={`${w.source_type}:${w.source_id}`} className="flex items-center gap-2 rounded-xl border border-gray-200 bg-white p-3 text-sm">
+            <div key={`${w.source_type}:${w.source_id}`} className="flex flex-wrap items-center gap-2 rounded-xl border border-gray-200 bg-white p-3 text-sm">
               <span className="rounded-sm bg-blue-50 px-1.5 py-0.5 text-[11px] text-blue-700">{TYPE_LABEL[w.source_type]}</span>
-              <span className="min-w-0 flex-1 truncate text-gray-900">{w.description}</span>
-              <span className="text-xs text-gray-500">{w.date}</span><span className="font-bold tabular-nums">{yen(w.amount)}</span>
+              <span className="order-last basis-full text-gray-900 wrap-break-word sm:order-none sm:min-w-0 sm:flex-1 sm:basis-auto">{w.description}</span>
+              <span className="ml-auto text-xs text-gray-500">{w.date}</span><span className="font-bold tabular-nums">{yen(w.amount)}</span>
             </div>
           ))}
         </section>
@@ -80,8 +80,8 @@ export default function FreeeSync() {
             <div className="flex flex-wrap items-center gap-2 text-sm">
               <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${STATUS[r.status][1]}`}>{STATUS[r.status][0]}</span>
               <span className="rounded-sm bg-blue-50 px-1.5 py-0.5 text-[11px] text-blue-700">{TYPE_LABEL[r.source_type]}</span>
-              <span className="min-w-0 flex-1 truncate text-gray-900">{r.description}</span>
-              <span className="text-xs text-gray-500">{r.paid_date}</span><span className="font-bold tabular-nums">{yen(r.amount)}</span>
+              <span className="order-last basis-full text-gray-900 wrap-break-word sm:order-none sm:min-w-0 sm:flex-1 sm:basis-auto">{r.description}</span>
+              <span className="ml-auto text-xs text-gray-500">{r.paid_date}</span><span className="font-bold tabular-nums">{yen(r.amount)}</span>
             </div>
             {r.freee_deal_id && <p className="text-xs text-gray-400">freeeの取引ID: {r.freee_deal_id}</p>}
             {r.error && <p className="text-xs text-red-700 bg-red-50 rounded-lg px-2 py-1">{r.error}</p>}

@@ -1,5 +1,5 @@
 // "What has to be transferred in this month": the list behind the monthly 全銀 file.
-// Everything unpaid whose date is on or before the last day of the month is listed (earlier ones are marked 期日超過):
+// Everything unpaid whose date is on or before the last day of the month is listed (the ones whose day has already passed are marked 期日超過):
 //   - pay statements (給与・賞与・業務委託費・役員報酬)  - on their pay date, or the 振込日 of the person's kind of worker when none was written
 //   - payment requests (振込申請)                      - on their due date
 //   - expense reimbursements (経費の立替金)             - on the day 締め日・振込日 plans (one line per person; claims inside a pay statement go with the statement)
@@ -7,7 +7,7 @@ import { prisma } from '@/lib/db';
 import { payDate } from '@/lib/pay-schedule';
 import { loadSchedules, planOf } from '@/lib/pay-schedule-server';
 import { transferAmount } from '@/lib/payment';
-import { WORKER_TYPE_LABEL, payslipTotals, type WorkerType } from '@/lib/work';
+import { WORKER_TYPE_LABEL, jstDateString, payslipTotals, type WorkerType } from '@/lib/work';
 import { DEFAULT_SCHEDULES } from '@/lib/pay-schedule';
 import type { ItemRef } from '@/lib/transfer-server';
 
@@ -32,7 +32,7 @@ function slipKind(type: WorkerType, title: string): string {
 
 export async function loadMonthlyItems(month: string): Promise<MonthlyItem[]> {
   const end = lastDayOf(month);
-  const start = `${month}-01`;
+  const today = jstDateString(new Date()); // 期日超過 = the day has already passed (not just before the month on screen)
   const { schedules } = await loadSchedules();
   const [slips, pays, claims] = await Promise.all([
     prisma.payslips.findMany({
@@ -58,7 +58,7 @@ export async function loadMonthlyItems(month: string): Promise<MonthlyItem[]> {
     items.push({
       key: `payslip:${p.id}`, type: 'payslip', ids: [p.id], group: 'payroll', kind_label: slipKind(type, p.title),
       who: p.user.name, title: `${p.pay_month} ${p.title}（${WORKER_TYPE_LABEL[type]}）`, sub: accountSub(p.user.bank_account), amount: net,
-      scheduled_date: date, overdue: date < start, batched: !!p.batch_id, blocker: accountBlocker(p.user.bank_account) ?? (net <= 0 ? '支給額が0円以下' : null),
+      scheduled_date: date, overdue: date < today, batched: !!p.batch_id, blocker: accountBlocker(p.user.bank_account) ?? (net <= 0 ? '支給額が0円以下' : null),
     });
   }
   for (const r of pays) {
@@ -66,7 +66,7 @@ export async function loadMonthlyItems(month: string): Promise<MonthlyItem[]> {
     items.push({
       key: `payment:${r.id}`, type: 'payment', ids: [r.id], group: 'payment', kind_label: '振込申請',
       who: r.vendor.name, title: r.title, sub: `申請者 ${r.user.name}`, amount: transferAmount(r),
-      scheduled_date: date, overdue: date < start, batched: !!r.batch_id, blocker: r.vendor.verified_at ? null : '口座未確認',
+      scheduled_date: date, overdue: date < today, batched: !!r.batch_id, blocker: r.vendor.verified_at ? null : '口座未確認',
     });
   }
   // expenses: one line per person; the day is the earliest planned pay day among their claims
@@ -82,7 +82,7 @@ export async function loadMonthlyItems(month: string): Promise<MonthlyItem[]> {
     items.push({
       key: `expense:${userId}`, type: 'expense', ids: list.map(c => c.id), group: 'expense', kind_label: '経費',
       who: u.name, title: `経費の立替金（${list.length}件）`, sub: accountSub(u.bank_account), amount: list.reduce((s, c) => s + c.amount, 0),
-      scheduled_date: date, overdue: date < start, batched: list.some(c => !!c.batch_id), blocker: accountBlocker(u.bank_account),
+      scheduled_date: date, overdue: date < today, batched: list.some(c => !!c.batch_id), blocker: accountBlocker(u.bank_account),
     });
   }
   return items.sort((a, b) => a.scheduled_date.localeCompare(b.scheduled_date) || a.who.localeCompare(b.who));

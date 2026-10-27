@@ -47,7 +47,7 @@ export default function MileageSettingsCard() {
             <input id="mileage-rate" type="number" min={1} max={1000} className="input" value={rate} onChange={e => setRate(e.target.value)} />
             <button type="button" className="btn btn-primary whitespace-nowrap" disabled={saving || !rate} onClick={() => save({ rate_per_km: Number(rate) }, '単価を保存しました')}>保存</button>
           </div>
-          <p className="text-xs text-gray-400 mt-1">自宅から行き先までの往復距離にこの単価をかけた額が、自家用車の経費になります。変更は、これから申請する分に反映されます（申請済みの金額は変わりません）。</p>
+          <p className="text-xs text-gray-400 mt-1">出発地（初期値は自宅）から行き先までの往復距離にこの単価をかけた額が、自家用車の経費になります。変更は、これから申請する分に反映されます（申請済みの金額は変わりません）。</p>
         </div>
 
         <fieldset className="space-y-2">
@@ -82,6 +82,7 @@ export default function MileageSettingsCard() {
           <p className="text-xs text-gray-400 mt-1">{st.maps_api_key_set ? 'キーは設定済みです。' : 'キーは未設定です。'}Googleマップは、上で選んでいるときだけ使います。</p>
         </div>
         {msg && <p role="status" className={`text-sm ${msg.ok ? 'text-emerald-700' : 'text-red-700'}`}>{msg.text}</p>}
+        <p className="text-xs text-gray-400">このカードの設定は、それぞれのボタンですぐ保存されます（画面下の「設定を保存」は押さなくて構いません）。</p>
       </div>
     </FoldCard>
   );

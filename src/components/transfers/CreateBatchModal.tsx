@@ -31,7 +31,7 @@ export default function CreateBatchModal({ kind, ids, items, total, hasBatched, 
 
   return (
     <Modal title="全銀データを作成" onClose={onClose}>
-      <p className="text-sm text-gray-700 mb-3">{ids.length}件・合計 <b className="tabular-nums">{yen(total)}</b> の{kind === 'payroll' ? '給与' : kind === 'monthly' ? 'まとめて1つの総合' : '総合'}振込データを作ります。</p>
+      <p className="text-sm text-gray-700 mb-3">{ids.length}件・合計 <b className="tabular-nums">{yen(total)}</b>{kind === 'monthly' ? ' を、1つの総合振込データにまとめます。' : ` の${kind === 'payroll' ? '給与' : '総合'}振込データを作ります。`}</p>
       <div className="space-y-3">
         <div><label className="text-xs text-gray-600">振込指定日（銀行が振り込む日）</label><input type="date" className={inp} value={date} min={todayJst()} onChange={e => setDate(e.target.value)} /></div>
         {kind === 'payroll' && (

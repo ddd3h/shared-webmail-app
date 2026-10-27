@@ -101,6 +101,7 @@ export default function FreeeSettingsCard() {
               <h3 className="text-sm font-semibold text-gray-900">3. 勘定科目の割り当て</h3>
               <p className="text-xs text-gray-500">お金の種類ごとに、freeeの勘定科目を選びます。税区分は freee の税区分コード（0 = 対象外）で、税理士さんに確認してください。経費は科目ごとに選べ、選ばないものは「経費の立替金」の科目になります。</p>
               <div className="space-y-1.5">
+                <div className="hidden sm:grid grid-cols-[16rem_1fr_6rem] gap-2 text-[11px] text-gray-400"><span>お金の種類</span><span>freeeの勘定科目</span><span className="text-right">税区分コード</span></div>
                 {rows.map(([k, label]) => (
                   <div key={k} className="grid grid-cols-[1fr_auto_5rem] items-center gap-2 sm:grid-cols-[16rem_1fr_6rem]">
                     <label className="text-xs text-gray-700" htmlFor={`fm-${k}`}>{label}</label>
@@ -126,6 +127,7 @@ export default function FreeeSettingsCard() {
           </>
         )}
         {msg && <p role="status" className={`text-sm ${msg.ok ? 'text-emerald-700' : 'text-red-700'}`}>{msg.text}</p>}
+        <p className="text-xs text-gray-400">このカードの設定は、それぞれのボタンですぐ保存されます（画面下の「設定を保存」は押さなくて構いません）。</p>
       </div>
     </FoldCard>
   );

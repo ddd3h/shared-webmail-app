@@ -222,7 +222,7 @@ test.describe('画面', () => {
     await expect(page.getByText('振込申請').first()).toBeVisible();
     await page.getByRole('button', { name: '作成できるものをすべて選択' }).click();
     await page.getByRole('button', { name: '全銀データを作成…' }).click();
-    await expect(page.getByText(/まとめて1つの総合振込データを作ります/)).toBeVisible();
+    await expect(page.getByText(/1つの総合振込データにまとめます/)).toBeVisible();
     await page.getByRole('button', { name: '作成する' }).click();
     await expect(page.getByText('全銀データを作成しました')).toBeVisible();
     await page.getByRole('button', { name: '作成履歴' }).click();
