@@ -75,7 +75,16 @@ export function startMattermostMock(): Promise<() => Promise<void>> {
           const ride = (line: string, a: string, b: string, secs: number, stops: number) => ({ travelMode: 'TRANSIT', staticDuration: `${secs}s`, transitDetails: { stopDetails: { departureStop: { name: a }, arrivalStop: { name: b } }, transitLine: { name: line, nameShort: line }, stopCount: stops } });
           const steps = /新宿/.test(to) ? [walk, ride('JR埼京線', '川越', '赤羽', 1500, 8), ride('JR山手線', '赤羽', '新宿', 900, 6), walk] : [walk, ride('東京メトロ丸ノ内線', '東京', to, 1200, 7)];
           const fare = /運賃なし/.test(to) || !/新宿/.test(to) ? {} : { travelAdvisory: { transitFare: { currencyCode: 'JPY', units: '590' } } };
-          return send({ routes: [{ duration: `${steps.reduce((s, x) => s + parseInt(x.staticDuration, 10), 0)}s`, legs: [{ steps }], ...fare }] });
+          const total = (st: { staticDuration: string }[]) => `${st.reduce((s, x) => s + parseInt(x.staticDuration, 10), 0)}s`;
+          const routes = [{ duration: total(steps), legs: [{ steps }], ...fare }];
+          if (parsed.computeAlternativeRoutes && /新宿/.test(to) && !/運賃なし/.test(to)) {
+            // two more candidates: no change of trains but longer, and a cheaper one with a long walk
+            const direct = [walk, ride('JR川越線直通 埼京線', '川越', '新宿', 2700, 14), walk];
+            const cheap = [{ travelMode: 'WALK', staticDuration: '900s' }, ride('東武東上線', '川越', '池袋', 2400, 11), ride('JR山手線', '池袋', '新宿', 420, 2), walk];
+            routes.push({ duration: total(direct), legs: [{ steps: direct }], ...fare }, { duration: total(cheap), legs: [{ steps: cheap }], travelAdvisory: { transitFare: { currencyCode: 'JPY', units: '480' } } });
+            routes.push({ duration: total(steps), legs: [{ steps }], ...fare }); // Google repeats a route now and then: it must be shown once
+          }
+          return send({ routes });
         }
         if (failMaps === 'down') return send({ error: { status: 'UNAVAILABLE', message: 'down' } }, 503);
         if (failMaps === 'denied') return send({ error: { status: 'PERMISSION_DENIED', message: 'API key not valid' } }, 400);

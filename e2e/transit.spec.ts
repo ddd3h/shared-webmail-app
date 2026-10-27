@@ -47,6 +47,22 @@ test.describe('公共交通機関のルート（API）', () => {
     expect(seen.last).toMatchObject({ key: KEY, origin: '川越駅', destination: to, mode: 'TRANSIT' });
   });
 
+  test('ルートの候補が、所要時間の短い順に返る。同じ経路は1つにまとめ、それぞれ何が一番かの印が付く', async ({ as }) => {
+    const c = await as('sato');
+    const d = await (await c.post('/api/expenses/transit', { data: { from: '川越駅', to: place('新宿駅'), date: '2026-11-04' } })).json();
+    expect(d.routes.map((r: { minutes: number; transfers: number; fare_yen: number | null; tags: string[] }) => [r.minutes, r.transfers, r.fare_yen, r.tags])).toEqual([
+      [50, 1, 590, ['最短']],
+      [55, 0, 590, ['乗換が少ない']],
+      [67, 1, 480, ['運賃が安い']],
+    ]);                                                   // the repeated route is shown once; 徒歩 ties (10, 10, 20) so no mark
+    expect(d.route).toEqual(d.routes[0]);                 // `route` stays the best one
+    expect(d.routes[1].summary).toContain('JR川越線直通 埼京線（川越→新宿） 約55分・乗換0回・運賃 ¥590');
+    expect((await mm.mapsCalls()).calls).toBe(1);         // one search gives all of them
+    const one = await (await c.post('/api/expenses/transit', { data: { from: '東京駅', to: place('大手町'), date: '2026-11-04' } })).json();
+    expect(one.routes).toHaveLength(1);
+    expect(one.routes[0].tags).toEqual([]);
+  });
+
   test('運賃が分からない経路は、運賃なしで返る。過去の日時は出発時刻として送らない', async ({ as }) => {
     const c = await as('sato');
     const d = await (await c.post('/api/expenses/transit', { data: { from: '東京駅', to: place('大手町'), date: '2020-01-01', time: '09:00' } })).json();
@@ -131,7 +147,7 @@ test.describe('交通費の申請に経路を残す（API）', () => {
 test.describe('画面', () => {
   test.use({ storageState: AUTH.sato });
 
-  test('勘定科目「交通費」で、出発・到着を入れて「最適ルートを表示」すると、経路と運賃が出て、運賃を金額に入れて申請でき、詳細に経路が出る', async ({ page }) => {
+  test('勘定科目「交通費」で、出発・到着を入れて「ルートを調べる」すると、経路と運賃が出て、運賃を金額に入れて申請でき、詳細に経路が出る', async ({ page }) => {
     await page.goto('/expenses');
     await page.getByRole('button', { name: '＋ 経費を申請' }).click();
     const box = page.getByTestId('transit-box');
@@ -141,7 +157,7 @@ test.describe('画面', () => {
     await page.getByLabel('到着（駅・住所）').fill('新宿駅');
     await expect(page.getByRole('link', { name: /Yahoo!乗換案内で見る/ })).toHaveAttribute('href', /transit\.yahoo\.co\.jp\/search\/result\?from=/);
     await expect(page.getByRole('link', { name: /Googleマップで見る/ })).toHaveAttribute('href', /travelmode=transit/);
-    await page.getByRole('button', { name: '最適ルートを表示' }).click();
+    await page.getByRole('button', { name: 'ルートを調べる' }).click();
     const result = page.getByTestId('transit-result');
     await expect(result).toContainText('約50分 ・ 乗換1回 ・ 運賃 ¥590');
     await expect(result).toContainText('JR埼京線（川越 → 赤羽）');
@@ -150,7 +166,7 @@ test.describe('画面', () => {
     await page.getByLabel('到着（駅・住所）').fill('池袋駅');
     await expect(result).toHaveCount(0);
     await page.getByLabel('到着（駅・住所）').fill('新宿駅');
-    await page.getByRole('button', { name: '最適ルートを表示' }).click();
+    await page.getByRole('button', { name: 'ルートを調べる' }).click();
     await expect(result).toBeVisible();
     await page.getByRole('button', { name: 'この運賃を金額に入れる' }).click();
     await expect(page.locator('input[type=number]').first()).toHaveValue('590');
@@ -166,13 +182,39 @@ test.describe('画面', () => {
     await expect(page.getByText(/運賃 ¥590/)).toBeVisible();
   });
 
+  test('候補が複数あるときは、選べる。選んだルートと運賃が申請に残る', async ({ page }) => {
+    await page.goto('/expenses');
+    await page.getByRole('button', { name: '＋ 経費を申請' }).click();
+    await page.getByLabel('出発（駅・住所）').fill('川越駅');
+    await page.getByLabel('到着（駅・住所）').fill(place('新宿駅'));
+    await page.getByRole('button', { name: 'ルートを調べる' }).click();
+    const options = page.getByTestId('transit-option');
+    await expect(options).toHaveCount(3);
+    await expect(options.nth(0)).toContainText('最短');
+    await expect(options.nth(1)).toContainText('乗換が少ない');
+    await expect(options.nth(2)).toContainText('運賃が安い');
+    await expect(page.getByRole('radio', { name: /候補1/ })).toBeChecked();
+    // pick the cheapest one
+    await page.getByRole('radio', { name: /候補3/ }).check();
+    await expect(options.nth(2)).toContainText('東武東上線（川越 → 池袋）');
+    await page.getByRole('button', { name: 'この運賃を金額に入れる' }).click();
+    await expect(page.locator('input[type=number]').first()).toHaveValue('480');
+    await page.getByPlaceholder(/A社訪問/).fill('安いルートで新宿へ');
+    await page.getByRole('button', { name: '申請する' }).click();
+    await expect(page.getByText('申請しました')).toBeVisible();
+    const row = await db.expense_claims.findFirstOrThrow({ where: { user_id: USERS.sato.id } });
+    expect(row.amount).toBe(480);
+    expect(row.transit_summary).toContain('東武東上線');
+    expect(row.transit_summary).not.toContain('JR埼京線（川越→赤羽）');
+  });
+
   test('運賃が分からないときは、そう表示して、金額には入れない', async ({ page }) => {
     await page.goto('/expenses');
     await page.getByRole('button', { name: '＋ 経費を申請' }).click();
     await page.getByLabel('出発（駅・住所）').fill('東京駅');
     await page.getByLabel('到着（駅・住所）').fill(place('大手町'));
-    await page.getByRole('button', { name: '最適ルートを表示' }).click();
-    await expect(page.getByTestId('transit-result')).toContainText('運賃はこの経路では分かりません');
+    await page.getByRole('button', { name: 'ルートを調べる' }).click();
+    await expect(page.getByTestId('transit-result')).toContainText('運賃は分かりません');
     await expect(page.getByRole('button', { name: 'この運賃を金額に入れる' })).toHaveCount(0);
   });
 
@@ -181,7 +223,7 @@ test.describe('画面', () => {
     await page.getByRole('button', { name: '＋ 経費を申請' }).click();
     await page.getByLabel('出発（駅・住所）').fill('川越駅');
     await page.getByLabel('到着（駅・住所）').fill(place('見つからない駅'));
-    await page.getByRole('button', { name: '最適ルートを表示' }).click();
+    await page.getByRole('button', { name: 'ルートを調べる' }).click();
     await expect(page.getByText('ルートが見つかりません。駅名や住所をもう少し詳しく入力してください')).toBeVisible();
   });
 
@@ -192,7 +234,7 @@ test.describe('画面', () => {
     await page.getByRole('button', { name: '＋ 経費を申請' }).click();
     await page.getByLabel('出発（駅・住所）').fill('川越駅');
     await page.getByLabel('到着（駅・住所）').fill('新宿駅');
-    await expect(page.getByRole('button', { name: '最適ルートを表示' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'ルートを調べる' })).toHaveCount(0);
     await expect(page.getByRole('link', { name: /Yahoo!乗換案内で見る/ })).toBeVisible();
     await expect(page.getByText('この画面でルートを表示するには、システム管理者がGoogleマップの設定をする必要があります')).toBeVisible();
   });

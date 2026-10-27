@@ -21,7 +21,7 @@ const schema = z.object({
   time: z.string().regex(/^\d{2}:\d{2}$/).optional(),
 });
 
-// POST /api/expenses/transit - the best public-transport route (出発 at date/time, Japan time), with links to the free route-search sites.
+// POST /api/expenses/transit - the public-transport routes (出発 at date/time, Japan time): the best one and the other candidates to choose from, with links to the free route-search sites.
 // Without the Google Maps way of searching, only the links are returned (`in_app: false`).
 export async function POST(req: NextRequest) {
   const session = await getSession();
@@ -37,5 +37,7 @@ export async function POST(req: NextRequest) {
   const r = await transitRoute(from, to, departure);
   if (!r.ok && r.reason === 'not_available') return NextResponse.json({ in_app: false, links });
   if (!r.ok) return NextResponse.json({ error: r.reason === 'not_found' ? 'route_not_found' : 'route_failed', in_app: true, links }, { status: r.reason === 'not_found' ? 422 : 502 });
-  return NextResponse.json({ in_app: true, links, route: { ...r.route, summary: describeRoute(from, to, r.route) } });
+  const routes = r.routes.map(x => ({ ...x, summary: describeRoute(from, to, x) }));
+  // `route` is the best one (as before); `routes` are the candidates to choose from
+  return NextResponse.json({ in_app: true, links, route: routes[0], routes });
 }
