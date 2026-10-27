@@ -4,9 +4,10 @@ import { prisma } from '@/lib/db';
 import { getSession, requireAuth } from '@/lib/auth';
 import { logAudit } from '@/lib/audit';
 import { getActor, isAdmin } from '@/lib/work-auth';
+import { WORKER_TYPES, type WorkerType } from '@/lib/work';
 
 const schema = z.object({
-  worker_type: z.enum(['executive', 'employee', 'contractor']).optional(),
+  worker_type: z.enum(WORKER_TYPES as [WorkerType, ...WorkerType[]]).optional(),
   is_accounting: z.boolean().optional(),
   is_hr: z.boolean().optional(),
 }).refine(v => v.worker_type !== undefined || v.is_accounting !== undefined || v.is_hr !== undefined, { message: 'nothing_to_change' });

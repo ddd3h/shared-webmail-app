@@ -32,6 +32,25 @@ test.describe('区分ごとに使える機能（タブ）', () => {
     });
   }
 
+  for (const [type, label, visible, hidden] of [
+    ['regular', '正社員', ['勤怠', '給与明細'], ['業務報告', '報酬明細']],
+    ['part', 'パート', ['勤怠', '給与明細'], ['業務報告', '報酬明細']],
+    ['dispatch', '派遣', ['勤怠', '報酬明細'], ['業務報告', '給与明細']],
+  ] as const) {
+    test(`管理者が「${label}」にすると、画面のタブが変わり、打刻もできる`, async ({ browser, as }) => {
+      const res = await (await as('admin')).patch(`/api/work/users/${USERS.tanaka.id}`, { data: { worker_type: type } });
+      expect(res.status()).toBe(200);
+      const ctx = await browser.newContext({ storageState: AUTH.tanaka, locale: 'ja-JP', timezoneId: 'Asia/Tokyo' });
+      const page = await ctx.newPage();
+      await page.goto('/work');
+      await expect(page.getByText(`${USERS.tanaka.name} さん（${label}）`)).toBeVisible();
+      for (const t of visible) await expect(tab(page, t)).toBeVisible();
+      for (const t of hidden) await expect(tab(page, t)).toHaveCount(0);
+      expect((await ctx.request.post('/api/work/attendance/punch', { data: { action: 'clock_in' } })).status()).toBe(200);
+      await ctx.close();
+    });
+  }
+
   test('管理者が区分を変えると、画面のタブが変わる', async ({ browser, as }) => {
     const res = await (await as('admin')).patch(`/api/work/users/${USERS.tanaka.id}`, { data: { worker_type: 'contractor' } });
     expect(res.status()).toBe(200);

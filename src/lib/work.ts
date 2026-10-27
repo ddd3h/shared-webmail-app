@@ -1,14 +1,24 @@
 // Pure helpers for attendance / reports / payslips (no I/O so they are easy to test).
 
-export type WorkerType = 'executive' | 'employee' | 'contractor';
+export type WorkerType = 'executive' | 'regular' | 'part' | 'dispatch' | 'employee' | 'contractor';
 
-export const WORKER_TYPES: WorkerType[] = ['executive', 'employee', 'contractor'];
+export const WORKER_TYPES: WorkerType[] = ['executive', 'regular', 'part', 'dispatch', 'employee', 'contractor'];
 
 export const WORKER_TYPE_LABEL: Record<WorkerType, string> = {
   executive: '役員',
+  regular: '正社員',
+  part: 'パート',
+  dispatch: '派遣',
+  // the first kind this app had: kept as it is so nobody's record changes meaning ("従業員" = works in-house, no finer split)
   employee: '従業員',
   contractor: '業務委託',
 };
+
+// What each kind may use. Everyone but 役員 and 業務委託 clocks in; 役員, 派遣 and 業務委託 get a 報酬 statement rather than a 給与 one
+// (a dispatched worker is paid by the agency, so what this company pays is a fee).
+export const usesAttendance = (t: WorkerType) => t === 'employee' || t === 'regular' || t === 'part' || t === 'dispatch';
+export const usesReports = (t: WorkerType) => t === 'contractor';
+export const paysSalary = (t: WorkerType) => t === 'employee' || t === 'regular' || t === 'part';
 
 export const DEFAULT_DAILY_MINUTES = 480;
 export const DEFAULT_AUTO_BREAK_MINUTES = 60;

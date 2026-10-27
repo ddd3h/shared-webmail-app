@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from 'react';
 import AttendancePanel from './AttendancePanel';
 import ReportsPanel from './ReportsPanel';
 import PayrollPanel from './PayrollPanel';
+import { paysSalary, usesAttendance, usesReports } from '@/lib/work';
 import { Notice, TYPE_LABEL, btnPrimary, inp, api, type WorkerType } from './ui';
 
 type Member = { id: string; name: string; email: string; role: string; worker_type: WorkerType; is_accounting: boolean; is_hr: boolean };
@@ -50,8 +51,8 @@ export default function AdminPanel({ isAdmin = true }: { isAdmin?: boolean }) {
     flash(res.ok ? 'success' : 'error', res.ok ? '勤怠の設定を保存しました' : '保存に失敗しました。0以上の整数を入力してください');
   }
 
-  const employees = members.filter(m => m.worker_type === 'employee');
-  const contractors = members.filter(m => m.worker_type === 'contractor');
+  const employees = members.filter(m => usesAttendance(m.worker_type));
+  const contractors = members.filter(m => usesReports(m.worker_type));
   useEffect(() => { if (!target && employees[0]) setTarget(employees[0].id); }, [employees, target]);
 
   return (
@@ -87,7 +88,7 @@ export default function AdminPanel({ isAdmin = true }: { isAdmin?: boolean }) {
                         ? <span className="text-xs text-gray-400">管理者</span>
                         : <input type="checkbox" className="h-4 w-4" checked={m.is_hr} onChange={e => setHr(m.id, e.target.checked)} aria-label={`${m.name}を人事担当にする`} />}
                     </td>
-                    <td className="px-3 py-2 text-xs text-gray-500 hidden sm:table-cell">{m.worker_type === 'employee' ? '打刻・勤怠・給与明細' : m.worker_type === 'contractor' ? '業務報告書・報酬明細' : '報酬明細'}</td>
+                    <td className="px-3 py-2 text-xs text-gray-500 hidden sm:table-cell">{[usesAttendance(m.worker_type) && '打刻・勤怠', usesReports(m.worker_type) && '業務報告書', paysSalary(m.worker_type) ? '給与明細' : '報酬明細'].filter(Boolean).join('・')}</td>
                   </tr>
                 ))}
               </tbody>

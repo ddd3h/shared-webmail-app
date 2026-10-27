@@ -1,8 +1,9 @@
 'use client';
 import type { ReactNode } from 'react';
 
-export type WorkerType = 'executive' | 'employee' | 'contractor';
-export const TYPE_LABEL: Record<WorkerType, string> = { executive: '役員', employee: '従業員', contractor: '業務委託' };
+import { WORKER_TYPE_LABEL, type WorkerType } from '@/lib/work';
+export type { WorkerType };
+export const TYPE_LABEL = WORKER_TYPE_LABEL;
 
 export const inp = 'w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-hidden focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50';
 export const btn = 'rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50';

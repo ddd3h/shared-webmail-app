@@ -4,7 +4,7 @@ import { prisma } from '@/lib/db';
 import { getSession, requireAuth } from '@/lib/auth';
 import { getActor, isFinance } from '@/lib/work-auth';
 import { notifyWorkReportSubmitted } from '@/lib/work-notify';
-import { isValidDateString, isValidMonth, jstDateString, monthRange, toDbDate } from '@/lib/work';
+import { usesReports, isValidDateString, isValidMonth, jstDateString, monthRange, toDbDate } from '@/lib/work';
 
 const serialize = (r: any) => ({
   id: r.id,
@@ -25,7 +25,7 @@ export async function GET(req: NextRequest) {
   const actor = await getActor(session.userId);
   if (!actor) return NextResponse.json({ error: 'not_found' }, { status: 404 });
   const admin = isFinance(actor);
-  if (!admin && actor.worker_type !== 'contractor') return NextResponse.json({ error: 'not_contractor' }, { status: 403 });
+  if (!admin && !usesReports(actor.worker_type)) return NextResponse.json({ error: 'not_contractor' }, { status: 403 });
 
   const sp = new URL(req.url).searchParams;
   const month = sp.get('month') || jstDateString(new Date()).slice(0, 7);
@@ -56,7 +56,7 @@ export async function POST(req: NextRequest) {
   requireAuth(session);
   const actor = await getActor(session.userId);
   if (!actor) return NextResponse.json({ error: 'not_found' }, { status: 404 });
-  if (actor.worker_type !== 'contractor') return NextResponse.json({ error: 'not_contractor' }, { status: 403 });
+  if (!usesReports(actor.worker_type)) return NextResponse.json({ error: 'not_contractor' }, { status: 403 });
   const parsed = reportSchema.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) return NextResponse.json({ error: 'invalid_body' }, { status: 400 });
   const d = parsed.data;

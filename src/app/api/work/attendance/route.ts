@@ -6,7 +6,7 @@ import { logAudit } from '@/lib/audit';
 import { getActor, getWorkSettings, isFinance } from '@/lib/work-auth';
 import { notifyAttendanceEdited } from '@/lib/work-notify';
 import {
-  allowedPunches, isValidDateString, isValidMonth, jstDateString, monthRange, summarizeMonth, toDbDate, workedMinutes,
+  usesAttendance, allowedPunches, isValidDateString, isValidMonth, jstDateString, monthRange, summarizeMonth, toDbDate, workedMinutes,
 } from '@/lib/work';
 
 // GET /api/work/attendance?month=YYYY-MM&userId=
@@ -24,7 +24,7 @@ export async function GET(req: NextRequest) {
   const targetId = sp.get('userId') || actor.id;
   const isSelf = targetId === actor.id;
   if (!isSelf && !isFinance(actor)) return NextResponse.json({ error: 'forbidden' }, { status: 403 });
-  if (isSelf && actor.worker_type !== 'employee' && !isFinance(actor)) {
+  if (isSelf && !usesAttendance(actor.worker_type) && !isFinance(actor)) {
     return NextResponse.json({ error: 'not_employee' }, { status: 403 });
   }
   const target = isSelf ? actor : await getActor(targetId);
@@ -50,7 +50,7 @@ export async function GET(req: NextRequest) {
   }));
 
   let today = null;
-  if (isSelf && actor.worker_type === 'employee') {
+  if (isSelf && usesAttendance(actor.worker_type)) {
     // An unfinished shift (e.g. past midnight) takes priority over today's row.
     const open = await prisma.attendance_records.findFirst({
       where: { user_id: actor.id, clock_out_at: null, clock_in_at: { gte: new Date(Date.now() - 24 * 3600_000) } },

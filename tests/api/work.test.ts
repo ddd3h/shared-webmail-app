@@ -46,6 +46,15 @@ describe('打刻', () => {
     }
     expect(prisma.attendance_records.upsert).not.toHaveBeenCalled();
   });
+  it('正社員・パート・派遣・従業員は出勤できる', async () => {
+    for (const t of ['regular', 'part', 'dispatch', 'employee']) {
+      vi.clearAllMocks();
+      (getActor as any).mockResolvedValue(actor(t));
+      (prisma.attendance_records.findFirst as any).mockResolvedValue(null);
+      (prisma.attendance_records.findUnique as any).mockResolvedValue(null);
+      expect((await clockIn()).status, t).toBe(200);
+    }
+  });
   it('従業員は出勤できる', async () => {
     (getActor as any).mockResolvedValue(actor('employee'));
     (prisma.attendance_records.findFirst as any).mockResolvedValue(null);
@@ -137,6 +146,16 @@ describe('区分の設定', () => {
     (getActor as any).mockResolvedValue(actor('employee'));
     expect((await call()).status).toBe(403);
     expect(prisma.users.update).not.toHaveBeenCalled();
+  });
+  it('正社員・パート・派遣にも変更できる。知らない区分は400', async () => {
+    (getActor as any).mockResolvedValue(actor('executive', 'admin'));
+    (prisma.users.findUnique as any).mockResolvedValue({ id: 'u2', worker_type: 'employee' });
+    for (const t of ['regular', 'part', 'dispatch']) {
+      const res = await patchType(json('http://x', { worker_type: t }, 'PATCH'), { params: Promise.resolve({ id: 'u2' }) });
+      expect(res.status, t).toBe(200);
+      expect(prisma.users.update).toHaveBeenLastCalledWith({ where: { id: 'u2' }, data: { worker_type: t } });
+    }
+    expect((await patchType(json('http://x', { worker_type: 'intern' }, 'PATCH'), { params: Promise.resolve({ id: 'u2' }) })).status).toBe(400);
   });
   it('管理者は変更できる', async () => {
     (getActor as any).mockResolvedValue(actor('executive', 'admin'));

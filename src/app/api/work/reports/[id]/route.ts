@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { getSession, requireAuth } from '@/lib/auth';
 import { getActor, isFinance } from '@/lib/work-auth';
-import { toDbDate } from '@/lib/work';
+import { toDbDate, usesReports } from '@/lib/work';
 import { z } from 'zod';
 import { isValidDateString } from '@/lib/work';
 
@@ -26,7 +26,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   requireAuth(session);
   const { actor, report } = await loadOwned(id, session.userId);
   if (!actor || !report) return NextResponse.json({ error: 'not_found' }, { status: 404 });
-  if (report.user_id !== actor.id || actor.worker_type !== 'contractor') {
+  if (report.user_id !== actor.id || !usesReports(actor.worker_type)) {
     return NextResponse.json({ error: 'forbidden' }, { status: 403 });
   }
   const parsed = schema.safeParse(await req.json().catch(() => ({})));

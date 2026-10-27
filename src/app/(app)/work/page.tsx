@@ -5,6 +5,7 @@ import ReportsPanel from '@/components/work/ReportsPanel';
 import PayrollPanel from '@/components/work/PayrollPanel';
 import AdminPanel from '@/components/work/AdminPanel';
 import { TYPE_LABEL, type WorkerType } from '@/components/work/ui';
+import { paysSalary, usesAttendance, usesReports } from '@/lib/work';
 
 type Me = { id: string; name: string; role: string; worker_type: WorkerType; is_finance?: boolean };
 type Tab = { key: string; label: string };
@@ -12,9 +13,9 @@ type Tab = { key: string; label: string };
 // Which tabs a person gets depends on their 区分: 従業員=勤怠, 業務委託=業務報告, 全員=自分の明細, 管理者=管理.
 function tabsFor(me: Me): Tab[] {
   const tabs: Tab[] = [];
-  if (me.worker_type === 'employee') tabs.push({ key: 'attendance', label: '勤怠' });
-  if (me.worker_type === 'contractor') tabs.push({ key: 'reports', label: '業務報告' });
-  tabs.push({ key: 'payroll', label: me.worker_type === 'employee' ? '給与明細' : '報酬明細' });
+  if (usesAttendance(me.worker_type)) tabs.push({ key: 'attendance', label: '勤怠' });
+  if (usesReports(me.worker_type)) tabs.push({ key: 'reports', label: '業務報告' });
+  tabs.push({ key: 'payroll', label: paysSalary(me.worker_type) ? '給与明細' : '報酬明細' });
   if (me.is_finance) tabs.push({ key: 'admin', label: '管理' }); // administrators and 経理担当
   return tabs;
 }
@@ -48,7 +49,7 @@ export default function WorkPage() {
       </div>
       {tab === 'attendance' && <AttendancePanel />}
       {tab === 'reports' && <ReportsPanel />}
-      {tab === 'payroll' && <PayrollPanel noun={me.worker_type === 'employee' ? '給与' : '報酬'} />}
+      {tab === 'payroll' && <PayrollPanel noun={paysSalary(me.worker_type) ? '給与' : '報酬'} />}
       {tab === 'admin' && <AdminPanel isAdmin={me.role === 'admin'} />}
     </div>
   );
