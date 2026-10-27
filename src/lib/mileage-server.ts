@@ -6,7 +6,8 @@ import { MAX_ADDRESS_LENGTH, MAX_ONE_WAY_KM, mileageAmount, parseRate, roundTrip
 
 export const mileageRate = async () => parseRate(await getSetting('MILEAGE_RATE_PER_KM'));
 
-export type MileageInput = { destination: string; manual_one_way_km?: number };
+// `origin`: where the trip started, when it was not from home (the person's home is the default)
+export type MileageInput = { destination: string; origin?: string; manual_one_way_km?: number };
 export type MileageData = { origin: string; destination: string; one_way_m: number; distance_m: number; rate: number; source: MileageSource; amount: number };
 export type MileageError = { error: 'home_not_set' | 'route_not_found' | 'route_failed' | 'manual_not_allowed' | 'distance_required'; status: number };
 
@@ -16,12 +17,12 @@ export async function homeAddressOf(userId: string): Promise<string | null> {
 }
 
 /**
- * Works out a claim: from the person's home to the destination, there and back, at the current rate.
+ * Works out a claim: from the start (the person's home unless another place was given) to the destination, there and back, at the current rate.
  * A typed-in distance is accepted only while no route service is set up (otherwise the route is always searched).
  */
 export async function resolveMileage(userId: string, input: MileageInput): Promise<MileageData | MileageError> {
-  const origin = await homeAddressOf(userId);
-  if (!origin) return { error: 'home_not_set', status: 400 };
+  const origin = input.origin?.trim().slice(0, MAX_ADDRESS_LENGTH) || (await homeAddressOf(userId));
+  if (!origin) return { error: 'home_not_set', status: 400 }; // no start was given and there is no home on file
   const destination = input.destination.trim().slice(0, MAX_ADDRESS_LENGTH);
   const rate = await mileageRate();
   let oneWay: number;

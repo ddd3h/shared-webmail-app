@@ -6,11 +6,11 @@ import FilterBar from '@/components/mobile/FilterBar';
 import { MILEAGE_CATEGORY } from '@/lib/expense';
 
 type Trip = { id: string; destination: string; start_date: string; end_date: string };
-type Form = { id?: string; trip_id: string; expense_date: string; category: string; title: string; amount: string; payment_method: 'personal' | 'company'; description: string; destination: string; manual_km: string };
+type Form = { id?: string; trip_id: string; expense_date: string; category: string; title: string; amount: string; payment_method: 'personal' | 'company'; description: string; destination: string; origin: string; manual_km: string };
 type MileageInfo = { rate_per_km: number; route_service: boolean; home_address: string | null };
 type Estimate = { destination: string; round_trip_km: number; rate_per_km: number; amount: number; source: 'google' | 'osm' | 'manual'; map_url: string };
 const MILEAGE_ERRORS: Record<string, string> = {
-  home_not_set: '先にプロフィールで自宅を登録してください',
+  home_not_set: '出発地を入力してください（プロフィールで自宅を登録すると、初期値になります）',
   route_not_found: '行き先が見つかりません。住所や施設名をもう少し詳しく入力してください',
   route_failed: 'ルートを調べられませんでした。しばらくしてからもう一度お試しください',
   distance_required: '片道の距離（km）を入力してください',
@@ -44,6 +44,8 @@ export default function MyExpenses({ initialTripId }: { initialTripId?: string }
   }, [filter]);
   useEffect(() => { load(); }, [load]);
   useEffect(() => { fetch('/api/expenses/mileage').then(r => r.json()).then(setMi).catch(() => {}); }, []);
+  // the form was opened before the home address arrived: it starts from home as soon as it is known (a start typed meanwhile is kept)
+  useEffect(() => { if (mi?.home_address) setForm(f => (f && !f.id && f.origin === '' ? { ...f, origin: mi.home_address! } : f)); }, [mi]);
   useEffect(() => {
     fetch('/api/trips?status=approved').then(r => r.json()).then(d => setTrips((d.items || []).map((t: any) => ({ id: t.id, destination: t.destination, start_date: t.start_date, end_date: t.end_date })))).catch(() => setTrips([]));
   }, []);
@@ -57,13 +59,13 @@ export default function MyExpenses({ initialTripId }: { initialTripId?: string }
   function flash(type: 'success' | 'error', text: string) { setMsg({ type, text }); setTimeout(() => setMsg(null), 5000); }
 
   const today = () => new Date(Date.now() + 9 * 3600_000).toISOString().slice(0, 10);
-  const blank = (): Form => ({ trip_id: '', expense_date: today(), category: CATEGORIES[0], title: '', amount: '', payment_method: 'personal', description: '', destination: '', manual_km: '' });
+  const blank = (): Form => ({ trip_id: '', expense_date: today(), category: CATEGORIES[0], title: '', amount: '', payment_method: 'personal', description: '', destination: '', origin: mi?.home_address ?? '', manual_km: '' });
   const editing = form?.id ? items.find(i => i.id === form.id) : undefined;
 
   const isMileage = form?.category === MILEAGE_CATEGORY;
   // the destination or the typed distance changed: the figure on screen is no longer the one for it
   function editForm(next: Form) {
-    if (next.destination !== form?.destination || next.manual_km !== form?.manual_km) { setEst(null); setEstError(null); }
+    if (next.destination !== form?.destination || next.origin !== form?.origin || next.manual_km !== form?.manual_km) { setEst(null); setEstError(null); }
     setForm(next);
   }
   function openForm(f: Form, claim?: Claim) {
@@ -75,13 +77,13 @@ export default function MyExpenses({ initialTripId }: { initialTripId?: string }
     if (!form || !form.destination.trim()) return;
     setEstimating(true); setEstError(null); setEst(null);
     try {
-      const body: Record<string, unknown> = { destination: form.destination.trim() };
+      const body: Record<string, unknown> = { destination: form.destination.trim(), origin: form.origin.trim() };
       if (mi && !mi.route_service) body.manual_one_way_km = Number(form.manual_km);
       const res = await api('/api/expenses/mileage/estimate', 'POST', body);
       const d = await res.json().catch(() => ({}));
       if (!res.ok) { setEstError(MILEAGE_ERRORS[d.error] ?? '計算できませんでした'); return; }
       setEst(d);
-      if (!form.title.trim()) setForm({ ...form, title: `自家用車: 自宅→${form.destination.trim()}` });
+      if (!form.title.trim()) setForm({ ...form, title: `自家用車: ${form.origin.trim() === (mi?.home_address ?? '') ? '自宅' : form.origin.trim()}→${form.destination.trim()}` });
     } finally { setEstimating(false); }
   }
 
@@ -94,7 +96,7 @@ export default function MyExpenses({ initialTripId }: { initialTripId?: string }
         const res = await api(`/api/expenses/${id}`, 'PATCH', {
           expense_date: form.expense_date, category: form.category, title: form.title,
           payment_method: form.payment_method, description: form.description || null, trip_id: form.trip_id || null,
-          ...(isMileage ? { destination: form.destination.trim(), ...(est?.source === 'manual' && form.manual_km ? { manual_one_way_km: Number(form.manual_km) } : {}) } : { amount: Number(form.amount) }),
+          ...(isMileage ? { destination: form.destination.trim(), origin: form.origin.trim(), ...(est?.source === 'manual' && form.manual_km ? { manual_one_way_km: Number(form.manual_km) } : {}) } : { amount: Number(form.amount) }),
         });
         if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(MILEAGE_ERRORS[e.error] ?? ''); }
         if (files.length) {
@@ -105,7 +107,7 @@ export default function MyExpenses({ initialTripId }: { initialTripId?: string }
       } else {
         const fd = new FormData();
         (['expense_date', 'category', 'title', 'payment_method', 'description'] as const).forEach(k => fd.append(k, form[k]));
-        if (isMileage) { fd.append('destination', form.destination.trim()); if (est?.source === 'manual' && form.manual_km) fd.append('manual_one_way_km', form.manual_km); } else fd.append('amount', form.amount);
+        if (isMileage) { fd.append('destination', form.destination.trim()); fd.append('origin', form.origin.trim()); if (est?.source === 'manual' && form.manual_km) fd.append('manual_one_way_km', form.manual_km); } else fd.append('amount', form.amount);
         if (form.trip_id) fd.append('trip_id', form.trip_id);
         files.forEach(f => fd.append('file', f));
         const res = await fetch('/api/expenses', { method: 'POST', body: fd });
@@ -152,7 +154,7 @@ export default function MyExpenses({ initialTripId }: { initialTripId?: string }
                 <ClaimDetail c={c} />
                 {(c.status === 'pending' || c.status === 'rejected') && (
                   <div className="flex gap-3 text-xs">
-                    <button className="text-blue-600 hover:underline" onClick={() => openForm({ id: c.id, trip_id: c.trip?.id ?? '', expense_date: c.expense_date, category: c.category, title: c.title, amount: String(c.amount), payment_method: c.payment_method, description: c.description || '', destination: c.mileage?.destination ?? '', manual_km: '' }, c)}>
+                    <button className="text-blue-600 hover:underline" onClick={() => openForm({ id: c.id, trip_id: c.trip?.id ?? '', expense_date: c.expense_date, category: c.category, title: c.title, amount: String(c.amount), payment_method: c.payment_method, description: c.description || '', destination: c.mileage?.destination ?? '', origin: c.mileage?.origin ?? '', manual_km: '' }, c)}>
                       {c.status === 'rejected' ? '修正して再申請' : '編集'}
                     </button>
                     <button className="text-red-600 hover:underline" onClick={() => withdraw(c.id)}>取り下げ</button>
@@ -192,11 +194,18 @@ export default function MyExpenses({ initialTripId }: { initialTripId?: string }
             <div><label className="text-xs text-gray-600">件名・用途</label><input className={inp} placeholder="例: A社訪問の交通費（川越→新宿）" value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} /></div>
             {isMileage ? (
               <div className="space-y-2 rounded-xl border border-sky-200 bg-sky-50/50 p-3">
-                {mi && !mi.home_address ? (
-                  <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">自宅が登録されていません。<a href="/profile#home" className="underline">プロフィールで自宅を登録</a>してから申請してください。</p>
-                ) : (
+                {(
                   <>
-                    <p className="text-xs text-sky-800">自宅{mi?.home_address ? `（${mi.home_address}）` : ''}から行き先までの往復を、{mi ? `1kmあたり${mi.rate_per_km}円` : '1kmあたりの単価'}で計算します。</p>
+                    <p className="text-xs text-sky-800">出発地から行き先までの往復を、{mi ? `1kmあたり${mi.rate_per_km}円` : '1kmあたりの単価'}で計算します。出発地は自宅が初期値で、自宅以外から出発したときは書き換えられます。</p>
+                    <div><label className="text-xs text-gray-600" htmlFor="mileage-origin">出発地（住所・施設名）</label>
+                      <input id="mileage-origin" className={inp} placeholder="例: 東京都新宿区西新宿2-8-1" maxLength={300} value={form.origin} onChange={e => editForm({ ...form, origin: e.target.value })} />
+                      <div className="mt-1 flex flex-wrap items-center gap-2 text-xs">
+                        {mi?.home_address
+                          ? (form.origin.trim() === mi.home_address
+                            ? <span className="text-gray-500">自宅から出発</span>
+                            : <button type="button" className="text-blue-600 hover:underline" onClick={() => editForm({ ...form, origin: mi.home_address! })}>自宅に戻す</button>)
+                          : <span className="text-amber-700">自宅が未登録です。<a href="/profile#home" className="underline">プロフィールで自宅を登録</a>すると、ここに入ります。</span>}
+                      </div></div>
                     <div><label className="text-xs text-gray-600" htmlFor="mileage-destination">行き先（住所・施設名）</label>
                       <input id="mileage-destination" className={inp} placeholder="例: 東京都港区芝公園4-2-8（東京タワー）" maxLength={300} value={form.destination} onChange={e => editForm({ ...form, destination: e.target.value })} /></div>
                     {mi && !mi.route_service && (
@@ -204,7 +213,7 @@ export default function MyExpenses({ initialTripId }: { initialTripId?: string }
                         <input id="mileage-km" type="number" min={0.1} step={0.1} className={`${inp} text-right`} value={form.manual_km} onChange={e => editForm({ ...form, manual_km: e.target.value })} />
                         <p className="mt-1 text-xs text-amber-700">ルートの自動検索を使わない設定のため、距離を自分で入力します。承認者が地図で確認します。</p></div>
                     )}
-                    <button type="button" className={`${btn} w-full`} disabled={estimating || !form.destination.trim() || (mi !== null && !mi.route_service && !(Number(form.manual_km) > 0))} onClick={estimate}>{estimating ? '計算中…' : mi && !mi.route_service ? '金額を計算' : 'ルートを調べて金額を計算'}</button>
+                    <button type="button" className={`${btn} w-full`} disabled={estimating || !form.destination.trim() || !form.origin.trim() || (mi !== null && !mi.route_service && !(Number(form.manual_km) > 0))} onClick={estimate}>{estimating ? '計算中…' : mi && !mi.route_service ? '金額を計算' : 'ルートを調べて金額を計算'}</button>
                     {estError && <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700">{estError}</p>}
                     {est && (
                       <div className="rounded-lg bg-white px-3 py-2 text-sm" data-testid="mileage-result">

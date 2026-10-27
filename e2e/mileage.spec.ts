@@ -130,6 +130,44 @@ test.describe('自家用車の計算（API）', () => {
     expect(await db.expense_claims.count()).toBe(0);
   });
 
+  test('出発地は自宅が初期値で、申請ごとに変えられる。自宅が未登録でも、出発地があれば計算・申請できる', async ({ as }) => {
+    const c = await as('tanaka');                        // no home on file
+    const dest = place('横浜駅');
+    const from = '東京都新宿区西新宿2-8-1';
+    const est = await c.post('/api/expenses/mileage/estimate', { data: { destination: dest, origin: from } });
+    expect(est.status()).toBe(200);
+    expect(await est.json()).toMatchObject({ origin: from, destination: dest, round_trip_km: 70, amount: 1400 });
+    expect((await mm.mapsCalls()).last).toMatchObject({ origin: from, destination: dest });
+    expect((await c.post('/api/expenses/mileage/estimate', { data: { destination: dest, origin: 'あ'.repeat(301) } })).status()).toBe(400);
+    expect((await c.post('/api/expenses/mileage/estimate', { data: { destination: dest, origin: '  ' } })).status()).toBe(400); // blank = home, and there is none
+
+    await setHome(USERS.tanaka.id, HOME);
+    const homeEst = await (await c.post('/api/expenses/mileage/estimate', { data: { destination: dest } })).json();
+    expect(homeEst.origin).toBe(HOME);                    // nothing given: home
+    const res = await claim(c, { destination: dest, origin: from });
+    expect(res.status()).toBe(201);
+    const row = await db.expense_claims.findFirst({ where: { user_id: USERS.tanaka.id } });
+    expect(row).toMatchObject({ mileage_origin: from, mileage_destination: dest, amount: 1400 });
+    // the list says whether it started at home
+    const list = await (await (await as('keiri')).get('/api/expenses?scope=all')).json();
+    expect(list.items[0].mileage).toMatchObject({ origin: from, from_home: false });
+    expect((await claim(c, { destination: dest })).status()).toBe(201);
+    const list2 = await (await (await as('keiri')).get('/api/expenses?scope=all')).json();
+    expect(list2.items.filter((i: { mileage: { from_home: boolean } }) => i.mileage.from_home)).toHaveLength(1);   // the one that started at home
+
+    // editing: the same start and place keep the figures; another start works it out again
+    const { id } = await (await claim(c, { destination: dest, origin: from })).json();
+    const patch = (data: object) => c.patch(`/api/expenses/${id}`, { data: { expense_date: today(), category: '自家用車', title: 'x', payment_method: 'personal', destination: dest, ...data } });
+    await db.app_settings.upsert({ where: { key: 'MILEAGE_RATE_PER_KM' }, create: { key: 'MILEAGE_RATE_PER_KM', value: '30' }, update: { value: '30' } });
+    await new Promise(r => setTimeout(r, 300));
+    expect((await patch({ origin: from, description: 'メモ' })).status()).toBe(200);
+    expect(await db.expense_claims.findUnique({ where: { id } })).toMatchObject({ amount: 1400, mileage_rate: 20, mileage_origin: from });   // untouched: the old rate stays
+    expect((await patch({ origin: '東京都千代田区丸の内1-9-1' })).status()).toBe(200);
+    expect(await db.expense_claims.findUnique({ where: { id } })).toMatchObject({ amount: 2100, mileage_rate: 30, mileage_origin: '東京都千代田区丸の内1-9-1' });
+    expect((await patch({})).status()).toBe(200);          // no start given = home: it changes back to the home and is worked out again
+    expect((await db.expense_claims.findUnique({ where: { id } }))!.mileage_origin).toBe(HOME);
+  });
+
   test('入力が不正なら400（行き先なし・長すぎる）', async ({ as }) => {
     await setHome(USERS.tanaka.id, HOME);
     const c = await as('tanaka');
@@ -346,13 +384,54 @@ test.describe('経理・管理者の確認', () => {
 test.describe('経費の申請（画面）', () => {
   test.use({ storageState: AUTH.sato });
 
-  test('自宅が未登録なら、プロフィールへの案内が出て、申請できない', async ({ page }) => {
+  test('自宅が未登録なら、プロフィールへの案内が出る。出発地を自分で入れれば申請できる', async ({ page }) => {
     await page.goto('/expenses');
     await page.getByRole('button', { name: '＋ 経費を申請' }).click();
     await field(page, '勘定科目').selectOption('自家用車');
-    await expect(page.getByText('自宅が登録されていません')).toBeVisible();
+    await expect(page.getByText('自宅が未登録です')).toBeVisible();
     await expect(page.getByRole('link', { name: 'プロフィールで自宅を登録' })).toHaveAttribute('href', '/profile#home');
+    await expect(page.getByLabel('出発地（住所・施設名）')).toHaveValue('');
+    await page.getByLabel('行き先（住所・施設名）').fill(place('新宿駅'));
+    await expect(page.getByRole('button', { name: 'ルートを調べて金額を計算' })).toBeDisabled();   // no start yet
     await expect(page.getByRole('button', { name: '申請する' })).toBeDisabled();
+    await page.getByLabel('出発地（住所・施設名）').fill('東京都千代田区丸の内1-9-1');
+    await page.getByRole('button', { name: 'ルートを調べて金額を計算' }).click();
+    await expect(page.getByTestId('mileage-result')).toContainText('¥494');
+    await page.getByRole('button', { name: '申請する' }).click();
+    await expect(page.getByText('申請しました')).toBeVisible();
+    expect(await db.expense_claims.findFirst({ where: { user_id: USERS.sato.id } })).toMatchObject({ mileage_origin: '東京都千代田区丸の内1-9-1', amount: 494 });
+  });
+
+  test('出発地は自宅が初期値。書き換えて計算・申請でき、「自宅に戻す」で戻せる。詳細には出発地が出る', async ({ page }) => {
+    await setHome(USERS.sato.id, HOME);
+    await page.goto('/expenses');
+    await page.getByRole('button', { name: '＋ 経費を申請' }).click();
+    await field(page, '勘定科目').selectOption('自家用車');
+    const origin = page.getByLabel('出発地（住所・施設名）');
+    await expect(origin).toHaveValue(HOME);
+    await expect(page.getByText('自宅から出発')).toBeVisible();
+    const dest = place('横浜駅');
+    await page.getByLabel('行き先（住所・施設名）').fill(dest);
+    await page.getByRole('button', { name: 'ルートを調べて金額を計算' }).click();
+    await expect(page.getByTestId('mileage-result')).toContainText('¥1,400');
+    // changing the start hides the figure; the new start is what is asked
+    await origin.fill('東京都新宿区西新宿2-8-1');
+    await expect(page.getByTestId('mileage-result')).toHaveCount(0);
+    await expect(page.getByRole('button', { name: '自宅に戻す' })).toBeVisible();
+    await page.getByRole('button', { name: 'ルートを調べて金額を計算' }).click();
+    await expect(page.getByTestId('mileage-result')).toBeVisible();
+    expect((await mm.mapsCalls()).last).toMatchObject({ origin: '東京都新宿区西新宿2-8-1', destination: dest });
+    await page.getByRole('button', { name: '申請する' }).click();
+    await expect(page.getByText('申請しました')).toBeVisible();
+    const card = page.getByRole('button', { name: /自家用車: 自宅→/ });   // the title was made when the first figure came out, from home
+    await card.click();
+    await expect(page.getByText(`🚗 自家用車: 東京都新宿区西新宿2-8-1 → ${dest}`)).toBeVisible();
+    expect(await db.expense_claims.findFirst({ where: { user_id: USERS.sato.id } })).toMatchObject({ mileage_origin: '東京都新宿区西新宿2-8-1', mileage_destination: dest });
+    // editing it opens with that start, and "自宅に戻す" puts the home back
+    await page.getByRole('button', { name: '編集' }).click();
+    await expect(page.getByLabel('出発地（住所・施設名）')).toHaveValue('東京都新宿区西新宿2-8-1');
+    await page.getByRole('button', { name: '自宅に戻す' }).click();
+    await expect(page.getByLabel('出発地（住所・施設名）')).toHaveValue(HOME);
   });
 
   test('行き先を入れて計算すると往復の距離と金額が出て、申請すると一覧に出る', async ({ page }) => {

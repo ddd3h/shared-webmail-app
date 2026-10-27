@@ -21,6 +21,7 @@ const schema = z.object({
   // undefined = leave as is, null = detach from the trip
   trip_id: z.string().min(1).nullable().optional(),
   destination: z.string().trim().min(1).max(MAX_ADDRESS_LENGTH).optional(),
+  origin: z.string().trim().max(MAX_ADDRESS_LENGTH).optional(),
   manual_one_way_km: z.number().positive().max(1000).optional(),
 });
 
@@ -48,12 +49,12 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     if (!d.destination) return NextResponse.json({ error: 'invalid_body' }, { status: 400 });
     paymentMethod = 'personal';
     const unchanged = claim.category === MILEAGE_CATEGORY && claim.mileage_destination === d.destination.trim() && d.manual_one_way_km === undefined
-      && claim.mileage_origin === (await homeAddressOf(session.userId));
+      && claim.mileage_origin === (d.origin?.trim() || (await homeAddressOf(session.userId)));
     if (unchanged) {
       amount = claim.amount;
       mileage = {};
     } else {
-      const r = await resolveMileage(session.userId, { destination: d.destination, manual_one_way_km: d.manual_one_way_km });
+      const r = await resolveMileage(session.userId, { destination: d.destination, origin: d.origin, manual_one_way_km: d.manual_one_way_km });
       if (isMileageError(r)) return NextResponse.json({ error: r.error }, { status: r.status });
       amount = r.amount;
       mileage = { mileage_origin: r.origin, mileage_destination: r.destination, mileage_distance_m: r.distance_m, mileage_rate: r.rate, mileage_source: r.source };

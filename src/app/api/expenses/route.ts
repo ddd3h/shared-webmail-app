@@ -14,7 +14,7 @@ import { loadSchedules, planOf } from '@/lib/pay-schedule-server';
 import { MAX_ADDRESS_LENGTH, mapsLink, metersToKm } from '@/lib/mileage';
 
 const include = {
-  user: { select: { id: true, name: true, worker_type: true } },
+  user: { select: { id: true, name: true, worker_type: true, home_address: true } },
   reviewer: { select: { name: true } },
   payslip: { select: { id: true, pay_month: true, title: true, status: true } },
   trip: { select: { id: true, destination: true, start_date: true, end_date: true } },
@@ -44,7 +44,7 @@ function serialize(c: any, schedules: Awaited<ReturnType<typeof loadSchedules>>[
     payslip: c.payslip ?? null,
     trip: c.trip ? { id: c.trip.id, destination: c.trip.destination, start_date: c.trip.start_date.toISOString().slice(0, 10), end_date: c.trip.end_date.toISOString().slice(0, 10) } : null,
     mileage: c.mileage_distance_m != null && c.mileage_origin && c.mileage_destination ? {
-      origin: c.mileage_origin, destination: c.mileage_destination, round_trip_km: metersToKm(c.mileage_distance_m), rate_per_km: c.mileage_rate,
+      origin: c.mileage_origin, from_home: !!c.user.home_address && c.user.home_address.trim() === c.mileage_origin, destination: c.mileage_destination, round_trip_km: metersToKm(c.mileage_distance_m), rate_per_km: c.mileage_rate,
       source: c.mileage_source, map_url: mapsLink(c.mileage_origin, c.mileage_destination),
     } : null,
     receipts: c.receipts,
@@ -109,6 +109,7 @@ const fieldsSchema = z.object({
   description: z.string().trim().max(2000).optional(),
   trip_id: z.string().min(1).optional(),
   destination: z.string().trim().min(1).max(MAX_ADDRESS_LENGTH).optional(),
+  origin: z.string().trim().max(MAX_ADDRESS_LENGTH).optional(), // where the trip started, when not from home
   manual_one_way_km: z.coerce.number().positive().max(1000).optional(),
 });
 
@@ -121,7 +122,7 @@ export async function POST(req: NextRequest) {
 
   let fd: FormData;
   try { fd = await req.formData(); } catch { return NextResponse.json({ error: 'file_too_large' }, { status: 413 }); }
-  const parsed = fieldsSchema.safeParse(Object.fromEntries(['expense_date', 'category', 'title', 'amount', 'payment_method', 'description', 'trip_id', 'destination', 'manual_one_way_km'].map(k => [k, fd.get(k) || undefined])));
+  const parsed = fieldsSchema.safeParse(Object.fromEntries(['expense_date', 'category', 'title', 'amount', 'payment_method', 'description', 'trip_id', 'destination', 'origin', 'manual_one_way_km'].map(k => [k, fd.get(k) || undefined])));
   if (!parsed.success) return NextResponse.json({ error: 'invalid_body' }, { status: 400 });
   const files = fd.getAll('file').filter(f => f instanceof File && (f as File).size > 0) as File[];
   if (files.length > MAX_RECEIPTS) return NextResponse.json({ error: 'too_many_files' }, { status: 400 });
@@ -129,11 +130,11 @@ export async function POST(req: NextRequest) {
   if (files.some(f => !isReceiptType(f.type))) return NextResponse.json({ error: 'invalid_file_type' }, { status: 400 });
 
   const d = parsed.data;
-  // an own-car claim: the amount comes from the route (home -> destination, there and back) at the current rate, never from the form
+  // an own-car claim: the amount comes from the route (start, home unless another is given -> destination, there and back) at the current rate, never from the form
   let mileage: Awaited<ReturnType<typeof resolveMileage>> | null = null;
   if (d.category === MILEAGE_CATEGORY) {
     if (!d.destination) return NextResponse.json({ error: 'invalid_body' }, { status: 400 });
-    mileage = await resolveMileage(actor.id, { destination: d.destination, manual_one_way_km: d.manual_one_way_km });
+    mileage = await resolveMileage(actor.id, { destination: d.destination, origin: d.origin, manual_one_way_km: d.manual_one_way_km });
     if (isMileageError(mileage)) return NextResponse.json({ error: mileage.error }, { status: mileage.status });
   } else if (d.amount === undefined) {
     return NextResponse.json({ error: 'invalid_body' }, { status: 400 });
