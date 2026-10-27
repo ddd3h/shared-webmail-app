@@ -9,6 +9,7 @@ export type Claim = {
   reviewer: string | null; review_comment: string | null; reimbursed_at: string | null; reimburse_note: string | null; receipts: Receipt[];
   payslip: { id: string; pay_month: string; title: string; status: string } | null;
   trip: { id: string; destination: string; start_date: string; end_date: string } | null;
+  transit: { from: string | null; to: string | null; summary: string | null; yahoo_url: string | null; google_url: string | null } | null;
   in_batch?: boolean;
   pay_plan: Plan | null;
   mileage: { origin: string; from_home?: boolean; destination: string; round_trip_km: number; rate_per_km: number; source: 'google' | 'osm' | 'manual'; map_url: string } | null;
@@ -52,6 +53,13 @@ export function ClaimDetail({ c }: { c: Claim }) {
   return (
     <div className="space-y-2 text-sm">
       {c.trip && <p className="text-xs text-sky-700">出張: {c.trip.destination}（{c.trip.start_date.slice(5).replace('-', '/')}〜{c.trip.end_date.slice(5).replace('-', '/')}）</p>}
+      {c.transit && (
+        <div className="rounded-lg bg-emerald-50 px-3 py-2 text-xs text-emerald-900 space-y-0.5">
+          <p>🚆 公共交通機関: {c.transit.from ?? '—'} → {c.transit.to ?? '—'}</p>
+          {c.transit.summary && <p className="text-emerald-800 wrap-break-word">{c.transit.summary}</p>}
+          {c.transit.yahoo_url && <p className="text-emerald-700">経路を確かめる: <a href={c.transit.yahoo_url} target="_blank" rel="noreferrer" className="underline">Yahoo!乗換案内</a> ・ <a href={c.transit.google_url!} target="_blank" rel="noreferrer" className="underline">Googleマップ</a></p>}
+        </div>
+      )}
       {c.mileage && (
         <div className="rounded-lg bg-sky-50 px-3 py-2 text-xs text-sky-900 space-y-0.5">
           <p>🚗 自家用車: {c.mileage.from_home ? '自宅' : c.mileage.origin} → {c.mileage.destination}（往復 {c.mileage.round_trip_km} km × {c.mileage.rate_per_km}円）</p>

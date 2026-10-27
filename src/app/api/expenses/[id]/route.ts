@@ -22,6 +22,9 @@ const schema = z.object({
   trip_id: z.string().min(1).nullable().optional(),
   destination: z.string().trim().min(1).max(MAX_ADDRESS_LENGTH).optional(),
   origin: z.string().trim().max(MAX_ADDRESS_LENGTH).optional(),
+  transit_from: z.string().trim().max(MAX_ADDRESS_LENGTH).nullable().optional(),   // undefined = keep, null/'' = remove
+  transit_to: z.string().trim().max(MAX_ADDRESS_LENGTH).nullable().optional(),
+  transit_summary: z.string().trim().max(500).nullable().optional(),
   manual_one_way_km: z.number().positive().max(1000).optional(),
 });
 
@@ -67,6 +70,9 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     data: {
       expense_date: toDbDate(d.expense_date), category: d.category, title: d.title, amount,
       payment_method: paymentMethod, description: d.description || null, ...mileage,
+      // the public-transport route belongs to 交通費 only; another category clears it
+      ...(d.category !== '交通費' ? { transit_from: null, transit_to: null, transit_summary: null }
+        : { ...(d.transit_from !== undefined ? { transit_from: d.transit_from || null } : {}), ...(d.transit_to !== undefined ? { transit_to: d.transit_to || null } : {}), ...(d.transit_summary !== undefined ? { transit_summary: d.transit_summary || null } : {}) }),
       ...(d.trip_id !== undefined ? { trip_id: d.trip_id } : {}),
       status: 'pending', reviewed_by_id: null, reviewed_at: null, review_comment: null,
     },

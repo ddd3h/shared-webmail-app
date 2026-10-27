@@ -42,7 +42,7 @@ export function startMattermostMock(): Promise<() => Promise<void>> {
   let failFreee: 'down' | 'invalid' | null = null;
   let freeeCompanies = 1;
   let failMaps: 'down' | 'denied' | null = null;
-  let lastMaps: { key: string; origin?: string; destination?: string; mode?: string } | null = null;
+  let lastMaps: { key: string; origin?: string; destination?: string; mode?: string; departureTime?: string } | null = null;
 
   const server = http.createServer((req, res) => {
     let body = '';
@@ -65,7 +65,18 @@ export function startMattermostMock(): Promise<() => Promise<void>> {
       if (url === '/maps/directions/v2:computeRoutes') {
         mapsCalls++;
         const parsed = JSON.parse(body || '{}');
-        lastMaps = { key: String(req.headers['x-goog-api-key'] ?? ''), origin: parsed.origin?.address, destination: parsed.destination?.address, mode: parsed.travelMode };
+        lastMaps = { key: String(req.headers['x-goog-api-key'] ?? ''), origin: parsed.origin?.address, destination: parsed.destination?.address, mode: parsed.travelMode, departureTime: parsed.departureTime };
+        if (parsed.travelMode === 'TRANSIT') {
+          // public transport: 新宿 has a fare and two legs, 運賃なし has none, 見つからない is unknown
+          const to: string = parsed.destination?.address ?? '';
+          if (failMaps === 'down') return send({ error: { status: 'UNAVAILABLE', message: 'down' } }, 503);
+          if (/見つからない/.test(to)) return send({ error: { status: 'NOT_FOUND', message: 'Address not found (geocoding failed)' } }, 404);
+          const walk = { travelMode: 'WALK', staticDuration: '300s' };
+          const ride = (line: string, a: string, b: string, secs: number, stops: number) => ({ travelMode: 'TRANSIT', staticDuration: `${secs}s`, transitDetails: { stopDetails: { departureStop: { name: a }, arrivalStop: { name: b } }, transitLine: { name: line, nameShort: line }, stopCount: stops } });
+          const steps = /新宿/.test(to) ? [walk, ride('JR埼京線', '川越', '赤羽', 1500, 8), ride('JR山手線', '赤羽', '新宿', 900, 6), walk] : [walk, ride('東京メトロ丸ノ内線', '東京', to, 1200, 7)];
+          const fare = /運賃なし/.test(to) || !/新宿/.test(to) ? {} : { travelAdvisory: { transitFare: { currencyCode: 'JPY', units: '590' } } };
+          return send({ routes: [{ duration: `${steps.reduce((s, x) => s + parseInt(x.staticDuration, 10), 0)}s`, legs: [{ steps }], ...fare }] });
+        }
         if (failMaps === 'down') return send({ error: { status: 'UNAVAILABLE', message: 'down' } }, 503);
         if (failMaps === 'denied') return send({ error: { status: 'PERMISSION_DENIED', message: 'API key not valid' } }, 400);
         const dest: string = parsed.destination?.address ?? '';
@@ -164,7 +175,7 @@ export const mm = {
   async imageHits(): Promise<number> { return (await (await fetch(`${MM_URL}/__image_hits`)).json()).hits; },
   async failEmbeddings(on = true) { await fetch(`${MM_URL}/__fail_embeddings`, { method: 'POST', body: JSON.stringify({ on }) }); },
   async embeddingCalls(): Promise<number> { return (await (await fetch(`${MM_URL}/__embedding_calls`)).json()).calls; },
-  async mapsCalls(): Promise<{ calls: number; last: { key: string; origin?: string; destination?: string; mode?: string } | null }> { return (await fetch(`${MM_URL}/__maps_calls`)).json(); },
+  async mapsCalls(): Promise<{ calls: number; last: { key: string; origin?: string; destination?: string; mode?: string; departureTime?: string } | null }> { return (await fetch(`${MM_URL}/__maps_calls`)).json(); },
   async failMaps(mode: 'down' | 'denied' | null) { await fetch(`${MM_URL}/__fail_maps`, { method: 'POST', body: JSON.stringify({ mode }) }); },
   osm: {
     async state(): Promise<{ gsi: string[]; nominatim: { q: string; ua: string }[]; osrm: string[]; uas: string[] }> { return (await fetch(`${MM_URL}/__osm_state`)).json(); },

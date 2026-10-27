@@ -890,6 +890,10 @@ model expense_claims {
   mileage_distance_m Int?      // the whole round trip
   mileage_rate       Int?      // yen per km
   mileage_source     String?   // 'google' (route search) or 'manual' (typed in; only when no route service is set up)
+  // public transport (category 交通費): where the person went from and to, and the route that was shown, so the approver can check the fare
+  transit_from       String?
+  transit_to         String?
+  transit_summary    String?
   created_at       DateTime  @default(now())
   updated_at       DateTime  @updatedAt
 

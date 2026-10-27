@@ -11,6 +11,7 @@ import { checkTripLink } from '@/lib/trip-server';
 import { EXPENSE_CATEGORIES, MAX_AMOUNT, MAX_RECEIPTS, MILEAGE_CATEGORY, isReceiptType, summarize } from '@/lib/expense';
 import { isMileageError, resolveMileage } from '@/lib/mileage-server';
 import { loadSchedules, planOf } from '@/lib/pay-schedule-server';
+import { googleTransitLink, yahooTransitLink } from '@/lib/transit';
 import { MAX_ADDRESS_LENGTH, mapsLink, metersToKm } from '@/lib/mileage';
 
 const include = {
@@ -46,6 +47,11 @@ function serialize(c: any, schedules: Awaited<ReturnType<typeof loadSchedules>>[
     mileage: c.mileage_distance_m != null && c.mileage_origin && c.mileage_destination ? {
       origin: c.mileage_origin, from_home: !!c.user.home_address && c.user.home_address.trim() === c.mileage_origin, destination: c.mileage_destination, round_trip_km: metersToKm(c.mileage_distance_m), rate_per_km: c.mileage_rate,
       source: c.mileage_source, map_url: mapsLink(c.mileage_origin, c.mileage_destination),
+    } : null,
+    transit: c.transit_from || c.transit_to ? {
+      from: c.transit_from, to: c.transit_to, summary: c.transit_summary,
+      yahoo_url: c.transit_from && c.transit_to ? yahooTransitLink({ from: c.transit_from, to: c.transit_to, date: c.expense_date.toISOString().slice(0, 10) }) : null,
+      google_url: c.transit_from && c.transit_to ? googleTransitLink({ from: c.transit_from, to: c.transit_to, date: c.expense_date.toISOString().slice(0, 10) }) : null,
     } : null,
     receipts: c.receipts,
     created_at: c.created_at,
@@ -110,6 +116,9 @@ const fieldsSchema = z.object({
   trip_id: z.string().min(1).optional(),
   destination: z.string().trim().min(1).max(MAX_ADDRESS_LENGTH).optional(),
   origin: z.string().trim().max(MAX_ADDRESS_LENGTH).optional(), // where the trip started, when not from home
+  transit_from: z.string().trim().max(MAX_ADDRESS_LENGTH).optional(),   // 交通費 by public transport: where from / to, and the route that was shown
+  transit_to: z.string().trim().max(MAX_ADDRESS_LENGTH).optional(),
+  transit_summary: z.string().trim().max(500).optional(),
   manual_one_way_km: z.coerce.number().positive().max(1000).optional(),
 });
 
@@ -122,7 +131,7 @@ export async function POST(req: NextRequest) {
 
   let fd: FormData;
   try { fd = await req.formData(); } catch { return NextResponse.json({ error: 'file_too_large' }, { status: 413 }); }
-  const parsed = fieldsSchema.safeParse(Object.fromEntries(['expense_date', 'category', 'title', 'amount', 'payment_method', 'description', 'trip_id', 'destination', 'origin', 'manual_one_way_km'].map(k => [k, fd.get(k) || undefined])));
+  const parsed = fieldsSchema.safeParse(Object.fromEntries(['expense_date', 'category', 'title', 'amount', 'payment_method', 'description', 'trip_id', 'destination', 'origin', 'manual_one_way_km', 'transit_from', 'transit_to', 'transit_summary'].map(k => [k, fd.get(k) || undefined])));
   if (!parsed.success) return NextResponse.json({ error: 'invalid_body' }, { status: 400 });
   const files = fd.getAll('file').filter(f => f instanceof File && (f as File).size > 0) as File[];
   if (files.length > MAX_RECEIPTS) return NextResponse.json({ error: 'too_many_files' }, { status: 400 });
@@ -146,6 +155,7 @@ export async function POST(req: NextRequest) {
       data: {
         user_id: actor.id, expense_date: toDbDate(d.expense_date), category: d.category, title: d.title,
         amount: mileage ? mileage.amount : d.amount!, payment_method: mileage ? 'personal' : d.payment_method, description: d.description || null, trip_id: d.trip_id ?? null,
+        ...(d.category === '交通費' && (d.transit_from || d.transit_to) ? { transit_from: d.transit_from || null, transit_to: d.transit_to || null, transit_summary: d.transit_summary || null } : {}),
         ...(mileage ? { mileage_origin: mileage.origin, mileage_destination: mileage.destination, mileage_distance_m: mileage.distance_m, mileage_rate: mileage.rate, mileage_source: mileage.source } : {}),
         receipts: { create: saved },
       },

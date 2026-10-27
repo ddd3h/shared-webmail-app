@@ -4,9 +4,10 @@ import { Modal, Notice, Stat, api, btn, btnPrimary, inp, yen } from '@/component
 import { CATEGORIES, ClaimDetail, ClaimHeader, type Claim, type Summary } from './shared';
 import FilterBar from '@/components/mobile/FilterBar';
 import { MILEAGE_CATEGORY } from '@/lib/expense';
+import { googleTransitLink, yahooTransitLink, type TransitRoute } from '@/lib/transit';
 
 type Trip = { id: string; destination: string; start_date: string; end_date: string };
-type Form = { id?: string; trip_id: string; expense_date: string; category: string; title: string; amount: string; payment_method: 'personal' | 'company'; description: string; destination: string; origin: string; manual_km: string };
+type Form = { id?: string; trip_id: string; expense_date: string; category: string; title: string; amount: string; payment_method: 'personal' | 'company'; description: string; destination: string; origin: string; manual_km: string; transit_from: string; transit_to: string; transit_time: string; transit_summary: string };
 type MileageInfo = { rate_per_km: number; route_service: boolean; home_address: string | null };
 type Estimate = { destination: string; round_trip_km: number; rate_per_km: number; amount: number; source: 'google' | 'osm' | 'manual'; map_url: string };
 const MILEAGE_ERRORS: Record<string, string> = {
@@ -33,6 +34,10 @@ export default function MyExpenses({ initialTripId }: { initialTripId?: string }
   const [est, setEst] = useState<Estimate | null>(null);
   const [estimating, setEstimating] = useState(false);
   const [estError, setEstError] = useState<string | null>(null);
+  const [transitInApp, setTransitInApp] = useState(false);   // 交通費 by train/bus: the route can be shown here (Google Maps way of searching), otherwise links to free sites
+  const [transit, setTransit] = useState<(TransitRoute & { summary: string }) | null>(null);
+  const [transitBusy, setTransitBusy] = useState(false);
+  const [transitError, setTransitError] = useState<string | null>(null);
   const [msg, setMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   const seq = useRef(0);
@@ -43,7 +48,7 @@ export default function MyExpenses({ initialTripId }: { initialTripId?: string }
     if (res.ok) { const d = await res.json(); setItems(d.items); setSummary(d.summary); }
   }, [filter]);
   useEffect(() => { load(); }, [load]);
-  useEffect(() => { fetch('/api/expenses/mileage').then(r => r.json()).then(setMi).catch(() => {}); }, []);
+  useEffect(() => { fetch('/api/expenses/mileage').then(r => r.json()).then(setMi).catch(() => {}); fetch('/api/expenses/transit').then(r => r.json()).then(d => setTransitInApp(!!d.in_app)).catch(() => {}); }, []);
   // the form was opened before the home address arrived: it starts from home as soon as it is known (a start typed meanwhile is kept)
   useEffect(() => { if (mi?.home_address) setForm(f => (f && !f.id && f.origin === '' ? { ...f, origin: mi.home_address! } : f)); }, [mi]);
   useEffect(() => {
@@ -59,20 +64,32 @@ export default function MyExpenses({ initialTripId }: { initialTripId?: string }
   function flash(type: 'success' | 'error', text: string) { setMsg({ type, text }); setTimeout(() => setMsg(null), 5000); }
 
   const today = () => new Date(Date.now() + 9 * 3600_000).toISOString().slice(0, 10);
-  const blank = (): Form => ({ trip_id: '', expense_date: today(), category: CATEGORIES[0], title: '', amount: '', payment_method: 'personal', description: '', destination: '', origin: mi?.home_address ?? '', manual_km: '' });
+  const blank = (): Form => ({ trip_id: '', expense_date: today(), category: CATEGORIES[0], title: '', amount: '', payment_method: 'personal', description: '', destination: '', origin: mi?.home_address ?? '', manual_km: '', transit_from: '', transit_to: '', transit_time: '', transit_summary: '' });
   const editing = form?.id ? items.find(i => i.id === form.id) : undefined;
 
   const isMileage = form?.category === MILEAGE_CATEGORY;
   // the destination or the typed distance changed: the figure on screen is no longer the one for it
   function editForm(next: Form) {
     if (next.destination !== form?.destination || next.origin !== form?.origin || next.manual_km !== form?.manual_km) { setEst(null); setEstError(null); }
+    if (next.transit_from !== form?.transit_from || next.transit_to !== form?.transit_to || next.transit_time !== form?.transit_time || next.expense_date !== form?.expense_date) { setTransit(null); setTransitError(null); next = { ...next, transit_summary: '' }; }
     setForm(next);
   }
   function openForm(f: Form, claim?: Claim) {
-    setFiles([]); setEstError(null);
+    setFiles([]); setEstError(null); setTransit(null); setTransitError(null);
     setEst(claim?.mileage ? { destination: claim.mileage.destination, round_trip_km: claim.mileage.round_trip_km, rate_per_km: claim.mileage.rate_per_km, amount: claim.amount, source: claim.mileage.source, map_url: claim.mileage.map_url } : null);
     setForm(f);
   }
+  async function showTransit() {
+    if (!form || !form.transit_from.trim() || !form.transit_to.trim()) return;
+    setTransitBusy(true); setTransitError(null); setTransit(null);
+    try {
+      const res = await api('/api/expenses/transit', 'POST', { from: form.transit_from.trim(), to: form.transit_to.trim(), date: form.expense_date, ...(form.transit_time ? { time: form.transit_time } : {}) });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) { setTransitError(d.error === 'route_not_found' ? 'ルートが見つかりません。駅名や住所をもう少し詳しく入力してください' : d.error === 'too_many_requests' ? '調べる回数が多すぎます。少し待ってからもう一度お試しください' : 'ルートを調べられませんでした。下の乗換案内のリンクで調べてください'); return; }
+      if (d.route) { setTransit(d.route); setForm({ ...form, transit_summary: d.route.summary }); }
+    } finally { setTransitBusy(false); }
+  }
+
   async function estimate() {
     if (!form || !form.destination.trim()) return;
     setEstimating(true); setEstError(null); setEst(null);
@@ -96,6 +113,7 @@ export default function MyExpenses({ initialTripId }: { initialTripId?: string }
         const res = await api(`/api/expenses/${id}`, 'PATCH', {
           expense_date: form.expense_date, category: form.category, title: form.title,
           payment_method: form.payment_method, description: form.description || null, trip_id: form.trip_id || null,
+          ...(form.category === '交通費' ? { transit_from: form.transit_from.trim() || null, transit_to: form.transit_to.trim() || null, transit_summary: form.transit_summary.trim() || null } : {}),
           ...(isMileage ? { destination: form.destination.trim(), origin: form.origin.trim(), ...(est?.source === 'manual' && form.manual_km ? { manual_one_way_km: Number(form.manual_km) } : {}) } : { amount: Number(form.amount) }),
         });
         if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(MILEAGE_ERRORS[e.error] ?? ''); }
@@ -107,6 +125,7 @@ export default function MyExpenses({ initialTripId }: { initialTripId?: string }
       } else {
         const fd = new FormData();
         (['expense_date', 'category', 'title', 'payment_method', 'description'] as const).forEach(k => fd.append(k, form[k]));
+        if (form.category === '交通費') { for (const k of ['transit_from', 'transit_to', 'transit_summary'] as const) if (form[k].trim()) fd.append(k, form[k].trim()); }
         if (isMileage) { fd.append('destination', form.destination.trim()); fd.append('origin', form.origin.trim()); if (est?.source === 'manual' && form.manual_km) fd.append('manual_one_way_km', form.manual_km); } else fd.append('amount', form.amount);
         if (form.trip_id) fd.append('trip_id', form.trip_id);
         files.forEach(f => fd.append('file', f));
@@ -154,7 +173,7 @@ export default function MyExpenses({ initialTripId }: { initialTripId?: string }
                 <ClaimDetail c={c} />
                 {(c.status === 'pending' || c.status === 'rejected') && (
                   <div className="flex gap-3 text-xs">
-                    <button className="text-blue-600 hover:underline" onClick={() => openForm({ id: c.id, trip_id: c.trip?.id ?? '', expense_date: c.expense_date, category: c.category, title: c.title, amount: String(c.amount), payment_method: c.payment_method, description: c.description || '', destination: c.mileage?.destination ?? '', origin: c.mileage?.origin ?? '', manual_km: '' }, c)}>
+                    <button className="text-blue-600 hover:underline" onClick={() => openForm({ id: c.id, trip_id: c.trip?.id ?? '', expense_date: c.expense_date, category: c.category, title: c.title, amount: String(c.amount), payment_method: c.payment_method, description: c.description || '', destination: c.mileage?.destination ?? '', origin: c.mileage?.origin ?? '', manual_km: '', transit_from: c.transit?.from ?? '', transit_to: c.transit?.to ?? '', transit_time: '', transit_summary: c.transit?.summary ?? '' }, c)}>
                       {c.status === 'rejected' ? '修正して再申請' : '編集'}
                     </button>
                     <button className="text-red-600 hover:underline" onClick={() => withdraw(c.id)}>取り下げ</button>
@@ -228,6 +247,35 @@ export default function MyExpenses({ initialTripId }: { initialTripId?: string }
               </div>
             ) : (
               <>
+            {form.category === '交通費' && (
+              <div className="space-y-2 rounded-xl border border-emerald-200 bg-emerald-50/50 p-3" data-testid="transit-box">
+                <p className="text-xs text-emerald-900">電車・バスで移動したときは、出発と到着を入れると、最適なルートを調べられます（任意）。調べた経路は申請に残り、承認者が確認できます。</p>
+                <div className="grid grid-cols-2 gap-2">
+                  <div><label className="text-xs text-gray-600" htmlFor="transit-from">出発（駅・住所）</label><input id="transit-from" className={inp} placeholder="例: 川越駅" maxLength={300} value={form.transit_from} onChange={e => editForm({ ...form, transit_from: e.target.value })} /></div>
+                  <div><label className="text-xs text-gray-600" htmlFor="transit-to">到着（駅・住所）</label><input id="transit-to" className={inp} placeholder="例: 新宿駅" maxLength={300} value={form.transit_to} onChange={e => editForm({ ...form, transit_to: e.target.value })} /></div>
+                </div>
+                <div className="max-w-[10rem]"><label className="text-xs text-gray-600" htmlFor="transit-time">出発時刻（任意）</label><input id="transit-time" type="time" className={inp} value={form.transit_time} onChange={e => editForm({ ...form, transit_time: e.target.value })} /></div>
+                {form.transit_from.trim() && form.transit_to.trim() && (
+                  <div className="flex flex-wrap gap-2">
+                    {transitInApp && <button type="button" className={btn} disabled={transitBusy} onClick={showTransit}>{transitBusy ? '調べています…' : '最適ルートを表示'}</button>}
+                    <a className={btn} target="_blank" rel="noreferrer" href={yahooTransitLink({ from: form.transit_from.trim(), to: form.transit_to.trim(), date: form.expense_date, time: form.transit_time || undefined })}>Yahoo!乗換案内で見る ↗</a>
+                    <a className={btn} target="_blank" rel="noreferrer" href={googleTransitLink({ from: form.transit_from.trim(), to: form.transit_to.trim(), date: form.expense_date })}>Googleマップで見る ↗</a>
+                  </div>
+                )}
+                {!transitInApp && form.transit_from.trim() && form.transit_to.trim() && <p className="text-xs text-gray-500">この画面でルートを表示するには、システム管理者がGoogleマップの設定をする必要があります。上のボタンで、乗換案内サイトの最適ルートを無料で開けます。</p>}
+                {transitError && <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700">{transitError}</p>}
+                {transit && (
+                  <div className="rounded-lg bg-white px-3 py-2 text-sm space-y-1" data-testid="transit-result">
+                    <div className="text-xs text-gray-500">約{transit.minutes}分 ・ 乗換{transit.transfers}回{transit.fare_yen !== null ? ` ・ 運賃 ${yen(transit.fare_yen)}` : ' ・ 運賃はこの経路では分かりません'}</div>
+                    <ol className="space-y-0.5 text-xs text-gray-800">
+                      {transit.steps.map((s, i) => <li key={i}>{s.kind === 'walk' ? `🚶 徒歩 約${s.minutes}分` : `🚆 ${s.line ?? '電車・バス'}（${s.from ?? ''} → ${s.to ?? ''}）約${s.minutes}分`}</li>)}
+                    </ol>
+                    {transit.fare_yen !== null && <button type="button" className="text-xs text-blue-600 underline" onClick={() => setForm({ ...form, amount: String(transit.fare_yen) })}>この運賃を金額に入れる</button>}
+                    <p className="text-[11px] text-gray-400">運賃や経路は目安です。実際に払った金額を入力してください。</p>
+                  </div>
+                )}
+              </div>
+            )}
             <div className="grid grid-cols-2 gap-2">
                 <div><label className="text-xs text-gray-600">金額（円）</label><input type="number" min={1} className={`${inp} text-right`} value={form.amount} onChange={e => setForm({ ...form, amount: e.target.value })} /></div>
                 <div><label className="text-xs text-gray-600">支払方法</label>
