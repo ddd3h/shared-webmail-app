@@ -6,7 +6,7 @@
     "dev": "node scripts/with-db.mjs --migrate -- next dev",
     "dev:nodb": "next dev",
     "db:reset": "docker compose -f docker-compose.dev.yml down -v",
-    "build": "next build",
+    "build": "node scripts/build.mjs",
     "postbuild": "cp -r public .next/standalone/ && cp -r .next/static .next/standalone/.next/ && cp -r .next/server .next/standalone/.next/",
     "start": "node .next/standalone/server.js",
     "prisma:generate": "prisma generate",
