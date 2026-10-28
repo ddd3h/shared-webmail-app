@@ -101,7 +101,11 @@ export async function runAutoflow(opts: { now?: Date; dry?: boolean; config?: Au
     const done = new Set(sentBefore.map(keyOf));
     const items: PreviewItem[] = notices.map(n => ({ ...n, already_sent: done.has(keyOf({ ...n, user_id: n.user.id })), user_name: names.get(n.user.id) ?? '' }));
     // 固定報酬の下書き（ON のときだけ）。プレビューでは作らずに「作るはずのもの」を見せる
-    const drafts = config.fixed_pay.enabled ? await generateFixedDrafts({ today, dry: opts.dry }) : [];
+    // 下書きの作成でエラーが出ても、今日の通知は止めない（同じ日の再実行でまた試す）
+    let drafts: DraftResult[] = [];
+    if (config.fixed_pay.enabled) {
+      try { drafts = await generateFixedDrafts({ today, dry: opts.dry }); } catch (e) { console.error('[autoflow] fixed-pay drafts failed:', e); }
+    }
     const result: RunResult = { today, planned: items.length, sent: 0, skipped: items.filter(i => i.already_sent).length, delivered: 0, items, drafts };
     if (opts.dry) return result;
 

@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from 'next/server';
 vi.mock('@/lib/db', () => ({
   prisma: {
     users: { findUnique: vi.fn(), findMany: vi.fn() },
+    autoflow_notices: { findFirst: vi.fn(), create: vi.fn(), delete: vi.fn() },
     fixed_pay_plans: { findMany: vi.fn(), findUnique: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn() },
     pay_extras: { findMany: vi.fn(), findUnique: vi.fn(), create: vi.fn(), delete: vi.fn() },
     payslips: { findUnique: vi.fn(), findFirst: vi.fn(), create: vi.fn(), delete: vi.fn() },
@@ -42,6 +43,9 @@ beforeEach(() => {
   db.payslips.findUnique.mockResolvedValue(null);
   db.payslips.findFirst.mockResolvedValue(null);
   db.payslips.create.mockResolvedValue({ id: 'slip1' });
+  db.autoflow_notices.findFirst.mockResolvedValue(null);
+  db.autoflow_notices.create.mockResolvedValue({ id: 'claim1' });
+  db.autoflow_notices.delete.mockResolvedValue({});
 });
 
 describe('権限', () => {
@@ -164,6 +168,43 @@ describe('固定報酬の下書き', () => {
   it('ロックされた人の計画は読まない', async () => {
     await generateFixedDrafts({ today: OCT_END });
     expect(db.fixed_pay_plans.findMany.mock.calls[0][0].where).toMatchObject({ active: true, user: { locked_at: null } });
+  });
+  it('作ったときに「作った」印を残す（消された下書きを次の日に作り直さないため）', async () => {
+    db.fixed_pay_plans.findMany.mockResolvedValue([plan]);
+    await generateFixedDrafts({ today: OCT_END });
+    expect(db.autoflow_notices.create.mock.calls[0][0].data).toMatchObject({ rule: 'fixed', stage: 'draft', subject_key: 'fixed:u1:2026-10', user_id: 'u1' });
+  });
+  it('印があるのに下書きがない（経理が消した）月は、毎日の実行では作り直さない', async () => {
+    db.fixed_pay_plans.findMany.mockResolvedValue([plan]);
+    db.autoflow_notices.findFirst.mockResolvedValue({ id: 'claim1' });
+    const out = await generateFixedDrafts({ today: '2026-11-03' });
+    expect(out[0]).toMatchObject({ month: '2026-10', status: 'skipped' });
+    expect(db.payslips.create).not.toHaveBeenCalled();
+  });
+  it('経理が月を指定して押したときは、消した下書きも作り直せる', async () => {
+    db.fixed_pay_plans.findMany.mockResolvedValue([plan]);
+    db.autoflow_notices.findFirst.mockResolvedValue({ id: 'claim1' });
+    const body = await (await generate(json({ month: '2026-10' }))).json();
+    expect(body.drafts[0].status).toBe('new');
+    expect(db.payslips.create).toHaveBeenCalledTimes(1);
+    expect(db.autoflow_notices.create).not.toHaveBeenCalled(); // 印は残っているので、足さない
+  });
+  it('別の実行が先に印を取ったときは、作らない', async () => {
+    db.fixed_pay_plans.findMany.mockResolvedValue([plan]);
+    db.autoflow_notices.create.mockRejectedValue(Object.assign(new Error('dup'), { code: 'P2002' }));
+    expect((await generateFixedDrafts({ today: OCT_END }))[0].status).toBe('exists');
+    expect(db.payslips.create).not.toHaveBeenCalled();
+  });
+  it('下書きが作れなかったら、印を戻す（次の実行でやり直せる）', async () => {
+    db.fixed_pay_plans.findMany.mockResolvedValue([plan]);
+    db.payslips.create.mockRejectedValue(new Error('db down'));
+    await expect(generateFixedDrafts({ today: OCT_END })).rejects.toThrow('db down');
+    expect(db.autoflow_notices.delete).toHaveBeenCalledWith({ where: { id: 'claim1' } });
+  });
+  it('プレビュー(dry)は、印を作らない', async () => {
+    db.fixed_pay_plans.findMany.mockResolvedValue([plan]);
+    await generateFixedDrafts({ today: OCT_END, dry: true });
+    expect(db.autoflow_notices.create).not.toHaveBeenCalled();
   });
   it('手動の作成は、指定した月の分を作る', async () => {
     db.fixed_pay_plans.findMany.mockResolvedValue([plan]);

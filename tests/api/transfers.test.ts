@@ -302,7 +302,7 @@ describe('全銀データの作成', () => {
       db.payslips.findMany.mockResolvedValue([slip()]);
       db.__tx.transfer_batches.create.mockImplementation(async (a: any) => ({ id: 'b9', ...a.data }));
       db.__tx.payslips.updateMany.mockResolvedValue({ count: 1 });
-      return createBatch(json({ kind: 'payroll', ids: ['s1'], transfer_date: tomorrow(), ...extra }));
+      return createBatch(json({ kind: 'monthly', items: [{ type: 'payslip', ids: ['s1'] }], transfer_date: tomorrow(), ...extra }));
     };
     it('初期設定（OFF）では、知らせない', async () => {
       expect((await make()).status).toBe(201);
@@ -318,11 +318,20 @@ describe('全銀データの作成', () => {
       expect((await make({ force: true })).status).toBe(201);
       expect(notifyBatchConfirmed).not.toHaveBeenCalled();
     });
+    it('月次まとめ以外（給与の振込・支払のタブ）で作ったファイルでは、知らせない', async () => {
+      store.set('AUTOFLOW_CONFIG', JSON.stringify({ confirm: { enabled: true } }));
+      await configure();
+      db.payslips.findMany.mockResolvedValue([slip()]);
+      db.__tx.transfer_batches.create.mockImplementation(async (a: any) => ({ id: 'b8', ...a.data }));
+      db.__tx.payslips.updateMany.mockResolvedValue({ count: 1 });
+      expect((await createBatch(json({ kind: 'payroll', ids: ['s1'], transfer_date: tomorrow() }))).status).toBe(201);
+      expect(notifyBatchConfirmed).not.toHaveBeenCalled();
+    });
     it('作れなかったとき（問題あり）は、知らせない', async () => {
       store.set('AUTOFLOW_CONFIG', JSON.stringify({ confirm: { enabled: true } }));
       await configure();
       db.payslips.findMany.mockResolvedValue([slip({ batch_id: 'old' })]);
-      expect((await createBatch(json({ kind: 'payroll', ids: ['s1'], transfer_date: tomorrow() }))).status).toBe(422);
+      expect((await createBatch(json({ kind: 'monthly', items: [{ type: 'payslip', ids: ['s1'] }], transfer_date: tomorrow() }))).status).toBe(422);
       expect(notifyBatchConfirmed).not.toHaveBeenCalled();
     });
   });

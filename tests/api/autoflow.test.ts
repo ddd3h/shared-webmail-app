@@ -7,7 +7,7 @@ vi.mock('@/lib/db', () => ({
     users: { findMany: vi.fn() },
     work_reports: { findMany: vi.fn() },
     expense_claims: { findMany: vi.fn() },
-    autoflow_notices: { findMany: vi.fn(), create: vi.fn(), update: vi.fn() },
+    autoflow_notices: { findMany: vi.fn(), findFirst: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn() },
     autoflow_runs: { create: vi.fn(), findUnique: vi.fn(), update: vi.fn() },
     fixed_pay_plans: { findMany: vi.fn() },
     pay_extras: { findMany: vi.fn() },
@@ -55,6 +55,7 @@ beforeEach(() => {
   db.autoflow_runs.create.mockResolvedValue({});
   db.autoflow_runs.update.mockResolvedValue({});
   (sendDirectMessage as any).mockResolvedValue(true);
+  db.autoflow_notices.findFirst.mockResolvedValue(null);
   db.fixed_pay_plans.findMany.mockResolvedValue([]);
   db.pay_extras.findMany.mockResolvedValue([]);
   db.payslips.findUnique.mockResolvedValue(null);
@@ -193,6 +194,17 @@ describe('固定報酬の下書き（オートフローの一部）', () => {
     expect(db.payslips.create).not.toHaveBeenCalled();
   });
 
+  it('下書きの作成でエラーが出ても、今日の通知は止まらない', async () => {
+    store.set('AUTOFLOW_CONFIG', JSON.stringify({ report: { enabled: true }, fixed_pay: { enabled: true } }));
+    db.fixed_pay_plans.findMany.mockRejectedValue(new Error('db down'));
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const r = await runAutoflow({ now: NOW });
+    expect(r.drafts).toEqual([]);
+    expect(r.planned).toBeGreaterThan(0);
+    expect(sendDirectMessage).toHaveBeenCalled();
+    spy.mockRestore();
+  });
+
   it('OFF のときは、登録があっても下書きを作らない', async () => {
     store.set('AUTOFLOW_CONFIG', ON);
     db.fixed_pay_plans.findMany.mockResolvedValue([plan]);
@@ -226,6 +238,12 @@ describe('実行・履歴のAPI', () => {
     }
     expect(sendDirectMessage).not.toHaveBeenCalled();
     expect(logAudit).not.toHaveBeenCalled();
+  });
+
+  it('履歴には、下書きを作った印（rule=fixed）を出さない', async () => {
+    db.autoflow_notices.findMany.mockResolvedValue([]);
+    await notices();
+    expect(db.autoflow_notices.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { rule: { not: 'fixed' } } }));
   });
 
   it('履歴は新しい順で、宛先の名前つき', async () => {

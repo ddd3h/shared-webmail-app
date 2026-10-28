@@ -63,7 +63,7 @@ export default function SettingsPanel() {
       </Row>
       <Row title="振込の確定の通知" enabled={config.confirm.enabled} onToggle={v => set('confirm', { enabled: v })}>
         <p>「振込」の月次まとめで、経理が「承認して確定」（全銀データの作成）をしたとき、振り込まれる人に「お振込が確定しました」とMattermostのDMで知らせます。振込予定日と項目名だけを載せ、金額と口座は載せません。</p>
-        <p>「作成済みも含める」で作り直したときは、送り直しません。</p>
+        <p>月次まとめでの確定だけが対象です。「作成済みも含める」で作り直したときは、送り直しません。</p>
       </Row>
       <Row title="固定報酬の下書き" enabled={config.fixed_pay.enabled} onToggle={v => set('fixed_pay', { enabled: v })}>
         <p>「固定報酬・賞与」に登録された役員報酬・準業務委託の月額から、毎月の締め日に、給与明細の下書き（支払予定）を自動で作ります。同じ月に二重には作りません。</p>

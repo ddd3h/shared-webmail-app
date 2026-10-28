@@ -8,14 +8,19 @@ import { ADDON_PREFIX, bonusKey, draftItems, draftPeriod, fixedKey, isPlanDue } 
 
 export type DraftResult = {
   user_id: string; user_name: string; month: string; label: string; amount: number;
-  status: 'new' | 'exists' | 'conflict'; // conflict: その月の明細を手ですでに入れてある（二重に払わないよう作らない）
+  // conflict: その月の明細を手ですでに入れてある（二重に払わないよう作らない）／skipped: 一度作った下書きが消されている（毎日の実行では作り直さない）
+  status: 'new' | 'exists' | 'conflict' | 'skipped';
 };
 
 const isUnique = (e: unknown) => (e as { code?: string })?.code === 'P2002';
 const NOTE = 'オートフローが、登録された固定報酬から自動で作った下書きです。控除（源泉所得税など）を確認してから振込に進んでください。';
 
+// 「この人のこの月の下書きは、もう作った」という記録。経理が下書きを消して、その月は払わないことにしても、次の日にまた作らないための印。
+// autoflow_notices の unique をそのまま使う（送信履歴には出さない: notices API が rule='fixed' を除く）。
+const CLAIM = { rule: 'fixed', stage: 'draft' } as const;
+
 /**
- * 有効な固定報酬ごとに、今日作るべき月の下書きを作る。`month` を指定すると、その月の分を作る（手動）。
+ * 有効な固定報酬ごとに、今日作るべき月の下書きを作る。`month` を指定すると、その月の分を作る（手動。経理が押したときは、消した下書きも作り直せる）。
  * 何度呼んでも、同じ月の下書きは増えない。`dry` なら作らずに、結果だけ返す。
  */
 export async function generateFixedDrafts(opts: { today: string; month?: string; actorId?: string | null; dry?: boolean }): Promise<DraftResult[]> {
@@ -41,8 +46,21 @@ export async function generateFixedDrafts(opts: { today: string; month?: string;
       select: { id: true },
     });
     if (manual) { out.push({ ...row, status: 'conflict' }); continue; }
+    const manualRun = opts.month !== undefined;
+    const claimed = await prisma.autoflow_notices.findFirst({ where: { ...CLAIM, subject_key: key, user_id: plan.user_id }, select: { id: true } });
+    if (claimed && !manualRun) { out.push({ ...row, status: 'skipped' }); continue; }
     if (opts.dry) { out.push({ ...row, status: 'new' }); continue; }
 
+    // 先に「作った」印を取る（同時に2つの実行が来ても、作るのは1つ）。作れなかったら印を戻す。
+    let claimId: string | null = claimed?.id ?? null;
+    if (!claimId) {
+      try {
+        claimId = (await prisma.autoflow_notices.create({ data: { ...CLAIM, subject_key: key, user_id: plan.user_id, title: `${plan.label} ${month}分の下書き`, delivered: true } })).id;
+      } catch (e) {
+        if (!isUnique(e)) throw e;
+        out.push({ ...row, status: 'exists' }); continue; // 別の実行が先に取った
+      }
+    }
     const addons = await prisma.pay_extras.findMany({ where: { user_id: plan.user_id, pay_month: month, kind: 'addon' }, orderBy: { created_at: 'asc' } });
     try {
       await prisma.payslips.create({
@@ -54,6 +72,7 @@ export async function generateFixedDrafts(opts: { today: string; month?: string;
       });
       out.push({ ...row, status: 'new' });
     } catch (e) {
+      if (!claimed && claimId) await prisma.autoflow_notices.delete({ where: { id: claimId } }).catch(() => {}); // 作れなかったので、印を戻す
       if (!isUnique(e)) throw e;
       out.push({ ...row, status: 'exists' }); // 別の実行が先に作った
     }
@@ -73,12 +92,12 @@ export async function syncAddons(userId: string, month: string): Promise<void> {
   ]);
 }
 
-/** 賞与は、登録したらすぐ、別の給与明細（支払予定）になる。「賞与」を含む題名なので、全銀の賞与の区分(12)で出せる。 */
+/** 賞与は、登録したらすぐ、別の給与明細（支払予定）になる。「賞与」を含む題名なので、「振込」の月次まとめに「賞与」として出る。 */
 export async function createBonusSlip(extra: { id: string; user_id: string; pay_month: string; label: string; amount: number }, actorId: string | null): Promise<string> {
   const user = await prisma.users.findUnique({ where: { id: extra.user_id }, select: { worker_type: true } });
   const { schedules } = await loadSchedules();
   const schedule = schedules[(user?.worker_type ?? 'employee') as WorkerType] ?? DEFAULT_SCHEDULES.employee;
-  const title = isBonusTitle(extra.label) ? extra.label : `賞与（${extra.label}）`; // 題名に「賞与」があると、全銀の賞与の区分で出る
+  const title = isBonusTitle(extra.label) ? extra.label : `賞与（${extra.label}）`; // 題名に「賞与」があると、月次まとめで「賞与」と呼ばれ、経費の立替金も合算されない
   const slip = await prisma.payslips.create({
     data: {
       user_id: extra.user_id, pay_month: extra.pay_month, title, status: 'planned', auto_key: bonusKey(extra.id), created_by_id: actorId,

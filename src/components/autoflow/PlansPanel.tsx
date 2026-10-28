@@ -5,7 +5,7 @@ import { api, btn, btnPrimary, currentMonth, inp, MonthNav, Notice, yen } from '
 type Plan = { id: string; user_id: string; user_name: string; worker_type: string; label: string; amount: number; starts_month: string; ends_month: string | null; active: boolean; note: string | null };
 type PayUser = { id: string; name: string; worker_type: string };
 type Extra = { id: string; user_id: string; user_name: string; pay_month: string; kind: 'addon' | 'bonus'; label: string; amount: number };
-type Draft = { user_id: string; user_name: string; month: string; label: string; amount: number; status: 'new' | 'exists' | 'conflict' };
+type Draft = { user_id: string; user_name: string; month: string; label: string; amount: number; status: 'new' | 'exists' | 'conflict' | 'skipped' };
 type Msg = { type: 'success' | 'error'; text: string } | null;
 
 const TYPE_LABEL: Record<string, string> = { executive: '役員', quasi_contractor: '準業務委託' };
@@ -16,7 +16,7 @@ const ERR: Record<string, string> = {
   already_in_transfer: 'すでに全銀ファイルに入っているので、ここでは取り消せません',
   invalid_body: '入力を確かめてください（固定報酬の名前に「賞与」は使えません。賞与は下の欄で登録します）',
 };
-const DRAFT_STATUS = { new: ['作る', 'bg-blue-50 text-blue-700'], exists: ['作成済み', 'bg-emerald-50 text-emerald-700'], conflict: ['作らない（その月の明細がすでにある）', 'bg-amber-50 text-amber-700'] } as const;
+const DRAFT_STATUS = { new: ['作る', 'bg-blue-50 text-blue-700'], exists: ['作成済み', 'bg-emerald-50 text-emerald-700'], conflict: ['作らない（その月の明細がすでにある）', 'bg-amber-50 text-amber-700'], skipped: ['作らない（作ったあとに消された。「下書きを作る」で作り直せます）', 'bg-gray-100 text-gray-600'] } as const;
 const errText = async (res: Response, fallback: string) => ERR[(await res.json().catch(() => ({})))?.error] ?? fallback;
 
 // 役員報酬・準業務委託の固定の月額、その月だけの加算、賞与。控除（源泉所得税など）は、できた下書きの明細で経理が入れる。
@@ -125,7 +125,7 @@ export default function PlansPanel() {
 
       <section className="space-y-2">
         <h2 className="text-sm font-bold text-gray-900">加算・賞与（その月だけ）</h2>
-        <p className="text-xs text-gray-500">「加算」はその月の下書きに足します（通勤手当や業務の追加分など）。「賞与」は、別の給与明細（支払予定）になり、「振込」の月次まとめに出ます（全銀の区分は賞与）。期間は、固定報酬の「月」と同じ、締め日で区切った月です。</p>
+        <p className="text-xs text-gray-500">「加算」はその月の下書きに足します（通勤手当や業務の追加分など）。「賞与」は、別の給与明細（支払予定）になり、「振込」の月次まとめに「賞与」として出ます（月次まとめの全銀データは総合振込です。賞与振込の区分で出したいときは、「給与の振込」のタブで作ります）。期間は、固定報酬の「月」と同じ、締め日で区切った月です。</p>
         <MonthNav month={month} onChange={setMonth} />
         {extras === null ? <p className="text-sm text-gray-400">読み込み中…</p> : extras.length === 0 ? <p className="text-sm text-gray-400">この月の加算・賞与はありません</p> : (
           <ul className="space-y-1.5">
@@ -157,7 +157,7 @@ export default function PlansPanel() {
 
       <section className="space-y-2">
         <h2 className="text-sm font-bold text-gray-900">下書きを今すぐ作る</h2>
-        <p className="text-xs text-gray-500">上で選んだ月の分を、登録された固定報酬から作ります（自動の作成を待たずに作りたいとき）。すでにある月は、増えません。その月に手で入れた明細がある人は、二重に払わないよう作りません。</p>
+        <p className="text-xs text-gray-500">上で選んだ月の分を、登録された固定報酬から作ります（自動の作成を待たずに作りたいとき）。すでにある月は、増えません。その月に手で入れた明細がある人は、二重に払わないよう作りません。自動で作った下書きを消した月は、毎日の自動作成では作り直さないので、その月を払わないときは下書きを消してください（ここで作ると作り直せます）。</p>
         <div className="flex flex-wrap gap-2">
           <button className={btn} onClick={() => generate(true)}>作る内容を確認</button>
           <button className={btnPrimary} onClick={() => generate(false)}>{month}分の下書きを作る</button>

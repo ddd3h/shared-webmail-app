@@ -5,7 +5,7 @@ import { financeActor, forbidden } from '@/lib/finance-guard';
 // GET /api/autoflow/notices - the latest automatic messages (who, which flow, delivered to Mattermost or only in the app)
 export async function GET() {
   if (!(await financeActor())) return forbidden();
-  const rows = await prisma.autoflow_notices.findMany({ orderBy: { created_at: 'desc' }, take: 200 });
+  const rows = await prisma.autoflow_notices.findMany({ where: { rule: { not: 'fixed' } }, orderBy: { created_at: 'desc' }, take: 200 }) // 'fixed' は下書きを作った印で、通知ではない;
   const ids = [...new Set(rows.map(r => r.user_id))];
   const names = new Map((ids.length === 0 ? [] : await prisma.users.findMany({ where: { id: { in: ids } }, select: { id: true, name: true } })).map(u => [u.id, u.name]));
   return NextResponse.json({
