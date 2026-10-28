@@ -10,6 +10,8 @@ export const configSchema = z.object({
   expense: z.object({ enabled: z.boolean().default(false), days_before: days(1, 14, 3) }).default({ enabled: false, days_before: 3 }),
   // 振込日: N 日前と当日に、経理と管理者へ
   payment: z.object({ enabled: z.boolean().default(false), days_before: days(1, 14, 3) }).default({ enabled: false, days_before: 3 }),
+  // 役員報酬・準業務委託の固定の月額から、毎月の締め日に給与明細(支払予定)の下書きを自動で作る
+  fixed_pay: z.object({ enabled: z.boolean().default(false) }).default({ enabled: false }),
   // 準業務委託の報告書: 提出する日を含む直近 N 日にログインがなければ、提出前に警告を出す
   activity: z.object({ enabled: z.boolean().default(false), days: days(3, 60, 14) }).default({ enabled: false, days: 14 }),
 });

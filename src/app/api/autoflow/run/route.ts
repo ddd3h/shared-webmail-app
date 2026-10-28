@@ -15,6 +15,7 @@ export async function POST(req: NextRequest) {
   }
   return NextResponse.json({
     dry, today: result.today, planned: result.planned, sent: result.sent, skipped: result.skipped, delivered: result.delivered,
+    drafts: result.drafts,
     items: result.items.map(i => ({ rule: i.rule, stage: i.stage, user_id: i.user.id, user_name: i.user_name, title: i.title, text: i.text, already_sent: i.already_sent })),
   });
 }

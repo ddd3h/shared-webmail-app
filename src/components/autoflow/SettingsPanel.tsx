@@ -6,6 +6,7 @@ type Config = {
   report: { enabled: boolean };
   expense: { enabled: boolean; days_before: number };
   payment: { enabled: boolean; days_before: number };
+  fixed_pay: { enabled: boolean };
   activity: { enabled: boolean; days: number };
 };
 
@@ -58,6 +59,10 @@ export default function SettingsPanel() {
       <Row title="振込日の準備" enabled={config.payment.enabled} onToggle={v => set('payment', { enabled: v })}>
         <p>経理と管理者へ。振込予定の件数と合計を知らせます（口座の情報は載せません）。</p>
         <Days value={config.payment.days_before} onChange={n => set('payment', { days_before: n })} label="振込日の" /><p>と、振込日の当日に送ります。</p>
+      </Row>
+      <Row title="固定報酬の下書き" enabled={config.fixed_pay.enabled} onToggle={v => set('fixed_pay', { enabled: v })}>
+        <p>「固定報酬・賞与」に登録された役員報酬・準業務委託の月額から、毎月の締め日に、給与明細の下書き（支払予定）を自動で作ります。同じ月に二重には作りません。</p>
+        <p>控除（源泉所得税など）は入らないので、下書きの明細で確かめてから振込に進んでください。</p>
       </Row>
       <Row title="準業務委託の報告書の警告" enabled={config.activity.enabled} onToggle={v => set('activity', { enabled: v })}>
         <p>準業務委託の人が業務報告書を出すとき、報告する日を含む直近の日数にログインの記録がなければ、「虚偽の報告は契約違反」という警告を出して、提出するかどうかを選んでもらいます。提出された報告書には警告の印が付き、経理が分かるようになります。</p>

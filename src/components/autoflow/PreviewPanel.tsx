@@ -4,7 +4,8 @@ import { btn, btnPrimary, Notice } from '@/components/work/ui';
 import { RULE_LABEL, STAGE_LABEL } from './labels';
 
 type Item = { rule: string; stage: string; user_id: string; user_name: string; title: string; text: string; already_sent: boolean };
-type Result = { dry: boolean; today: string; planned: number; sent: number; skipped: number; delivered: number; items: Item[] };
+type Draft = { user_id: string; user_name: string; month: string; label: string; amount: number; status: 'new' | 'exists' | 'conflict' };
+type Result = { dry: boolean; today: string; planned: number; sent: number; skipped: number; delivered: number; items: Item[]; drafts: Draft[] };
 
 // 「今日送るはずの通知」を、送らずに見る。確かめたら、その場で送ることもできる。
 export default function PreviewPanel({ onSent }: { onSent: () => void }) {
@@ -25,17 +26,26 @@ export default function PreviewPanel({ onSent }: { onSent: () => void }) {
   }
 
   const todo = result?.items.filter(i => !i.already_sent) ?? [];
+  const newDrafts = result?.drafts?.filter(d => d.status === 'new') ?? [];
   return (
     <div className="space-y-3">
       <p className="text-xs text-gray-500">ONにした流れについて、今日（日本時間）送ることになる通知を確かめます。ここで見るだけでは何も送りません。</p>
       <div className="flex flex-wrap gap-2">
         <button className={btn} onClick={() => run(true)} disabled={busy}>{busy ? '確認中…' : '今日送る通知を確認'}</button>
-        <button className={btnPrimary} onClick={() => run(false)} disabled={busy || todo.length === 0}>確認した通知を今すぐ送る（{todo.length}件）</button>
+        <button className={btnPrimary} onClick={() => run(false)} disabled={busy || todo.length + newDrafts.length === 0}>確認した通知を今すぐ送る（{todo.length}件{newDrafts.length > 0 ? `・下書き${newDrafts.length}件を作る` : ''}）</button>
       </div>
       <Notice msg={msg} />
       {result && (
         <div className="space-y-2">
           <p className="text-sm text-gray-700">{result.today}: 送る予定 {result.planned}件（うち送信済み {result.items.filter(i => i.already_sent).length}件）</p>
+          {(result.drafts?.length ?? 0) > 0 && (
+            <div className="rounded-xl border border-gray-200 bg-white p-2.5 text-sm space-y-1">
+              <p className="text-xs font-semibold text-gray-700">固定報酬の下書き（{result.drafts.filter(d => d.status === 'new').length}件を作る）</p>
+              {result.drafts.map(d => (
+                <p key={`${d.user_id}${d.month}`} className="text-xs text-gray-600">{d.user_name}・{d.month}分・{d.label} ¥{d.amount.toLocaleString('ja-JP')}　{d.status === 'new' ? '→ 作る' : d.status === 'exists' ? '（作成済み）' : '（作らない: その月の明細がすでにある）'}</p>
+              ))}
+            </div>
+          )}
           {result.items.length === 0 && <p className="text-sm text-gray-400">今日送る通知はありません（ONの流れがない、または期限の日ではありません）</p>}
           <ul className="space-y-1.5">
             {result.items.map((i, n) => (

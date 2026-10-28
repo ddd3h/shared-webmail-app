@@ -9,6 +9,9 @@ vi.mock('@/lib/db', () => ({
     expense_claims: { findMany: vi.fn() },
     autoflow_notices: { findMany: vi.fn(), create: vi.fn(), update: vi.fn() },
     autoflow_runs: { create: vi.fn(), findUnique: vi.fn(), update: vi.fn() },
+    fixed_pay_plans: { findMany: vi.fn() },
+    pay_extras: { findMany: vi.fn() },
+    payslips: { findUnique: vi.fn(), findFirst: vi.fn(), create: vi.fn() },
   },
 }));
 vi.mock('@/lib/settings', () => ({
@@ -52,6 +55,11 @@ beforeEach(() => {
   db.autoflow_runs.create.mockResolvedValue({});
   db.autoflow_runs.update.mockResolvedValue({});
   (sendDirectMessage as any).mockResolvedValue(true);
+  db.fixed_pay_plans.findMany.mockResolvedValue([]);
+  db.pay_extras.findMany.mockResolvedValue([]);
+  db.payslips.findUnique.mockResolvedValue(null);
+  db.payslips.findFirst.mockResolvedValue(null);
+  db.payslips.create.mockResolvedValue({ id: 'slip1' });
 });
 
 describe('オートフローの設定API', () => {
@@ -63,7 +71,7 @@ describe('オートフローの設定API', () => {
   });
 
   it('保存すると、そのまま読める。監査ログにも残る', async () => {
-    const config = { report: { enabled: true }, expense: { enabled: true, days_before: 5 }, payment: { enabled: false, days_before: 3 }, activity: { enabled: false, days: 14 } };
+    const config = { report: { enabled: true }, expense: { enabled: true, days_before: 5 }, payment: { enabled: false, days_before: 3 }, fixed_pay: { enabled: false }, activity: { enabled: false, days: 14 } };
     const res = await putConfig(req({ config }));
     expect(res.status).toBe(200);
     expect((await (await getConfig()).json()).config).toEqual(config);
@@ -161,6 +169,44 @@ describe('1日1回の定期実行', () => {
     db.autoflow_runs.create.mockRejectedValue(Object.assign(new Error('dup'), { code: 'P2002' }));
     db.autoflow_runs.findUnique.mockResolvedValue({ run_date: '2026-10-30', started_at: new Date(NOW.getTime() - 60_000), finished_at: null });
     expect(await runDaily(NOW)).toBeNull();
+  });
+});
+
+describe('固定報酬の下書き（オートフローの一部）', () => {
+  const FIXED_ON = JSON.stringify({ fixed_pay: { enabled: true } });
+  const plan = { id: 'p1', user_id: 'e1', label: '役員報酬', amount: 500000, starts_month: '2026-04', ends_month: null, active: true, user: { id: 'e1', name: '佐藤', worker_type: 'executive' } };
+  const CLOSING = new Date('2026-10-31T01:00:00Z'); // 10/31 10:00 JST: 末締めの締め日
+
+  it('固定報酬だけ ON でも「動く」（通知がなくても下書きは作る）', async () => {
+    store.set('AUTOFLOW_CONFIG', FIXED_ON);
+    db.fixed_pay_plans.findMany.mockResolvedValue([plan]);
+    const r = await runAutoflow({ now: CLOSING });
+    expect(r.drafts).toEqual([expect.objectContaining({ user_name: '佐藤', month: '2026-10', status: 'new' })]);
+    expect(db.payslips.create).toHaveBeenCalledTimes(1);
+  });
+
+  it('プレビュー(dry)では、作らずに「作るはずのもの」だけ見せる', async () => {
+    store.set('AUTOFLOW_CONFIG', FIXED_ON);
+    db.fixed_pay_plans.findMany.mockResolvedValue([plan]);
+    const r = await runAutoflow({ now: CLOSING, dry: true });
+    expect(r.drafts[0].status).toBe('new');
+    expect(db.payslips.create).not.toHaveBeenCalled();
+  });
+
+  it('OFF のときは、登録があっても下書きを作らない', async () => {
+    store.set('AUTOFLOW_CONFIG', ON);
+    db.fixed_pay_plans.findMany.mockResolvedValue([plan]);
+    const r = await runAutoflow({ now: CLOSING });
+    expect(r.drafts).toEqual([]);
+    expect(db.payslips.create).not.toHaveBeenCalled();
+  });
+
+  it('毎日の実行に入っていて、記録に作った件数が残る', async () => {
+    store.set('AUTOFLOW_CONFIG', FIXED_ON);
+    db.fixed_pay_plans.findMany.mockResolvedValue([plan]);
+    await runDaily(CLOSING);
+    const summary = JSON.parse(db.autoflow_runs.update.mock.calls[0][0].data.summary);
+    expect(summary.drafts).toBe(1);
   });
 });
 

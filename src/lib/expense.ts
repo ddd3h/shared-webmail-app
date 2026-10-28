@@ -1,4 +1,5 @@
 // Pure helpers for expense claims (no I/O so they are easy to test).
+import { isBonusTitle } from '@/lib/work';
 
 export const EXPENSE_CATEGORIES = ['交通費', '自家用車', '出張・宿泊費', '交際費', '会議費', '消耗品費', '通信費', '書籍・研修費', 'その他'] as const;
 /** The category whose amount is worked out from the distance (src/lib/mileage.ts), not typed in. */
@@ -54,10 +55,11 @@ export function summarize(claims: Claim[]) {
 }
 
 // Which of a person's pay statements for the month receives the reimbursement:
-// an unpaid statement titled 給与 if there is one, otherwise the oldest unpaid one.
+// an unpaid statement titled 給与 if there is one, otherwise the oldest unpaid one that is not a 賞与
+// (a bonus is paid in its own 全銀 category; mixing a reimbursement into it would be paid as a bonus).
 export function pickPayslip<T extends { title: string; status: string }>(candidates: T[]): T | undefined {
   const open = candidates.filter(p => p.status === 'planned');
-  return open.find(p => p.title === '給与') ?? open[0];
+  return open.find(p => p.title === '給与') ?? open.find(p => !isBonusTitle(p.title));
 }
 
 export const EXPENSE_ITEM_KEY = 'expense_reimbursement';

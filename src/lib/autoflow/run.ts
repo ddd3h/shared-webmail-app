@@ -7,6 +7,7 @@ import { loadMonthlyItems } from '@/lib/transfer-monthly';
 import { approversOf } from '@/lib/org-server';
 import { addDays } from '@/lib/pay-schedule';
 import { jstDateString } from '@/lib/work';
+import { generateFixedDrafts, type DraftResult } from '@/lib/fixed-pay-server';
 import type { AutoflowConfig } from './config';
 import { loadConfig } from './config-server';
 import { planNotices, type ExpenseClaim, type ExpenseUser, type Notice, type PlanInput, type Recipient, type ReportWorker } from './plan';
@@ -15,7 +16,7 @@ const STALE_RUN_MS = 10 * 60_000;
 const dayOf = (d: Date) => d.toISOString().slice(0, 10); // a @db.Date is stored as UTC midnight
 
 const isUnique = (e: unknown) => (e as { code?: string })?.code === 'P2002';
-const anyEnabled = (c: AutoflowConfig) => c.report.enabled || c.expense.enabled || c.payment.enabled;
+const anyEnabled = (c: AutoflowConfig) => c.report.enabled || c.expense.enabled || c.payment.enabled || c.fixed_pay.enabled;
 
 /** 今日の通知を決めるのに要るデータを、有効な流れの分だけ読む。 */
 export async function loadPlanInput(today: string, config: AutoflowConfig): Promise<PlanInput> {
@@ -74,7 +75,7 @@ export async function loadPlanInput(today: string, config: AutoflowConfig): Prom
 }
 
 export type PreviewItem = Notice & { already_sent: boolean; user_name: string };
-export type RunResult = { today: string; planned: number; sent: number; skipped: number; delivered: number; items: PreviewItem[] };
+export type RunResult = { today: string; planned: number; sent: number; skipped: number; delivered: number; items: PreviewItem[]; drafts: DraftResult[] };
 
 let running = false;
 
@@ -86,7 +87,7 @@ export async function runAutoflow(opts: { now?: Date; dry?: boolean; config?: Au
   const now = opts.now ?? new Date();
   const today = jstDateString(now);
   const config = opts.config ?? await loadConfig();
-  const empty: RunResult = { today, planned: 0, sent: 0, skipped: 0, delivered: 0, items: [] };
+  const empty: RunResult = { today, planned: 0, sent: 0, skipped: 0, delivered: 0, items: [], drafts: [] };
   if (!anyEnabled(config)) return empty;
   if (!opts.dry) { if (running) return empty; running = true; }
   try {
@@ -99,7 +100,9 @@ export async function runAutoflow(opts: { now?: Date; dry?: boolean; config?: Au
     const keyOf = (n: { rule: string; stage: string; subject_key: string; user_id: string }) => `${n.rule}|${n.stage}|${n.subject_key}|${n.user_id}`;
     const done = new Set(sentBefore.map(keyOf));
     const items: PreviewItem[] = notices.map(n => ({ ...n, already_sent: done.has(keyOf({ ...n, user_id: n.user.id })), user_name: names.get(n.user.id) ?? '' }));
-    const result: RunResult = { today, planned: items.length, sent: 0, skipped: items.filter(i => i.already_sent).length, delivered: 0, items };
+    // 固定報酬の下書き（ON のときだけ）。プレビューでは作らずに「作るはずのもの」を見せる
+    const drafts = config.fixed_pay.enabled ? await generateFixedDrafts({ today, dry: opts.dry }) : [];
+    const result: RunResult = { today, planned: items.length, sent: 0, skipped: items.filter(i => i.already_sent).length, delivered: 0, items, drafts };
     if (opts.dry) return result;
 
     // 1通ずつ順に送る（Mattermost に一斉に投げない）
@@ -138,6 +141,6 @@ export async function runDaily(now = new Date()): Promise<RunResult | null> {
     await prisma.autoflow_runs.update({ where: { run_date: today }, data: { started_at: now } });
   }
   const result = await runAutoflow({ now, config });
-  await prisma.autoflow_runs.update({ where: { run_date: today }, data: { finished_at: new Date(), summary: JSON.stringify({ planned: result.planned, sent: result.sent, skipped: result.skipped, delivered: result.delivered }) } });
+  await prisma.autoflow_runs.update({ where: { run_date: today }, data: { finished_at: new Date(), summary: JSON.stringify({ planned: result.planned, sent: result.sent, skipped: result.skipped, delivered: result.delivered, drafts: result.drafts.filter(d => d.status === 'new').length }) } });
   return result;
 }

@@ -109,6 +109,8 @@ model users {
   work_reports               work_reports[]
   payslips                   payslips[]               @relation("payslip_user")
   payslips_created           payslips[]               @relation("payslip_creator")
+  fixed_pay_plans            fixed_pay_plans[]        @relation("fixed_pay_user")
+  pay_extras                 pay_extras[]             @relation("pay_extra_user")
   expense_claims             expense_claims[]         @relation("expense_claimant")
   expense_reviewed           expense_claims[]         @relation("expense_reviewer")
   expense_reimbursed         expense_claims[]         @relation("expense_reimburser")
@@ -857,6 +859,7 @@ model payslips {
   note          String?
   created_by_id String?
   batch_id      String?   // the 全銀 transfer file this statement was put into
+  auto_key      String?   @unique // オートフローが自動で作った明細の印（'fixed:<user>:<YYYY-MM>' 'bonus:<extra>'）。二重に作らないための鍵
   created_at    DateTime  @default(now())
   updated_at    DateTime  @updatedAt
 
@@ -1412,4 +1415,39 @@ model autoflow_runs {
   started_at  DateTime  @default(now())
   finished_at DateTime?
   summary     String?   // 実行結果の要約（JSON）
+}
+
+// 役員報酬・準業務委託の固定の月額。オートフローが、毎月の締め日に給与明細（支払予定）の下書きを自動で作る。
+model fixed_pay_plans {
+  id            String   @id @default(cuid())
+  user_id       String
+  label         String   // 明細の題名と行の名前（役員報酬／業務委託報酬 など）
+  amount        Int      // 月額（円）
+  starts_month  String   // 'YYYY-MM' 最初の支払月（期間の月）
+  ends_month    String?  // 'YYYY-MM' 最後の支払月。空なら続く
+  active        Boolean  @default(true)
+  note          String?
+  created_by_id String?
+  created_at    DateTime @default(now())
+  updated_at    DateTime @updatedAt
+
+  user users @relation("fixed_pay_user", fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@index([user_id])
+}
+
+// その月だけの加算（addon: 月の下書きに足す）と賞与（bonus: 別の明細になる）。
+model pay_extras {
+  id            String   @id @default(cuid())
+  user_id       String
+  pay_month     String   // 'YYYY-MM'
+  kind          String   // 'addon' | 'bonus'
+  label         String
+  amount        Int
+  created_by_id String?
+  created_at    DateTime @default(now())
+
+  user users @relation("pay_extra_user", fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@index([user_id, pay_month])
 }

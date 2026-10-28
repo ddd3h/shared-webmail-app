@@ -7,6 +7,7 @@ describe('オートフローの設定', () => {
     expect(DEFAULT_CONFIG.report.enabled).toBe(false);
     expect(DEFAULT_CONFIG.expense).toEqual({ enabled: false, days_before: 3 });
     expect(DEFAULT_CONFIG.payment).toEqual({ enabled: false, days_before: 3 });
+    expect(DEFAULT_CONFIG.fixed_pay).toEqual({ enabled: false });
     expect(DEFAULT_CONFIG.activity).toEqual({ enabled: false, days: 14 });
   });
 
