@@ -137,6 +137,9 @@ npm run build
 npm run start
 ```
 
+- `npm run build` は `scripts/build.mjs` を通して、Node のメモリ上限を 1536MB にして `next build` を実行します。型チェック（`Running TypeScript ...`）に約800MBが要り、メモリの小さいサーバーでは Node の標準の上限（約490MB）を超えて `JavaScript heap out of memory` / `Failed to type check` で止まるためです。別の上限にしたいときは `NODE_OPTIONS=--max-old-space-size=2048 npm run build` のように指定します（指定があればそれを使います）。
+- それでも足りないほど小さいサーバー（RAM 1GB 以下）では、スワップを足すか、別のマシン（またはDockerイメージ）でビルドしてから `.next/standalone` を持っていってください。
+
 本番環境では以下も別途起動が必要:
 ```bash
 # IMAP同期（バックグラウンド）
