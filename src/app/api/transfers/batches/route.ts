@@ -5,6 +5,8 @@ import { logAudit } from '@/lib/audit';
 import { financeActor, forbidden } from '@/lib/finance-guard';
 import { createBatch, isValidTransferDate } from '@/lib/transfer-server';
 import type { CategoryCode } from '@/lib/zengin';
+import { loadConfig } from '@/lib/autoflow/config-server';
+import { notifyBatchConfirmed } from '@/lib/work-notify';
 
 const day = (d: Date) => d.toISOString().slice(0, 10);
 
@@ -52,5 +54,8 @@ export async function POST(req: NextRequest) {
     actorUserId: actor.id, actionType: 'transfer_batch_create', targetType: 'transfer_batches', targetId: result.id,
     metadata: { kind: d.kind, category, items: d.items?.map(i => ({ type: i.type, n: i.ids.length })), count: result.count, total: result.total, transfer_date: d.transfer_date, force: d.force },
   });
+  // 「承認して確定」: 振り込まれる人に知らせる（オートフローの「振込の確定の通知」がONのときだけ）。
+  // 「作成済みも含める」で作り直したときは、前のファイルで知らせているので、もう一度は送らない。
+  if (!d.force && (await loadConfig()).confirm.enabled) void notifyBatchConfirmed(result.id);
   return NextResponse.json({ id: result.id, count: result.count, total: result.total, file_name: result.fileName }, { status: 201 });
 }

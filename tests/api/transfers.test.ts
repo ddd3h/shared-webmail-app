@@ -31,14 +31,14 @@ vi.mock('@/lib/work-auth', () => ({
   getActor: vi.fn(), isAdmin: (a: any) => a.role === 'admin', isFinance: (a: any) => a.role === 'admin' || !!a.is_accounting,
 }));
 vi.mock('@/lib/work-notify', () => ({
-  notifyBankAccountChanged: vi.fn(), notifyBankAccountVerified: vi.fn(), notifyPaymentPaid: vi.fn(), notifyPayslip: vi.fn(), notifyExpenseReimbursed: vi.fn(),
+  notifyBankAccountChanged: vi.fn(), notifyBankAccountVerified: vi.fn(), notifyPaymentPaid: vi.fn(), notifyPayslip: vi.fn(), notifyExpenseReimbursed: vi.fn(), notifyBatchConfirmed: vi.fn(),
 }));
 vi.mock('@/lib/expense-payslip', () => ({ settleClaimsOfPayslip: vi.fn(async () => ({ ids: ['c1'], date: '2026-10-31' })) }));
 
 import { prisma } from '@/lib/db';
 import { logAudit } from '@/lib/audit';
 import { getActor } from '@/lib/work-auth';
-import { notifyBankAccountChanged, notifyBankAccountVerified, notifyPayslip, notifyExpenseReimbursed } from '@/lib/work-notify';
+import { notifyBankAccountChanged, notifyBankAccountVerified, notifyPayslip, notifyExpenseReimbursed, notifyBatchConfirmed } from '@/lib/work-notify';
 import { GET as getMine, PUT as putMine } from '@/app/api/bank-accounts/me/route';
 import { GET as listAccounts } from '@/app/api/bank-accounts/route';
 import { POST as verify } from '@/app/api/bank-accounts/[userId]/verify/route';
@@ -294,6 +294,37 @@ describe('全銀データの作成', () => {
     db.__tx.payslips.updateMany.mockResolvedValue({ count: 1 });
     expect((await createBatch(json({ kind: 'payroll', ids: ['s1'], transfer_date: tomorrow(), force: true }))).status).toBe(201);
     expect(db.__tx.payslips.updateMany.mock.calls[0][0].where).toEqual({ id: { in: ['s1'] }, status: 'planned' });
+  });
+
+  describe('承認して確定したときの通知（オートフローの「振込の確定の通知」）', () => {
+    const make = async (extra: object = {}) => {
+      await configure();
+      db.payslips.findMany.mockResolvedValue([slip()]);
+      db.__tx.transfer_batches.create.mockImplementation(async (a: any) => ({ id: 'b9', ...a.data }));
+      db.__tx.payslips.updateMany.mockResolvedValue({ count: 1 });
+      return createBatch(json({ kind: 'payroll', ids: ['s1'], transfer_date: tomorrow(), ...extra }));
+    };
+    it('初期設定（OFF）では、知らせない', async () => {
+      expect((await make()).status).toBe(201);
+      expect(notifyBatchConfirmed).not.toHaveBeenCalled();
+    });
+    it('ON なら、作ったファイルの id で知らせる', async () => {
+      store.set('AUTOFLOW_CONFIG', JSON.stringify({ confirm: { enabled: true } }));
+      expect((await make()).status).toBe(201);
+      expect(notifyBatchConfirmed).toHaveBeenCalledWith('b9');
+    });
+    it('「作成済みも含める」で作り直したときは、送り直さない', async () => {
+      store.set('AUTOFLOW_CONFIG', JSON.stringify({ confirm: { enabled: true } }));
+      expect((await make({ force: true })).status).toBe(201);
+      expect(notifyBatchConfirmed).not.toHaveBeenCalled();
+    });
+    it('作れなかったとき（問題あり）は、知らせない', async () => {
+      store.set('AUTOFLOW_CONFIG', JSON.stringify({ confirm: { enabled: true } }));
+      await configure();
+      db.payslips.findMany.mockResolvedValue([slip({ batch_id: 'old' })]);
+      expect((await createBatch(json({ kind: 'payroll', ids: ['s1'], transfer_date: tomorrow() }))).status).toBe(422);
+      expect(notifyBatchConfirmed).not.toHaveBeenCalled();
+    });
   });
 
   it('作る直前に他の人が同じ明細を取った（更新件数が足りない）ときは409で、何も残さない', async () => {

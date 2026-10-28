@@ -5,7 +5,7 @@ import { dateLabel } from '@/components/work/ui';
 import CreateBatchModal from './CreateBatchModal';
 
 type Ref = { type: 'payslip' | 'payment' | 'expense'; ids: string[] };
-type Line = { id: string; who: string; title: string; amount: number; batched: boolean; blocker: string | null; sub: string; pay_date?: string | null; ref?: Ref; label?: string; date?: string; overdue?: boolean };
+type Line = { id: string; who: string; title: string; amount: number; batched: boolean; blocker: string | null; sub: string; pay_date?: string | null; ref?: Ref; label?: string; date?: string; overdue?: boolean; reportMissing?: boolean; activityFlag?: boolean };
 type Flash = { type: 'success' | 'error'; text: string } | null;
 
 // ---- data: one function per source, each returns the same Line shape ----
@@ -45,10 +45,19 @@ async function fetchMonthlyLines(month: string): Promise<{ lines: Line[]; totals
     lines: d.items.map((i: any): Line => ({
       id: i.key, who: i.who, title: i.title, amount: i.amount, batched: i.batched, blocker: i.blocker, sub: i.sub,
       ref: { type: i.type, ids: i.ids }, label: i.kind_label, date: i.scheduled_date, overdue: i.overdue, pay_date: i.scheduled_date,
+      reportMissing: !!i.report_missing, activityFlag: !!i.activity_flag,
     })),
   };
 }
 type Totals = { payroll: number; payment: number; expense: number; all: number };
+
+/** 月次まとめは、振込日ごとにまとめて見せる（経理が「この日に誰にいくら」を見て、日ごとに承認する）。ほかは1つの塊。 */
+function groupByDate(lines: Line[], byDate: boolean): { date: string | null; lines: Line[] }[] {
+  if (!byDate) return [{ date: null, lines }];
+  const map = new Map<string, Line[]>();
+  for (const l of lines) map.set(l.date ?? '', [...(map.get(l.date ?? '') ?? []), l]);
+  return [...map].map(([date, ls]) => ({ date, lines: ls }));
+}
 
 // Shared list for the ways of making a file: approved payment requests, or the month's pay statements.
 export default function TransferList({ kind, onCreated }: { kind: 'payment' | 'payroll' | 'monthly'; onCreated: (id: string, fileName: string) => void }) {
@@ -71,6 +80,9 @@ export default function TransferList({ kind, onCreated }: { kind: 'payment' | 'p
   const picked = (lines ?? []).filter(l => selected.has(l.id));
   const total = picked.reduce((s, l) => s + l.amount, 0);
   const unit = kind === 'payroll' ? '給与' : kind === 'monthly' ? '振込' : '支払';
+  const groups = groupByDate(lines ?? [], kind === 'monthly');
+  const reportMissing = (lines ?? []).filter(l => l.reportMissing).length;
+  const activityFlags = (lines ?? []).filter(l => l.activityFlag).length;
 
   return (
     <div className="space-y-3">
@@ -86,6 +98,13 @@ export default function TransferList({ kind, onCreated }: { kind: 'payment' | 'p
       {kind === 'monthly' && totals && lines && lines.length > 0 && (
         <p className="text-xs text-gray-600" data-testid="monthly-totals">給与・報酬等 {yen(totals.payroll)} ・ 振込申請 {yen(totals.payment)} ・ 経費 {yen(totals.expense)} ・ 合計 <b className="tabular-nums">{yen(totals.all)}</b></p>
       )}
+      {kind === 'monthly' && (reportMissing > 0 || activityFlags > 0) && (
+        <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800" data-testid="monthly-warnings">
+          {reportMissing > 0 && <>業務報告書が出ていない報酬が{reportMissing}件あります。</>}
+          {activityFlags > 0 && <>ログインの記録がないまま報告書が出されたものが{activityFlags}件あります。</>}
+          振り込む前に、内容を確かめてください（この印だけでは、振込は止まりません）。
+        </p>
+      )}
       <Notice msg={msg} />
       {lines === null && <p className="text-sm text-gray-400">読み込み中…</p>}
       {lines && lines.length === 0 && <p className="text-sm text-gray-400">{kind === 'payroll' ? 'この月の支払予定の明細はありません' : kind === 'monthly' ? 'この月に振り込むものはありません' : '振込待ちの申請はありません'}</p>}
@@ -96,31 +115,49 @@ export default function TransferList({ kind, onCreated }: { kind: 'payment' | 'p
             <button className="text-gray-500 hover:underline" onClick={() => setSelected(new Set())}>選択解除</button>
             <div className="flex-1" />
             <span className="text-gray-600">選択中 {selected.size}件 ・ <b className="tabular-nums">{yen(total)}</b></span>
-            <button className={btnPrimary} disabled={selected.size === 0} onClick={() => setCreating(true)}>全銀データを作成…</button>
+            <button className={btnPrimary} disabled={selected.size === 0} onClick={() => setCreating(true)}>{kind === 'monthly' ? '承認して確定…' : '全銀データを作成…'}</button>
           </div>
-          <div className="space-y-2">
-            {lines.map(l => (
-              <label key={l.id} className={`flex items-start gap-3 rounded-xl border bg-white p-3 ${l.blocker ? 'border-amber-200' : 'border-gray-200'}`}>
-                <input type="checkbox" className="mt-1 h-4 w-4" checked={selected.has(l.id)} disabled={!!l.blocker} onChange={() => toggle(l.id)} aria-label={`${l.who} ${l.title}`} />
-                <div className="min-w-0 flex-1">
-                  <div className="text-sm font-medium text-gray-900 wrap-break-word">{l.who} <span className="font-normal text-gray-400">/</span> {l.title}</div>
-                  <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs text-gray-500">
-                    {l.label && <span className="rounded-sm bg-blue-50 px-1.5 py-0.5 text-blue-700">{l.label}</span>}
-                    {l.date && <span className={l.overdue ? 'text-red-600' : ''}>{l.overdue ? '期日超過 ' : '振込予定 '}{l.date.slice(5).replace('-', '/')}</span>}
-                    <span>{l.sub}</span>
-                    {l.blocker && <span className="rounded-sm bg-amber-50 px-1.5 py-0.5 text-amber-700">{l.blocker}</span>}
-                    {l.batched && <span className="rounded-sm bg-gray-100 px-1.5 py-0.5 text-gray-600">全銀データ作成済み</span>}
-                  </div>
-                </div>
-                <div className="text-base font-bold tabular-nums">{yen(l.amount)}</div>
-              </label>
-            ))}
+          <div className="space-y-4">
+            {groups.map(g => {
+              const gReady = g.lines.filter(l => !l.blocker && !l.batched);
+              return (
+                <section key={g.date ?? 'all'} className="space-y-2" aria-label={g.date ? `${g.date} の振込` : undefined}>
+                  {g.date && (
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-gray-200 pb-1.5 text-sm" data-testid="pay-day-group">
+                      <span className={`font-bold ${g.lines[0].overdue ? 'text-red-600' : 'text-gray-900'}`}>{dateLabel(g.date)} {g.lines[0].overdue ? '（期日超過）' : '振込'}</span>
+                      <span className="text-xs text-gray-600">{g.lines.length}件 ・ <b className="tabular-nums">{yen(g.lines.reduce((s, l) => s + l.amount, 0))}</b></span>
+                      <div className="flex-1" />
+                      <button className="text-xs text-blue-600 hover:underline disabled:text-gray-400 disabled:no-underline" disabled={gReady.length === 0}
+                        onClick={() => setSelected(sel => new Set([...sel, ...gReady.map(l => l.id)]))}>この日の分を選択（{gReady.length}件）</button>
+                    </div>
+                  )}
+                  {g.lines.map(l => (
+                    <label key={l.id} className={`flex items-start gap-3 rounded-xl border bg-white p-3 ${l.blocker ? 'border-amber-200' : 'border-gray-200'}`}>
+                      <input type="checkbox" className="mt-1 h-4 w-4" checked={selected.has(l.id)} disabled={!!l.blocker} onChange={() => toggle(l.id)} aria-label={`${l.who} ${l.title}`} />
+                      <div className="min-w-0 flex-1">
+                        <div className="text-sm font-medium text-gray-900 wrap-break-word">{l.who} <span className="font-normal text-gray-400">/</span> {l.title}</div>
+                        <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs text-gray-500">
+                          {l.label && <span className="rounded-sm bg-blue-50 px-1.5 py-0.5 text-blue-700">{l.label}</span>}
+                          {l.date && <span className={l.overdue ? 'text-red-600' : ''}>{l.overdue ? '期日超過 ' : '振込予定 '}{l.date.slice(5).replace('-', '/')}</span>}
+                          <span>{l.sub}</span>
+                          {l.blocker && <span className="rounded-sm bg-amber-50 px-1.5 py-0.5 text-amber-700">{l.blocker}</span>}
+                          {l.reportMissing && <span className="rounded-sm bg-amber-50 px-1.5 py-0.5 text-amber-700" data-testid="report-missing" title="この期間の業務報告書が出ていません">報告書未提出</span>}
+                          {l.activityFlag && <span className="rounded-sm bg-red-50 px-1.5 py-0.5 text-red-700" data-testid="activity-flag-line" title="ログインの記録がないという警告を読んだうえで、提出された報告書があります">⚠ 活動警告</span>}
+                          {l.batched && <span className="rounded-sm bg-gray-100 px-1.5 py-0.5 text-gray-600">全銀データ作成済み</span>}
+                        </div>
+                      </div>
+                      <div className="text-base font-bold tabular-nums">{yen(l.amount)}</div>
+                    </label>
+                  ))}
+                </section>
+              );
+            })}
           </div>
         </>
       )}
       {creating && (
         <CreateBatchModal kind={kind} ids={[...selected]} items={kind === 'monthly' ? picked.map(l => l.ref!) : undefined} total={total} suggestedDate={picked.map(l => l.pay_date).filter((d): d is string => !!d).sort()[0]} hasBatched={picked.some(l => l.batched)} onClose={() => setCreating(false)}
-          onCreated={(id, name) => { setCreating(false); setMsg({ type: 'success', text: `全銀データを作成しました（${name}）。「作成履歴」からダウンロードできます` }); onCreated(id, name); load(); }} />
+          onCreated={(id, name) => { setCreating(false); setMsg({ type: 'success', text: kind === 'monthly' ? `承認して確定しました。全銀データを作成しました（${name}）。「作成履歴」からダウンロードできます` : `全銀データを作成しました（${name}）。「作成履歴」からダウンロードできます` }); onCreated(id, name); load(); }} />
       )}
     </div>
   );

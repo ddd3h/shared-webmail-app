@@ -71,7 +71,7 @@ describe('オートフローの設定API', () => {
   });
 
   it('保存すると、そのまま読める。監査ログにも残る', async () => {
-    const config = { report: { enabled: true }, expense: { enabled: true, days_before: 5 }, payment: { enabled: false, days_before: 3 }, fixed_pay: { enabled: false }, activity: { enabled: false, days: 14 } };
+    const config = { report: { enabled: true }, expense: { enabled: true, days_before: 5 }, payment: { enabled: false, days_before: 3 }, confirm: { enabled: false }, fixed_pay: { enabled: false }, activity: { enabled: false, days: 14 } };
     const res = await putConfig(req({ config }));
     expect(res.status).toBe(200);
     expect((await (await getConfig()).json()).config).toEqual(config);
