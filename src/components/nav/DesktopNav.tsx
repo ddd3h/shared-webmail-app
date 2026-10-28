@@ -7,6 +7,7 @@ import { ACCOUNT_ITEMS, ADMIN_ITEM, APPROVALS_ITEM, MAIN_ITEMS, NOTIFICATIONS_IT
 import { logout, type NavUser } from './useNavUser';
 import CountBadge from './CountBadge';
 import { useNotificationCount } from '@/hooks/useNotificationCount';
+import UserAvatar from '@/components/UserAvatar';
 
 const Chevron = () => <svg className="w-3.5 h-3.5 opacity-60" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>;
 
@@ -42,8 +43,6 @@ function MenuLink({ item, pathname }: { item: NavItem; pathname: string }) {
   );
 }
 
-const initialOf = (name: string) => (name.trim() ? [...name.trim()][0] : '?');
-
 export default function DesktopNav({ user }: { user: NavUser }) {
   const pathname = usePathname();
   const unreadNotifications = useNotificationCount();
@@ -74,7 +73,7 @@ export default function DesktopNav({ user }: { user: NavUser }) {
           <TopLink item={NOTIFICATIONS_ITEM} pathname={pathname} iconOnly badge={unreadNotifications} />
           <Dropdown align="right" ariaLabel="アカウントメニュー" trigger={
             <>
-              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-gray-200 text-xs font-semibold text-gray-700">{initialOf(user.name)}</span>
+              <UserAvatar name={user.name} />
               <Chevron />
             </>
           }>
