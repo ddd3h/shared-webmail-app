@@ -48,7 +48,6 @@ function OrgList({ data }: { data: OrgData }) {
                 {people.map(({ member, position_id }) => (
                   <li key={member.id} className="rounded-full bg-gray-100 px-2.5 py-1 text-xs text-gray-700">
                     {member.name}{positionName(position_id) && <span className="ml-1 text-gray-400">{positionName(position_id)}</span>}
-                    {member.memberships.length > 1 && <span className="ml-1 rounded-sm bg-amber-50 px-1 text-[10px] text-amber-700" title="ほかの部署にも所属しています">兼務</span>}
                   </li>
                 ))}
               </ul>

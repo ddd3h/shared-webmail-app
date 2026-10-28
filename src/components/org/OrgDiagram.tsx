@@ -11,7 +11,7 @@ import { NODE_WIDTH, autoLayout, positionsFor } from '@/lib/org-layout';
 import type { OrgData } from './types';
 import { membersOfUnit } from './memberships';
 
-type UnitNodeData = { name: string; people: { id: string; name: string; position: string | null; multi: boolean }[]; editable: boolean };
+type UnitNodeData = { name: string; people: { id: string; name: string; position: string | null }[]; editable: boolean };
 type UnitNode = Node<UnitNodeData, 'unit'>;
 type CutEdgeData = { editable: boolean; onCut: (unitId: string) => void };
 const MAX_SHOWN = 6;
@@ -32,7 +32,6 @@ function UnitCard({ data }: NodeProps<UnitNode>) {
           <li key={p.id} className="flex items-center gap-1 text-xs text-gray-700">
             <span className="truncate">{p.name}</span>
             {p.position && <span className="shrink-0 text-gray-400">{p.position}</span>}
-            {p.multi && <span className="shrink-0 rounded-sm bg-amber-50 px-1 text-[10px] text-amber-700" title="ほかの部署にも所属しています">兼務</span>}
           </li>
         ))}
         {data.people.length > MAX_SHOWN && <li className="text-xs text-gray-400">ほか {data.people.length - MAX_SHOWN}人</li>}
@@ -77,7 +76,7 @@ function Diagram({ data, editable, onChanged }: { data: OrgData; editable: boole
       id: u.id, type: 'unit' as const, position: pos[u.id], draggable: editable,
       data: {
         name: u.name, editable,
-        people: membersOfUnit(data, u.id).map(({ member, position_id }) => ({ id: member.id, name: member.name, position: positionName(position_id), multi: member.memberships.length > 1 })),
+        people: membersOfUnit(data, u.id).map(({ member, position_id }) => ({ id: member.id, name: member.name, position: positionName(position_id)})),
       },
     }));
   }, [data, editable]);
