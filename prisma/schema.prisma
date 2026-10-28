@@ -680,6 +680,7 @@ model login_logs {
   @@index([created_at])
   @@index([ip_address])
   @@index([success, created_at]) // the 24-hour failure counts of the security overview
+  @@index([user_id, created_at]) // when did this person last log in (準業務委託の報告書の活動確認)
 }
 
 // Emails scheduled to be sent at a future time. Kept separate from `messages`
@@ -833,6 +834,10 @@ model work_reports {
   title       String
   content     String
   hours       Decimal? @db.Decimal(5, 2)
+  // 準業務委託: ログインの少ない期間の報告を、警告を読んだうえで本人が提出した印（経理が気づけるようにする）
+  activity_flag   Boolean   @default(false)
+  activity_note   String?
+  activity_ack_at DateTime?
   created_at  DateTime @default(now())
   updated_at  DateTime @updatedAt
 

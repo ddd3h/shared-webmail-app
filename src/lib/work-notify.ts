@@ -79,7 +79,8 @@ export function notifyWorkReportSubmitted(reportId: string) {
     const r = await prisma.work_reports.findUnique({ where: { id: reportId }, include: { user: { select: { id: true, name: true } } } });
     if (!r) return;
     const hours = r.hours === null ? '' : ` ・ ${Number(r.hours)}h`;
-    const msg = `📝 **業務報告書が提出されました**\n\n**${mmText(r.user.name, 40)}** さん ・ ${mmText(r.title, 100)}${hours}\n\n確認: ${appUrl()}/work`;
+    const warn = r.activity_flag ? '\n⚠️ **ログインの記録が少ない期間の報告です。**警告を読んだうえで、本人が提出しました。内容を確認してください。' : '';
+    const msg = `📝 **業務報告書が提出されました**\n\n**${mmText(r.user.name, 40)}** さん ・ ${mmText(r.title, 100)}${hours}${warn}\n\n確認: ${appUrl()}/work`;
     await dmAll(await adminsExcept(r.user_id), msg, 'work_report');
   });
 }

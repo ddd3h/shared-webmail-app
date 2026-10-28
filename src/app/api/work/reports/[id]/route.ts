@@ -5,12 +5,14 @@ import { getActor, isFinance } from '@/lib/work-auth';
 import { toDbDate, usesReports } from '@/lib/work';
 import { z } from 'zod';
 import { isValidDateString } from '@/lib/work';
+import { activityNote, checkReportActivity } from '@/lib/activity-check';
 
 const schema = z.object({
   report_date: z.string().refine(isValidDateString),
   title: z.string().trim().min(1).max(200),
   content: z.string().trim().min(1).max(20000),
   hours: z.number().min(0).max(999).nullable().optional(),
+  activity_ack: z.boolean().optional(),
 });
 
 async function loadOwned(id: string, userId: string) {
@@ -32,9 +34,20 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const parsed = schema.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) return NextResponse.json({ error: 'invalid_body' }, { status: 400 });
   const d = parsed.data;
+  // 日付を変えたときだけ、ログインの記録を調べ直す（本文だけ直すときは、前の印をそのまま残す）
+  const dateChanged = toDbDate(d.report_date).getTime() !== report.report_date.getTime();
+  const verdict = dateChanged ? await checkReportActivity(actor, d.report_date) : null;
+  if (verdict?.suspicious && !d.activity_ack) {
+    return NextResponse.json({ error: 'activity_warning', days: verdict.days, last_login: verdict.last_login }, { status: 409 });
+  }
   await prisma.work_reports.update({
     where: { id },
-    data: { report_date: toDbDate(d.report_date), title: d.title, content: d.content, hours: d.hours ?? null },
+    data: {
+      report_date: toDbDate(d.report_date), title: d.title, content: d.content, hours: d.hours ?? null,
+      ...(dateChanged ? (verdict?.suspicious
+        ? { activity_flag: true, activity_note: activityNote(verdict), activity_ack_at: new Date() }
+        : { activity_flag: false, activity_note: null, activity_ack_at: null }) : {}),
+    },
   });
   return NextResponse.json({ ok: true });
 }

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { logAudit } from '@/lib/audit';
 import { financeActor, forbidden } from '@/lib/finance-guard';
 import { configSchema } from '@/lib/autoflow/config';
-import { loadConfig, saveConfig } from '@/lib/autoflow/run';
+import { loadConfig, saveConfig } from '@/lib/autoflow/config-server';
 
 // GET /api/autoflow/config - which automatic flows are on, and how many days before they speak (経理・管理者)
 export async function GET() {

@@ -2,25 +2,17 @@
 // 同じ宛先・同じ段階を二度送らないのは autoflow_notices の unique（送る前に1行作って「送った」ことにする）。
 import { prisma } from '@/lib/db';
 import { sendDirectMessage } from '@/lib/mattermost-dm';
-import { getSetting, setSetting } from '@/lib/settings';
 import { loadSchedules } from '@/lib/pay-schedule-server';
 import { loadMonthlyItems } from '@/lib/transfer-monthly';
 import { approversOf } from '@/lib/org-server';
 import { addDays } from '@/lib/pay-schedule';
 import { jstDateString } from '@/lib/work';
-import { parseConfig, type AutoflowConfig } from './config';
+import type { AutoflowConfig } from './config';
+import { loadConfig } from './config-server';
 import { planNotices, type ExpenseClaim, type ExpenseUser, type Notice, type PlanInput, type Recipient, type ReportWorker } from './plan';
 
-const KEY = 'AUTOFLOW_CONFIG' as const;
 const STALE_RUN_MS = 10 * 60_000;
 const dayOf = (d: Date) => d.toISOString().slice(0, 10); // a @db.Date is stored as UTC midnight
-
-export async function loadConfig(): Promise<AutoflowConfig> {
-  return parseConfig(await getSetting(KEY).catch(() => null));
-}
-export async function saveConfig(config: AutoflowConfig, userId: string): Promise<void> {
-  await setSetting(KEY, JSON.stringify(config), false, userId);
-}
 
 const isUnique = (e: unknown) => (e as { code?: string })?.code === 'P2002';
 const anyEnabled = (c: AutoflowConfig) => c.report.enabled || c.expense.enabled || c.payment.enabled;

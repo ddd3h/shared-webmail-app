@@ -59,6 +59,12 @@ export default function SettingsPanel() {
         <p>経理と管理者へ。振込予定の件数と合計を知らせます（口座の情報は載せません）。</p>
         <Days value={config.payment.days_before} onChange={n => set('payment', { days_before: n })} label="振込日の" /><p>と、振込日の当日に送ります。</p>
       </Row>
+      <Row title="準業務委託の報告書の警告" enabled={config.activity.enabled} onToggle={v => set('activity', { enabled: v })}>
+        <p>準業務委託の人が業務報告書を出すとき、報告する日を含む直近の日数にログインの記録がなければ、「虚偽の報告は契約違反」という警告を出して、提出するかどうかを選んでもらいます。提出された報告書には警告の印が付き、経理が分かるようになります。</p>
+        <label className="flex items-center gap-2">直近
+          <input type="number" min={3} max={60} className={`${inp} w-20`} value={config.activity.days} onChange={e => set('activity', { days: Math.max(3, Math.min(60, Number(e.target.value) || 14)) })} />日間にログインがないとき
+        </label>
+      </Row>
       <button className={btnPrimary} onClick={save} disabled={saving}>{saving ? '保存中…' : '保存する'}</button>
     </div>
   );
