@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { btnPrimary, inp, Notice } from '@/components/work/ui';
+import { PREFECTURES } from '@/lib/payroll/tables';
 
 type Config = {
   report: { enabled: boolean };
@@ -8,6 +9,7 @@ type Config = {
   payment: { enabled: boolean; days_before: number };
   confirm: { enabled: boolean };
   fixed_pay: { enabled: boolean };
+  deductions: { enabled: boolean; prefecture: string; timing: 'next' | 'same' };
   activity: { enabled: boolean; days: number };
 };
 
@@ -66,8 +68,23 @@ export default function SettingsPanel() {
         <p>月次まとめでの確定だけが対象です。「作成済みも含める」で作り直したときは、送り直しません。</p>
       </Row>
       <Row title="固定報酬の下書き" enabled={config.fixed_pay.enabled} onToggle={v => set('fixed_pay', { enabled: v })}>
-        <p>「固定報酬・賞与」に登録された役員報酬・準業務委託の月額から、毎月の締め日に、給与明細の下書き（支払予定）を自動で作ります。同じ月に二重には作りません。</p>
-        <p>控除（源泉所得税など）は入らないので、下書きの明細で確かめてから振込に進んでください。</p>
+        <p>「固定報酬・賞与」に登録された役員・社員・準業務委託の月額から、毎月の締め日に、給与明細の下書き（支払予定）を自動で作ります。同じ月に二重には作りません。</p>
+        <p>控除は、次の「控除の自動計算」をONにしたときだけ入ります。OFFのときは入らないので、下書きの明細で経理が入れてから振込に進んでください。</p>
+      </Row>
+      <Row title="控除の自動計算" enabled={config.deductions.enabled} onToggle={v => set('deductions', { enabled: v })}>
+        <p>固定報酬の下書きに、健康保険・介護保険・子ども・子育て支援金・厚生年金・雇用保険・源泉所得税・住民税を自動で入れます（役員・社員・正社員・パート。派遣と業務委託は対象外）。「控除」のタブで、一人ひとりの生年月日や扶養親族等の数を登録した人だけが対象で、登録がない人は控除なしで警告が付きます。</p>
+        <p>協会けんぽの料率・標準報酬月額の等級表と、国税庁の源泉徴収税額表（電算機計算の特例）に基づく概算です。組合健保・厚生年金基金、産休・育休の免除、賞与の控除、年末調整は対象外です。下書きは経理が確かめてから振込に進んでください。</p>
+        <label className="flex items-center gap-2">協会けんぽの都道府県
+          <select className={inp} value={config.deductions.prefecture} onChange={e => set('deductions', { prefecture: e.target.value })}>
+            {PREFECTURES.map(p => <option key={p} value={p}>{p}</option>)}
+          </select>
+        </label>
+        <label className="flex items-center gap-2">社会保険料を引く時期
+          <select className={inp} value={config.deductions.timing} onChange={e => set('deductions', { timing: e.target.value as 'next' | 'same' })}>
+            <option value="next">翌月徴収（10月分を11月払いの給与から）</option>
+            <option value="same">当月徴収（10月分を10月払いの給与から）</option>
+          </select>
+        </label>
       </Row>
       <Row title="準業務委託の報告書の警告" enabled={config.activity.enabled} onToggle={v => set('activity', { enabled: v })}>
         <p>準業務委託の人が業務報告書を出すとき、報告する日を含む直近の日数にログインの記録がなければ、「虚偽の報告は契約違反」という警告を出して、提出するかどうかを選んでもらいます。提出された報告書には警告の印が付き、経理が分かるようになります。</p>

@@ -4,7 +4,7 @@ import { logAudit } from '@/lib/audit';
 import { financeActor, forbidden } from '@/lib/finance-guard';
 import { FIXED_PAY_TYPES } from '@/lib/fixed-pay';
 import { extraSchema } from '@/lib/fixed-pay-input';
-import { createBonusSlip, syncAddons } from '@/lib/fixed-pay-server';
+import { createBonusSlip, rebuildPristine } from '@/lib/fixed-pay-server';
 import { isValidMonth, type WorkerType } from '@/lib/work';
 
 // GET /api/autoflow/extras?month=YYYY-MM - one-time add-ons and bonuses of a month (経理・管理者)
@@ -29,8 +29,10 @@ export async function POST(req: NextRequest) {
   if (d.kind === 'addon' && !FIXED_PAY_TYPES.includes(user.worker_type as WorkerType)) return NextResponse.json({ error: 'type_not_allowed' }, { status: 400 });
 
   const extra = await prisma.pay_extras.create({ data: { ...d, created_by_id: actor.id } });
+  // reflect: 加算が下書きに入ったか（edited = 経理が明細を直したあとなので、明細に直接足してもらう）
+  let reflect: string | undefined;
   if (d.kind === 'bonus') await createBonusSlip(extra, actor.id);
-  else await syncAddons(d.user_id, d.pay_month);
+  else reflect = await rebuildPristine(d.user_id, d.pay_month);
   await logAudit({ actorUserId: actor.id, actionType: 'pay_extra_create', targetType: 'pay_extra', targetId: extra.id, metadata: { user_id: d.user_id, pay_month: d.pay_month, kind: d.kind, label: d.label, amount: d.amount } });
-  return NextResponse.json({ ok: true, id: extra.id }, { status: 201 });
+  return NextResponse.json({ ok: true, id: extra.id, reflect }, { status: 201 });
 }

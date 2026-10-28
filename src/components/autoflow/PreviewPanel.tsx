@@ -4,7 +4,7 @@ import { btn, btnPrimary, Notice } from '@/components/work/ui';
 import { RULE_LABEL, STAGE_LABEL } from './labels';
 
 type Item = { rule: string; stage: string; user_id: string; user_name: string; title: string; text: string; already_sent: boolean };
-type Draft = { user_id: string; user_name: string; month: string; label: string; amount: number; status: 'new' | 'exists' | 'conflict' | 'skipped' };
+type Draft = { user_id: string; user_name: string; month: string; label: string; amount: number; status: 'new' | 'exists' | 'conflict' | 'skipped'; deductions?: number; warnings?: string[] };
 type Result = { dry: boolean; today: string; planned: number; sent: number; skipped: number; delivered: number; items: Item[]; drafts: Draft[] };
 
 // 「今日送るはずの通知」を、送らずに見る。確かめたら、その場で送ることもできる。
@@ -42,7 +42,10 @@ export default function PreviewPanel({ onSent }: { onSent: () => void }) {
             <div className="rounded-xl border border-gray-200 bg-white p-2.5 text-sm space-y-1">
               <p className="text-xs font-semibold text-gray-700">固定報酬の下書き（{result.drafts.filter(d => d.status === 'new').length}件を作る）</p>
               {result.drafts.map(d => (
-                <p key={`${d.user_id}${d.month}`} className="text-xs text-gray-600">{d.user_name}・{d.month}分・{d.label} ¥{d.amount.toLocaleString('ja-JP')}　{d.status === 'new' ? '→ 作る' : d.status === 'exists' ? '（作成済み）' : d.status === 'skipped' ? '（作らない: 作ったあとに消された）' : '（作らない: その月の明細がすでにある）'}</p>
+                <div key={`${d.user_id}${d.month}`} className="text-xs text-gray-600">
+                  <p>{d.user_name}・{d.month}分・{d.label} ¥{d.amount.toLocaleString('ja-JP')}{d.deductions !== undefined ? `（控除 ¥${d.deductions.toLocaleString('ja-JP')}）` : ''}　{d.status === 'new' ? '→ 作る' : d.status === 'exists' ? '（作成済み）' : d.status === 'skipped' ? '（作らない: 作ったあとに消された）' : '（作らない: その月の明細がすでにある）'}</p>
+                  {d.warnings?.map((w, i) => <p key={i} className="text-amber-700">⚠ {w}</p>)}
+                </div>
               ))}
             </div>
           )}

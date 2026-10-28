@@ -20,8 +20,8 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     const others = await prisma.fixed_pay_plans.findMany({ where: { user_id: before.user_id, active: true, NOT: { id } } });
     if (others.some(o => plansOverlap(o, { starts_month: d.starts_month, ends_month: d.ends_month ?? null }))) return NextResponse.json({ error: 'overlap' }, { status: 409 });
   }
-  await prisma.fixed_pay_plans.update({ where: { id }, data: { label: d.label, amount: d.amount, starts_month: d.starts_month, ends_month: d.ends_month ?? null, active, note: d.note ?? null } });
-  await logAudit({ actorUserId: actor.id, actionType: 'fixed_pay_plan_update', targetType: 'fixed_pay_plan', targetId: id, metadata: { before: { label: before.label, amount: before.amount, starts_month: before.starts_month, ends_month: before.ends_month, active: before.active }, after: { label: d.label, amount: d.amount, starts_month: d.starts_month, ends_month: d.ends_month ?? null, active } } });
+  await prisma.fixed_pay_plans.update({ where: { id }, data: { label: d.label, amount: d.amount, commute_amount: d.commute_amount ?? 0, starts_month: d.starts_month, ends_month: d.ends_month ?? null, active, note: d.note ?? null } });
+  await logAudit({ actorUserId: actor.id, actionType: 'fixed_pay_plan_update', targetType: 'fixed_pay_plan', targetId: id, metadata: { before: { label: before.label, amount: before.amount, commute_amount: before.commute_amount, starts_month: before.starts_month, ends_month: before.ends_month, active: before.active }, after: { label: d.label, amount: d.amount, commute_amount: d.commute_amount ?? 0, starts_month: d.starts_month, ends_month: d.ends_month ?? null, active } } });
   return NextResponse.json({ ok: true });
 }
 

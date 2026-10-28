@@ -125,6 +125,23 @@ describe('給与明細', () => {
     expect(body.items[0].net).toBe(255000);
     expect(body.summary.planned_total).toBe(255000);
   });
+  it('オートフローの固定報酬の下書き（支払予定・全銀ファイル前）だけ auto_draft が付く', async () => {
+    (getActor as any).mockResolvedValue(actor('employee'));
+    const base = {
+      id: 'p1', user: { id: 'u1', name: '田中', worker_type: 'employee' }, pay_month: '2026-10', title: '給与', status: 'planned', pay_date: null, note: null,
+      created_at: new Date(), expense_claims: [], items: [], batch_id: null, auto_key: 'fixed:u1:2026-10', auto_edited: false,
+    };
+    const flag = async (over: object) => {
+      (prisma.payslips.findMany as any).mockResolvedValue([{ ...base, ...over }]);
+      return (await (await getPayslips(new Request('http://x/api/work/payslips?month=2026-10') as any)).json()).items[0].auto_draft;
+    };
+    expect(await flag({})).toEqual({ edited: false });
+    expect(await flag({ auto_edited: true })).toEqual({ edited: true });
+    expect(await flag({ status: 'paid' })).toBeNull();
+    expect(await flag({ batch_id: 'b1' })).toBeNull();
+    expect(await flag({ auto_key: 'bonus:x1' })).toBeNull();
+    expect(await flag({ auto_key: null })).toBeNull();
+  });
   it('一般ユーザーは明細を登録できない', async () => {
     (getActor as any).mockResolvedValue(actor('employee'));
     const res = await postPayslip(json('http://x', { userId: 'u2', pay_month: '2026-10', items: [{ kind: 'earning', label: '基本給', amount: 1 }] }));

@@ -1,5 +1,6 @@
 // オートフローの設定（app_settings の AUTOFLOW_CONFIG に JSON で保存）。どの流れも、最初は OFF。
 import { z } from 'zod';
+import { PREFECTURES } from '@/lib/payroll/tables';
 
 const days = (lo: number, hi: number, dflt: number) => z.number().int().min(lo).max(hi).default(dflt);
 
@@ -12,8 +13,15 @@ export const configSchema = z.object({
   payment: z.object({ enabled: z.boolean().default(false), days_before: days(1, 14, 3) }).default({ enabled: false, days_before: 3 }),
   // 振込の確定: 「承認して確定」(全銀データの作成)をしたとき、振込先の人に「確定しました」と知らせる（金額は載せない）
   confirm: z.object({ enabled: z.boolean().default(false) }).default({ enabled: false }),
-  // 役員報酬・準業務委託の固定の月額から、毎月の締め日に給与明細(支払予定)の下書きを自動で作る
+  // 役員・社員・準業務委託の固定の月額から、毎月の締め日に給与明細(支払予定)の下書きを自動で作る
   fixed_pay: z.object({ enabled: z.boolean().default(false) }).default({ enabled: false }),
+  // 固定報酬の下書きに、社会保険料・雇用保険料・源泉所得税・住民税を自動で入れる。
+  // timing: 'next' = 翌月徴収（10月分の保険料を、11月に払う給与から引く）、'same' = 当月徴収。prefecture は協会けんぽの料率に使う。
+  deductions: z.object({
+    enabled: z.boolean().default(false),
+    prefecture: z.enum(PREFECTURES).default('東京都'),
+    timing: z.enum(['next', 'same']).default('next'),
+  }).default({ enabled: false, prefecture: '東京都', timing: 'next' }),
   // 準業務委託の報告書: 提出する日を含む直近 N 日にログインがなければ、提出前に警告を出す
   activity: z.object({ enabled: z.boolean().default(false), days: days(3, 60, 14) }).default({ enabled: false, days: 14 }),
 });

@@ -14,12 +14,12 @@ export async function GET() {
     prisma.users.findMany({ where: { worker_type: { in: FIXED_PAY_TYPES }, locked_at: null }, select: { id: true, name: true, worker_type: true }, orderBy: { name: 'asc' } }),
   ]);
   return NextResponse.json({
-    plans: plans.map(p => ({ id: p.id, user_id: p.user_id, user_name: p.user.name, worker_type: p.user.worker_type, label: p.label, amount: p.amount, starts_month: p.starts_month, ends_month: p.ends_month, active: p.active, note: p.note })),
+    plans: plans.map(p => ({ id: p.id, user_id: p.user_id, user_name: p.user.name, worker_type: p.user.worker_type, label: p.label, amount: p.amount, commute_amount: p.commute_amount, starts_month: p.starts_month, ends_month: p.ends_month, active: p.active, note: p.note })),
     users,
   });
 }
 
-// POST /api/autoflow/plans - register a fixed monthly pay for an 役員 or 準業務委託
+// POST /api/autoflow/plans - register a fixed monthly pay (役員・社員・正社員・パート・準業務委託)
 export async function POST(req: NextRequest) {
   const actor = await financeActor();
   if (!actor) return forbidden();
@@ -35,8 +35,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'overlap' }, { status: 409 });
   }
   const plan = await prisma.fixed_pay_plans.create({
-    data: { user_id: d.user_id, label: d.label, amount: d.amount, starts_month: d.starts_month, ends_month: d.ends_month ?? null, active: d.active ?? true, note: d.note ?? null, created_by_id: actor.id },
+    data: { user_id: d.user_id, label: d.label, amount: d.amount, commute_amount: d.commute_amount ?? 0, starts_month: d.starts_month, ends_month: d.ends_month ?? null, active: d.active ?? true, note: d.note ?? null, created_by_id: actor.id },
   });
-  await logAudit({ actorUserId: actor.id, actionType: 'fixed_pay_plan_create', targetType: 'fixed_pay_plan', targetId: plan.id, metadata: { user_id: d.user_id, label: d.label, amount: d.amount, starts_month: d.starts_month, ends_month: d.ends_month ?? null } });
+  await logAudit({ actorUserId: actor.id, actionType: 'fixed_pay_plan_create', targetType: 'fixed_pay_plan', targetId: plan.id, metadata: { user_id: d.user_id, label: d.label, amount: d.amount, commute_amount: d.commute_amount ?? 0, starts_month: d.starts_month, ends_month: d.ends_month ?? null } });
   return NextResponse.json({ ok: true, id: plan.id }, { status: 201 });
 }

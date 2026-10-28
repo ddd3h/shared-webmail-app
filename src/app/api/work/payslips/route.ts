@@ -28,6 +28,8 @@ function serializePayslip(p: Row) {
     status: p.status,
     pay_date: p.pay_date ? p.pay_date.toISOString().slice(0, 10) : null,
     note: p.note,
+    // オートフローが固定報酬から作った下書きで、まだ支払予定・全銀ファイル前なら true（「控除を再計算」を出す）。edited = 経理が明細を直したあと
+    auto_draft: !!p.auto_key?.startsWith('fixed:') && p.status === 'planned' && !p.batch_id ? { edited: p.auto_edited } : null,
     items: p.items.map(i => ({ id: i.id, kind: i.kind, label: i.label, amount: i.amount, system: !!i.system_key })),
     // expense claims merged into this statement (shown as the 立替金精算 line)
     claims: p.expense_claims.map(c => ({ id: c.id, title: c.title, amount: c.amount, expense_date: c.expense_date.toISOString().slice(0, 10) })),

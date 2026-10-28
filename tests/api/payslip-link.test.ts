@@ -73,6 +73,23 @@ describe('給与明細を支払済にしたとき', () => {
   });
 });
 
+describe('オートフローが作った下書きを直したとき', () => {
+  const run = async (existing: object) => {
+    (prisma.payslips.findUnique as any).mockResolvedValue({ id: 'p1', user_id: 'u2', status: 'planned', batch_id: null, ...existing });
+    const update = vi.fn(async () => ({ id: 'p1', pay_date: null }));
+    (prisma.$transaction as any).mockImplementationOnce(async (fn: any) => fn({ payslip_items: { deleteMany: vi.fn() }, payslips: { update } }));
+    expect((await put(body({ status: 'planned' }))).status).toBe(200);
+    return (update.mock.calls[0] as any)[0].data;
+  };
+  it('自動で作った明細（auto_key あり）は、直した印が付く。これ以後、加算の追加で行を作り直されない', async () => {
+    expect((await run({ auto_key: 'fixed:u2:2026-10' })).auto_edited).toBe(true);
+    expect((await run({ auto_key: 'bonus:x1' })).auto_edited).toBe(true);
+  });
+  it('手で入れた明細には印を付けない', async () => {
+    expect('auto_edited' in (await run({ auto_key: null }))).toBe(false);
+  });
+});
+
 describe('立替金を給与明細に合算', () => {
   it('payslipモードは対象月が必須', async () => {
     expect((await post(reimburse, { ids: ['c1'], mode: 'payslip' })).status).toBe(400);

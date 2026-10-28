@@ -8,6 +8,7 @@ export const planSchema = z.object({
   user_id: z.string().min(1),
   label: z.string().trim().min(1).max(40).refine(l => !isBonusTitle(l), 'bonus_label'), // 「賞与」は加算・賞与の欄で登録する
   amount: z.number().int().min(1).max(100_000_000),
+  commute_amount: z.number().int().min(0).max(10_000_000).optional(), // 通勤手当（月額）。0 か空なら行を作らない
   starts_month: month,
   ends_month: month.nullable().optional(),
   active: z.boolean().optional(),

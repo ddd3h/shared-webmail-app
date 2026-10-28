@@ -111,6 +111,7 @@ model users {
   payslips_created           payslips[]               @relation("payslip_creator")
   fixed_pay_plans            fixed_pay_plans[]        @relation("fixed_pay_user")
   pay_extras                 pay_extras[]             @relation("pay_extra_user")
+  payroll_profile            payroll_profiles?        @relation("payroll_profile_user")
   expense_claims             expense_claims[]         @relation("expense_claimant")
   expense_reviewed           expense_claims[]         @relation("expense_reviewer")
   expense_reimbursed         expense_claims[]         @relation("expense_reimburser")
@@ -860,6 +861,7 @@ model payslips {
   created_by_id String?
   batch_id      String?   // the 全銀 transfer file this statement was put into
   auto_key      String?   @unique // オートフローが自動で作った明細の印（'fixed:<user>:<YYYY-MM>' 'bonus:<extra>'）。二重に作らないための鍵
+  auto_edited   Boolean   @default(false) // 自動で作った明細を、経理が明細の画面で直した。直したあとは、加算の追加などで行を作り直さない
   created_at    DateTime  @default(now())
   updated_at    DateTime  @updatedAt
 
@@ -1423,6 +1425,7 @@ model fixed_pay_plans {
   user_id       String
   label         String   // 明細の題名と行の名前（役員報酬／業務委託報酬 など）
   amount        Int      // 月額（円）
+  commute_amount Int     @default(0) // 通勤手当（円）。非課税（月15万円まで）の行として、月額の下に別の行で入る
   starts_month  String   // 'YYYY-MM' 最初の支払月（期間の月）
   ends_month    String?  // 'YYYY-MM' 最後の支払月。空なら続く
   active        Boolean  @default(true)
@@ -1450,4 +1453,23 @@ model pay_extras {
   user users @relation("pay_extra_user", fields: [user_id], references: [id], onDelete: Cascade)
 
   @@index([user_id, pay_month])
+}
+
+// 給与から引く控除（社会保険料・雇用保険料・源泉所得税・住民税）を自動で計算するための、一人ひとりの登録。
+// 生年月日は介護保険（40〜64歳）と年金・健康保険の年齢の範囲を決めるのに使う。経理・管理者だけが見られる。
+model payroll_profiles {
+  id                 String    @id @default(cuid())
+  user_id            String    @unique
+  birth_date         DateTime? @db.Date
+  health_insured     Boolean   @default(true)  // 健康保険・厚生年金に入っている
+  employment_insured Boolean   @default(true)  // 雇用保険に入っている
+  standard_monthly   Int?      // 標準報酬月額。空なら、その月の支給から等級を引く
+  dependents         Int       @default(0)     // 扶養親族等の数（源泉所得税の甲欄。乙欄では「従たる給与」の扶養親族等の数）
+  resident_tax       Int       @default(0)     // 住民税（月額・特別徴収）
+  resident_tax_first Int?      // 6月に支給する給与の住民税（通知書の初回分）。空なら月額と同じ
+  updated_by_id      String?
+  created_at         DateTime  @default(now())
+  updated_at         DateTime  @updatedAt
+
+  user users @relation("payroll_profile_user", fields: [user_id], references: [id], onDelete: Cascade)
 }

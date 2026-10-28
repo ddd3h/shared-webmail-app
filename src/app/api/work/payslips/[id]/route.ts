@@ -59,6 +59,8 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       data: {
         pay_month: d.pay_month, title: d.title, status: d.status,
         pay_date: payDate ? toDbDate(payDate) : null, note: d.note || null,
+        // オートフローが作った明細を直した印。これ以後、加算の追加で行を作り直さない（直した内容が消えるため）
+        ...(existing.auto_key ? { auto_edited: true } : {}),
         items: { create: d.items.map((i, idx) => ({ ...i, sort: idx })) },
       },
     });

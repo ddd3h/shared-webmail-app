@@ -4,10 +4,11 @@ import SettingsPanel from '@/components/autoflow/SettingsPanel';
 import PreviewPanel from '@/components/autoflow/PreviewPanel';
 import HistoryPanel from '@/components/autoflow/HistoryPanel';
 import PlansPanel from '@/components/autoflow/PlansPanel';
+import DeductionsPanel from '@/components/autoflow/DeductionsPanel';
 
 type Me = { is_finance: boolean };
-type TabKey = 'settings' | 'preview' | 'history' | 'plans';
-const TABS: { k: TabKey; l: string }[] = [{ k: 'settings', l: '流れの設定' }, { k: 'preview', l: 'プレビュー' }, { k: 'plans', l: '固定報酬・賞与' }, { k: 'history', l: '送信履歴' }];
+type TabKey = 'settings' | 'preview' | 'history' | 'plans' | 'deductions';
+const TABS: { k: TabKey; l: string }[] = [{ k: 'settings', l: '流れの設定' }, { k: 'preview', l: 'プレビュー' }, { k: 'plans', l: '固定報酬・賞与' }, { k: 'deductions', l: '控除' }, { k: 'history', l: '送信履歴' }];
 
 export default function AutoflowPage() {
   const [me, setMe] = useState<Me | null>(null);
@@ -21,7 +22,7 @@ export default function AutoflowPage() {
     <div className="space-y-4">
       <div>
         <h1 className="text-xl font-bold text-gray-900">オートフロー</h1>
-        <p className="hidden md:block text-xs text-gray-500 mt-0.5">業務報告書・経費・振込日を、期限に合わせてMattermostのDMで自動でお知らせし、役員報酬・準業務委託の固定報酬の下書きを作ります</p>
+        <p className="hidden md:block text-xs text-gray-500 mt-0.5">業務報告書・経費・振込日を、期限に合わせてMattermostのDMで自動でお知らせし、役員・社員・準業務委託の固定報酬の下書き（控除の自動計算つき）を作ります</p>
       </div>
       <div className="flex gap-1 border-b border-gray-200 overflow-x-auto scrollbar-none">
         {TABS.map(t => (
@@ -32,6 +33,7 @@ export default function AutoflowPage() {
         {tab === 'settings' && <SettingsPanel />}
         {tab === 'preview' && <PreviewPanel onSent={() => setRefresh(n => n + 1)} />}
         {tab === 'plans' && <PlansPanel />}
+        {tab === 'deductions' && <DeductionsPanel />}
         {tab === 'history' && <HistoryPanel refreshKey={refresh} />}
       </div>
     </div>

@@ -9,6 +9,7 @@ describe('オートフローの設定', () => {
     expect(DEFAULT_CONFIG.payment).toEqual({ enabled: false, days_before: 3 });
     expect(DEFAULT_CONFIG.confirm).toEqual({ enabled: false });
     expect(DEFAULT_CONFIG.fixed_pay).toEqual({ enabled: false });
+    expect(DEFAULT_CONFIG.deductions).toEqual({ enabled: false, prefecture: '東京都', timing: 'next' });
     expect(DEFAULT_CONFIG.activity).toEqual({ enabled: false, days: 14 });
   });
 
@@ -19,6 +20,13 @@ describe('オートフローの設定', () => {
 
   it('一部だけ保存されていても、足りないところは既定値で補う', () => {
     expect(parseConfig('{"expense":{"enabled":true}}').expense).toEqual({ enabled: true, days_before: 3 });
+  });
+
+  it('控除の自動計算: 都道府県は 47 のどれか、徴収の時期は next / same だけ', () => {
+    expect(configSchema.safeParse({ deductions: { enabled: true, prefecture: '大阪府', timing: 'same' } }).success).toBe(true);
+    expect(configSchema.safeParse({ deductions: { prefecture: '東京' } }).success).toBe(false);
+    expect(configSchema.safeParse({ deductions: { timing: 'later' } }).success).toBe(false);
+    expect(parseConfig('{"deductions":{"enabled":true}}').deductions).toEqual({ enabled: true, prefecture: '東京都', timing: 'next' });
   });
 
   it('日数は範囲の中だけ受け付ける', () => {
