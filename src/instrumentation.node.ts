@@ -11,8 +11,12 @@ import { dispatchDueScheduledSends } from '@/lib/mail/deliver';
 import { embeddingEnabled } from '@/lib/embedding';
 import { indexPendingThreads } from '@/lib/semantic-search';
 import { triggerFreeeSync } from '@/lib/freee-sync';
+import { installSlowRequestLog } from '@/lib/slow-requests';
 
 const DEFAULT_INTERVAL_SEC = 180;
+
+// Log the requests that take over SLOW_REQUEST_MS (default 500), to find out which screen is slow.
+installSlowRequestLog();
 
 async function getIntervalMs(): Promise<number> {
   try {
