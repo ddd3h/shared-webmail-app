@@ -42,7 +42,20 @@ Google Cloud Console で Calendar API を有効化し、OAuthクライアント�
 {NEXT_PUBLIC_APP_URL}/api/calendar/google/callback
 ```
 
-`GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` は連絡帳同期と共通です。トークンは暗号化して `calendar_google_links` に保存します。
+`GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` は連絡帳同期と共通です。
+
+### 「取り込むGoogleカレンダー」の一覧が空のとき
+
+Googleの許可のあと、連携ごとに「取り込むGoogleカレンダーを選択」の一覧が出ます。読み込めないときは、理由と直し方が赤い枠で出ます（`/api/calendar/links/:id/calendars` が返す `error`）。
+
+| `error` | 原因 | 直し方 |
+|---|---|---|
+| `api_disabled` | Google Cloud のプロジェクトで **Google Calendar API が有効になっていない**（一番多い） | Cloud Console の「APIとサービス → ライブラリ」で「Google Calendar API」を有効にし、数分待って「もう一度読み込む」 |
+| `insufficient_scope` | Googleの確認画面で、カレンダーの権限のチェックを外した | 「キャンセル」で連携をやり直し、「カレンダーを表示」にチェックを入れる |
+| `token_expired` | 連携が切れた | 連携をやり直す |
+| `google_api_failed` | その他（Google側の一時的な不調など） | しばらくして再読み込み。続くときはサーバーのログ `[Google Calendar] calendarList failed` を見る |
+
+一覧が空（読めるカレンダーが0件）のときも、案内が出ます。サーバーのログには、Googleの返事（先頭500文字）が残ります。トークンは暗号化して `calendar_google_links` に保存します。
 
 ## 日・週・月の表示
 

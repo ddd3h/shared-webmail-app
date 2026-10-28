@@ -556,3 +556,33 @@ test.describe('カレンダー（日付の扱い）', () => {
     expect(addDays(today(), 0)).toBe(today());
   });
 });
+
+test.describe('取り込むGoogleカレンダーの選択', () => {
+  test.use({ storageState: AUTH.sato });
+  const unlinked = () => db.calendar_google_links.create({ data: { id: 'l_pick', mailbox_id: MAILBOX_ID, linked_by_user_id: USERS.sato.id, encrypted_token: 'x', name: '新しい連携' } });
+
+  test('一覧が読めないときは、理由と直し方が出る。Calendar APIが無効ならそう教える。直ったら「もう一度読み込む」で選べる', async ({ page }) => {
+    await unlinked();
+    let answer: { status: number; body: object } = { status: 502, body: { error: 'api_disabled' } };
+    await page.route('**/api/calendar/links/l_pick/calendars', route => route.fulfill({ status: answer.status, contentType: 'application/json', body: JSON.stringify(answer.body) }));
+    await page.goto(`/calendar?mailbox=${MAILBOX_ID}&link=l_pick`);   // coming back from Google opens the settings by itself
+    const alert = page.getByRole('dialog', { name: 'Googleカレンダー連携' }).getByRole('alert');
+    await expect(alert).toContainText('「Google Calendar API」が有効になっていません');
+    answer = { status: 200, body: { items: [{ id: 'primary', name: '佐藤', primary: true }, { id: 'team', name: 'チーム', primary: false }] } };
+    await alert.getByRole('button', { name: 'もう一度読み込む' }).click();
+    await expect(page.getByText('「Google Calendar API」が有効になっていません')).toHaveCount(0);
+    await expect(page.getByRole('option', { name: '佐藤（メイン）' })).toBeAttached();
+    await expect(page.getByRole('option', { name: 'チーム', exact: true })).toBeAttached();
+  });
+
+  test('権限が足りないとき・読めるカレンダーが0件のときも、それぞれ案内が出る', async ({ page }) => {
+    await unlinked();
+    await page.route('**/api/calendar/links/l_pick/calendars', route => route.fulfill({ status: 502, contentType: 'application/json', body: JSON.stringify({ error: 'insufficient_scope' }) }));
+    await page.goto(`/calendar?mailbox=${MAILBOX_ID}&link=l_pick`);   // coming back from Google opens the settings by itself
+    await expect(page.getByText('「カレンダーを表示」にチェックを入れて許可してください')).toBeVisible();
+    await page.unroute('**/api/calendar/links/l_pick/calendars');
+    await page.route('**/api/calendar/links/l_pick/calendars', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ items: [] }) }));
+    await page.getByRole('button', { name: 'もう一度読み込む' }).click();
+    await expect(page.getByText('読み取れるカレンダーがありません')).toBeVisible();
+  });
+});

@@ -503,18 +503,31 @@ function CalendarView() {
   );
 }
 
+// Why the list of Google calendars could not be read, and what to do about it (the error codes of /api/calendar/links/:id/calendars)
+const LIST_ERROR_TEXT: Record<string, string> = {
+  api_disabled: 'Google Cloud で「Google Calendar API」が有効になっていません。管理者が Google Cloud Console の「APIとサービス → ライブラリ」で「Google Calendar API」を有効にして、数分たってから「もう一度読み込む」を押してください。',
+  insufficient_scope: 'カレンダーを読み取る権限が許可されていません。「キャンセル」で連携をやり直し、Googleの確認画面で「カレンダーを表示」にチェックを入れて許可してください。',
+  token_expired: 'Googleとの連携が切れています。「キャンセル」で連携をやり直してください。',
+  google_api_failed: 'Googleカレンダーの一覧を読み込めませんでした。しばらくしてからもう一度お試しください。続くときは、管理者にサーバーのログ（[Google Calendar] calendarList failed）を確認してもらってください。',
+};
+
 function GoogleSettings({ mailboxId, links, configured, focusLink, onClose, onChanged, flash }: {
   mailboxId: string; links: Link[]; configured: boolean; focusLink: string | null;
   onClose: () => void; onChanged: () => void; flash: (t: 'success' | 'error', s: string) => void;
 }) {
   const [options, setOptions] = useState<Record<string, { id: string; name: string; primary: boolean }[]>>({});
+  const [listError, setListError] = useState<Record<string, string>>({});   // why the list of Google calendars could not be read
   const inp = 'rounded-lg border border-gray-300 px-2 py-1.5 text-sm w-full';
 
+  const loadOptions = async (id: string) => {
+    setListError(e => { const { [id]: _, ...rest } = e; return rest; });
+    const res = await fetch(`/api/calendar/links/${id}/calendars`).catch(() => null);
+    if (res?.ok) { const d = await res.json(); setOptions(o => ({ ...o, [id]: d.items })); return; }
+    const d = await res?.json().catch(() => ({}));
+    setListError(e => ({ ...e, [id]: d?.error ?? 'google_api_failed' }));
+  };
   useEffect(() => {
-    links.filter(l => !l.google_calendar_id && !options[l.id]).forEach(async l => {
-      const res = await fetch(`/api/calendar/links/${l.id}/calendars`);
-      if (res.ok) { const d = await res.json(); setOptions(o => ({ ...o, [l.id]: d.items })); }
-    });
+    links.filter(l => !l.google_calendar_id && !options[l.id] && !listError[l.id]).forEach(l => { void loadOptions(l.id); });
   }, [links]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function patch(id: string, body: object) {
@@ -545,6 +558,14 @@ function GoogleSettings({ mailboxId, links, configured, focusLink, onClose, onCh
                   <option value="" disabled>選択してください</option>
                   {(options[l.id] || []).map(o => <option key={o.id} value={o.id}>{o.name}{o.primary ? '（メイン）' : ''}</option>)}
                 </select>
+                {!options[l.id] && !listError[l.id] && <p className="mt-1 text-xs text-gray-400">Googleカレンダーの一覧を読み込んでいます…</p>}
+                {options[l.id]?.length === 0 && <p role="status" className="mt-1 text-xs text-amber-700">このGoogleアカウントには、読み取れるカレンダーがありません。別のアカウントで連携し直してください。</p>}
+                {listError[l.id] && (
+                  <div role="alert" className="mt-2 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 space-y-1">
+                    <p>{LIST_ERROR_TEXT[listError[l.id]] ?? LIST_ERROR_TEXT.google_api_failed}</p>
+                    <button type="button" className="underline" onClick={() => loadOptions(l.id)}>もう一度読み込む</button>
+                  </div>
+                )}
                 <button onClick={() => unlink(l.id)} className="mt-2 text-xs text-red-600 hover:underline">キャンセル</button>
               </div>
             ) : (

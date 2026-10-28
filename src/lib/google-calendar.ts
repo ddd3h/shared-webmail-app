@@ -43,13 +43,36 @@ async function getAccessToken(link: { id: string; encrypted_token: string }): Pr
   return next.access_token;
 }
 
+/** Why Google refused to list the calendars, so the screen can say what to fix (an empty list with no reason helps nobody). */
+export type GoogleListError = 'api_disabled' | 'insufficient_scope' | 'token_expired' | 'google_api_failed';
+
+/** Google's error answer → what is wrong. `api_disabled`: the Calendar API is not enabled in the Cloud project (the usual cause);
+ *  `insufficient_scope`: the person did not tick the calendar permission on the consent screen. */
+export function classifyGoogleError(status: number, body: unknown): GoogleListError {
+  const e = (body as { error?: { status?: string; message?: string; errors?: { reason?: string }[]; details?: { reason?: string }[] } } | null)?.error;
+  const reasons = [...(e?.errors ?? []).map(x => x.reason), ...(e?.details ?? []).map(x => x.reason)].filter(Boolean).join(' ');
+  const text = `${e?.status ?? ''} ${reasons} ${e?.message ?? ''}`;
+  if (/accessNotConfigured|SERVICE_DISABLED|has not been used in project|is disabled/i.test(text)) return 'api_disabled';
+  if (/insufficientPermissions|ACCESS_TOKEN_SCOPE_INSUFFICIENT|insufficient authentication scopes|insufficient permission/i.test(text)) return 'insufficient_scope';
+  if (status === 401) return 'token_expired';
+  return 'google_api_failed';
+}
+
+export class GoogleListFailure extends Error {
+  constructor(public code: GoogleListError) { super(code); }
+}
+
 export async function listGoogleCalendars(link: { id: string; encrypted_token: string }) {
   const token = await getAccessToken(link);
-  if (!token) throw new Error('token_expired');
+  if (!token) throw new GoogleListFailure('token_expired');
   const res = await fetch('https://www.googleapis.com/calendar/v3/users/me/calendarList?minAccessRole=reader', {
     headers: { Authorization: `Bearer ${token}` },
   });
-  if (!res.ok) throw new Error('google_api_failed');
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    console.error('[Google Calendar] calendarList failed:', res.status, JSON.stringify(body)?.slice(0, 500));
+    throw new GoogleListFailure(classifyGoogleError(res.status, body));
+  }
   const data = await res.json();
   return ((data.items || []) as any[]).map(c => ({
     id: c.id as string,

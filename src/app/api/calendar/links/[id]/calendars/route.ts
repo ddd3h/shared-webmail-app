@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { getSession, requireAuth } from '@/lib/auth';
 import { canManageCalendarLink } from '@/lib/rbac';
-import { listGoogleCalendars } from '@/lib/google-calendar';
+import { GoogleListFailure, listGoogleCalendars } from '@/lib/google-calendar';
 
 // GET /api/calendar/links/:id/calendars - Google calendars the linked account can read
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -16,7 +16,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   }
   try {
     return NextResponse.json({ items: await listGoogleCalendars(link) });
-  } catch {
-    return NextResponse.json({ error: 'google_api_failed' }, { status: 502 });
+  } catch (e) {
+    // `error` says what to fix: api_disabled | insufficient_scope | token_expired | google_api_failed
+    return NextResponse.json({ error: e instanceof GoogleListFailure ? e.code : 'google_api_failed' }, { status: 502 });
   }
 }
