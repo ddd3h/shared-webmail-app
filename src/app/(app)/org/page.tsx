@@ -35,7 +35,7 @@ export default function OrgPage() {
         </div>
       )}
       <div key={tab} className="tab-fade">
-        {tab === 'chart' && <OrgChart data={data} />}
+        {tab === 'chart' && <OrgChart data={data} onChanged={load} />}
         {tab === 'units' && <UnitsPanel data={data} onChanged={load} />}
         {tab === 'positions' && <PositionsPanel data={data} onChanged={load} />}
         {tab === 'members' && <MembersPanel data={data} onChanged={load} />}

@@ -1,6 +1,6 @@
 import type { Capability } from '@/lib/org';
 
-export type OrgUnit = { id: string; name: string; parent_id: string | null; sort: number };
+export type OrgUnit = { id: string; name: string; parent_id: string | null; sort: number; pos_x: number | null; pos_y: number | null };
 export type OrgPosition = { id: string; name: string; level: number; permissions: Capability[] };
 /** One 所属: a 部署 and the 役職 there. A person has any number of them. */
 export type OrgMembership = { unit_id: string; position_id: string | null };

@@ -1176,6 +1176,8 @@ model org_units {
   name         String
   parent_id    String?
   sort         Int      @default(0)
+  pos_x        Float?   // where the 部署 sits on the org diagram (組織図); null = placed automatically
+  pos_y        Float?
   created_at   DateTime @default(now())
   updated_at   DateTime @updatedAt
 

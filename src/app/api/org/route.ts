@@ -13,7 +13,7 @@ export async function GET() {
   const admin = isAdmin(actor);
 
   const [units, positions, users] = await Promise.all([
-    prisma.org_units.findMany({ orderBy: [{ sort: 'asc' }, { name: 'asc' }], select: { id: true, name: true, parent_id: true, sort: true } }),
+    prisma.org_units.findMany({ orderBy: [{ sort: 'asc' }, { name: 'asc' }], select: { id: true, name: true, parent_id: true, sort: true, pos_x: true, pos_y: true } }),
     prisma.org_positions.findMany({ orderBy: [{ level: 'desc' }, { name: 'asc' }], select: { id: true, name: true, level: true, permissions: true } }),
     prisma.users.findMany({ orderBy: { created_at: 'asc' }, select: { id: true, name: true, email: true, role: true, org_memberships: { select: { unit_id: true, position_id: true } } } }),
   ]);
