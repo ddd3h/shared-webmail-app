@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { computeDeductions, AUTO_LABEL_LIST, type DeductionPerson } from '@/lib/payroll/deductions';
 import { careApplies, employmentShare, gradeOfRemuneration, gradeOfStandard, healthApplies, pensionApplies, pensionStandard, roundHalfDown, shareOf } from '@/lib/payroll/insurance';
 import { taxYearFor, withholdingKo, withholdingOtsu } from '@/lib/payroll/withholding';
+import { deductionsFor, EXECUTIVE_EMPLOYMENT_WARNING, NO_PROFILE_WARNING, type ProfileRow } from '@/lib/payroll/for-payslip';
 import { GRADES, PENSION_MAX, PENSION_MIN, PREFECTURES } from '@/lib/payroll/tables';
 
 // 協会けんぽ 東京都（令和8年3月分〜、健康保険 9.85%・介護 1.62%・子ども・子育て支援金 0.23%・厚生年金 18.3%）の保険料額表。
@@ -180,7 +181,7 @@ const amountOf = (r: ReturnType<typeof computeDeductions>, key: string) => r.lin
 
 describe('computeDeductions', () => {
   it('30万円・40歳未満: 健康保険 14,775・子ども・子育て支援金 345・厚生年金 27,450・雇用保険 1,500、その残りに所得税', () => {
-    const r = computeDeductions(company, person(), { pay_date: '2026-11-25', earnings_total: 300_000, nontaxable: 0 });
+    const r = computeDeductions(company, person(), { pay_date: '2026-11-25', closing_date: '2026-10-31', earnings_total: 300_000, nontaxable: 0 });
     expect(amountOf(r, 'health')).toBe(14_775);
     expect(amountOf(r, 'care')).toBeUndefined();
     expect(amountOf(r, 'support')).toBe(345);
@@ -193,14 +194,14 @@ describe('computeDeductions', () => {
   });
 
   it('40〜64歳は介護保険料が付く（健康保険＋介護 17,205 から健康保険 14,775 を引いた 2,430）', () => {
-    const r = computeDeductions(company, person({ birth_date: '1975-03-20' }), { pay_date: '2026-11-25', earnings_total: 300_000, nontaxable: 0 });
+    const r = computeDeductions(company, person({ birth_date: '1975-03-20' }), { pay_date: '2026-11-25', closing_date: '2026-10-31', earnings_total: 300_000, nontaxable: 0 });
     expect(amountOf(r, 'health')).toBe(14_775);
     expect(amountOf(r, 'care')).toBe(2_430);
   });
 
   it('翌月徴収は前の月の保険料、当月徴収はその月の保険料。介護保険の始まりの月がずれる', () => {
     const p = person({ birth_date: '1986-12-15' }); // 40歳になる日は 2026-12-14 → 12月分から介護
-    const input = { pay_date: '2026-12-25', earnings_total: 300_000, nontaxable: 0 };
+    const input = { pay_date: '2026-12-25', closing_date: '2026-11-30', earnings_total: 300_000, nontaxable: 0 };
     const next = computeDeductions({ ...company, timing: 'next' }, p, input);
     const same = computeDeductions({ ...company, timing: 'same' }, p, input);
     expect(amountOf(next, 'care')).toBeUndefined(); // 11月分
@@ -210,24 +211,24 @@ describe('computeDeductions', () => {
   });
 
   it('標準報酬月額が未登録なら、その月の支給から等級を引き、ノートに書く', () => {
-    const r = computeDeductions(company, person({ standard_monthly: null }), { pay_date: '2026-11-25', earnings_total: 297_000, nontaxable: 0 });
+    const r = computeDeductions(company, person({ standard_monthly: null }), { pay_date: '2026-11-25', closing_date: '2026-10-31', earnings_total: 297_000, nontaxable: 0 });
     expect(amountOf(r, 'health')).toBe(14_775);
     expect(r.notes.join('\n')).toContain('未登録');
   });
 
   it('通勤手当（非課税）は所得税の対象から外すが、社会保険料と雇用保険料の対象には含める', () => {
-    const base = { pay_date: '2026-11-25', earnings_total: 330_000 };
+    const base = { pay_date: '2026-11-25', closing_date: '2026-10-31', earnings_total: 330_000 };
     const r = computeDeductions(company, person(), { ...base, nontaxable: 30_000 });
     const social = 14_775 + 345 + 27_450 + employmentShare(330_000, 5);
     expect(amountOf(r, 'employment')).toBe(1_650);
     expect(amountOf(r, 'income_tax')).toBe(withholdingKo(300_000 - social, 0, taxYearFor(2026)!));
     // 月15万円を超える分は課税
-    const big = computeDeductions(company, person({ health_insured: false, employment_insured: false }), { pay_date: '2026-11-25', earnings_total: 400_000, nontaxable: 200_000 });
+    const big = computeDeductions(company, person({ health_insured: false, employment_insured: false }), { pay_date: '2026-11-25', closing_date: '2026-10-31', earnings_total: 400_000, nontaxable: 200_000 });
     expect(amountOf(big, 'income_tax')).toBe(withholdingKo(250_000, 0, taxYearFor(2026)!));
   });
 
   it('乙欄は「所得税（乙欄）」、甲欄は「所得税（甲欄）」の名前で出す。扶養は甲欄で効く', () => {
-    const input = { pay_date: '2026-11-25', earnings_total: 400_000, nontaxable: 0 };
+    const input = { pay_date: '2026-11-25', closing_date: '2026-10-31', earnings_total: 400_000, nontaxable: 0 };
     const ko = computeDeductions(company, person({ health_insured: false, employment_insured: false, dependents: 2 }), input);
     const otsu = computeDeductions(company, person({ health_insured: false, employment_insured: false, withholding_class: 'otsu' }), input);
     expect(ko.lines.find(l => l.key === 'income_tax')!.label).toBe('所得税（甲欄）');
@@ -237,49 +238,89 @@ describe('computeDeductions', () => {
   });
 
   it('所得税が 0 円でも行は残す。引く保険がなければ、その行は出さない', () => {
-    const r = computeDeductions(company, person({ health_insured: false, employment_insured: false }), { pay_date: '2026-11-25', earnings_total: 100_000, nontaxable: 0 });
+    const r = computeDeductions(company, person({ health_insured: false, employment_insured: false }), { pay_date: '2026-11-25', closing_date: '2026-10-31', earnings_total: 100_000, nontaxable: 0 });
     expect(r.lines).toEqual([{ key: 'income_tax', label: '所得税（甲欄）', amount: 0 }]);
   });
 
   it('住民税は登録した額。6月だけは初回分（未入力なら月額と同じ）', () => {
     const p = person({ health_insured: false, employment_insured: false, resident_tax: 10_000, resident_tax_first: 12_400 });
     const input = { earnings_total: 300_000, nontaxable: 0 };
-    expect(amountOf(computeDeductions(company, p, { ...input, pay_date: '2026-06-25' }), 'resident_tax')).toBe(12_400);
-    expect(amountOf(computeDeductions(company, p, { ...input, pay_date: '2026-07-25' }), 'resident_tax')).toBe(10_000);
+    expect(amountOf(computeDeductions(company, p, { ...input, pay_date: '2026-06-25', closing_date: '2026-05-31' }), 'resident_tax')).toBe(12_400);
+    expect(amountOf(computeDeductions(company, p, { ...input, pay_date: '2026-07-25', closing_date: '2026-06-30' }), 'resident_tax')).toBe(10_000);
     const q = person({ health_insured: false, employment_insured: false, resident_tax: 10_000 });
-    expect(amountOf(computeDeductions(company, q, { ...input, pay_date: '2026-06-25' }), 'resident_tax')).toBe(10_000);
+    expect(amountOf(computeDeductions(company, q, { ...input, pay_date: '2026-06-25', closing_date: '2026-05-31' }), 'resident_tax')).toBe(10_000);
   });
 
   it('行の名前は、再計算で置き換える名前の一覧に全部入っている', () => {
-    const r = computeDeductions(company, person({ birth_date: '1975-03-20', resident_tax: 8_000 }), { pay_date: '2026-11-25', earnings_total: 300_000, nontaxable: 0 });
+    const r = computeDeductions(company, person({ birth_date: '1975-03-20', resident_tax: 8_000 }), { pay_date: '2026-11-25', closing_date: '2026-10-31', earnings_total: 300_000, nontaxable: 0 });
     expect(r.lines.length).toBeGreaterThanOrEqual(7);
     for (const l of r.lines) expect(AUTO_LABEL_LIST).toContain(l.label);
   });
 
   it('警告: 生年月日なし／率が未登録の月／新しい年度の率がまだない', () => {
-    const noBirth = computeDeductions(company, person({ birth_date: null }), { pay_date: '2026-11-25', earnings_total: 300_000, nontaxable: 0 });
+    const noBirth = computeDeductions(company, person({ birth_date: null }), { pay_date: '2026-11-25', closing_date: '2026-10-31', earnings_total: 300_000, nontaxable: 0 });
     expect(noBirth.warnings.join('\n')).toContain('生年月日');
-    const before = computeDeductions(company, person(), { pay_date: '2026-03-25', earnings_total: 300_000, nontaxable: 0 }); // 2026-02 分は率が未登録
+    const before = computeDeductions(company, person(), { pay_date: '2026-03-25', closing_date: '2026-02-28', earnings_total: 300_000, nontaxable: 0 }); // 2026-02 分は率が未登録
     expect(before.warnings.join('\n')).toContain('2026-02');
     expect(amountOf(before, 'health')).toBeUndefined();
-    const stale = computeDeductions(company, person(), { pay_date: '2027-06-25', earnings_total: 300_000, nontaxable: 0 });
+    const stale = computeDeductions(company, person(), { pay_date: '2027-06-25', closing_date: '2027-05-31', earnings_total: 300_000, nontaxable: 0 });
     expect(stale.warnings.join('\n')).toContain('前の年度の料率');
     expect(amountOf(stale, 'health')).toBe(14_775);
   });
 
   it('登録のない年分は所得税を計算せず、警告を出す', () => {
-    const r = computeDeductions(company, person({ health_insured: false, employment_insured: false }), { pay_date: '2025-12-25', earnings_total: 300_000, nontaxable: 0 });
+    const r = computeDeductions(company, person({ health_insured: false, employment_insured: false }), { pay_date: '2025-12-25', closing_date: '2025-11-30', earnings_total: 300_000, nontaxable: 0 });
     expect(r.lines.find(l => l.key === 'income_tax')).toBeUndefined();
     expect(r.warnings.join('\n')).toContain('2025年分');
   });
 
   it('70歳以上は厚生年金、75歳以上は健康保険を引かない', () => {
-    const input = { pay_date: '2026-11-25', earnings_total: 300_000, nontaxable: 0 };
+    const input = { pay_date: '2026-11-25', closing_date: '2026-10-31', earnings_total: 300_000, nontaxable: 0 };
     const seventy = computeDeductions(company, person({ birth_date: '1955-01-01' }), input);
     expect(amountOf(seventy, 'pension')).toBeUndefined();
     expect(amountOf(seventy, 'health')).toBe(14_775);
     const seventyFive = computeDeductions(company, person({ birth_date: '1950-01-01' }), input);
     expect(amountOf(seventyFive, 'health')).toBeUndefined();
     expect(amountOf(seventyFive, 'support')).toBeUndefined();
+  });
+});
+
+describe('雇用保険料率は賃金の締切日で年度が決まる', () => {
+  const at = (pay_date: string, closing_date: string) => computeDeductions(company, person({ health_insured: false }), { pay_date, closing_date, earnings_total: 300_000, nontaxable: 0 });
+  it('3/31締め・4/25払いは前の年度（5.5/1000）、4/30締め・5/25払いから新しい年度（5/1000）', () => {
+    expect(amountOf(at('2026-04-25', '2026-03-31'), 'employment')).toBe(1_650);
+    expect(amountOf(at('2026-05-25', '2026-04-30'), 'employment')).toBe(1_500);
+  });
+  it('4/20締め・4/25払い（4月払いでも締切日が4月）は新しい年度', () => {
+    expect(amountOf(at('2026-04-25', '2026-04-20'), 'employment')).toBe(1_500);
+  });
+  it('所得税の年分と社会保険料の対象月は、これまでどおり支払日で決まる', () => {
+    // 12/31締め・1/25払い: 源泉は翌年分（令和9年分）、雇用保険は前の年度の料率
+    const r = at('2027-01-25', '2026-12-31');
+    expect(r.notes.join('\n')).toContain('令和9年分');
+    expect(amountOf(r, 'employment')).toBe(1_500);
+  });
+});
+
+describe('deductionsFor（登録・区分の扱い）', () => {
+  const profileRow = (over: Partial<ProfileRow> = {}): ProfileRow => ({ birth_date: new Date('1990-05-10T00:00:00Z'), health_insured: true, employment_insured: true, standard_monthly: 300_000, dependents: 0, resident_tax: 0, resident_tax_first: null, ...over });
+  const items = [{ kind: 'earning', label: '給与', amount: 300_000, system_key: null }];
+  const run = (worker_type: string, profile: ProfileRow | null) => deductionsFor(company, { worker_type, withholding_class: 'ko' }, profile, '2026-11-25', '2026-10-31', items);
+
+  it('派遣・業務委託・準業務委託は対象外（null）', () => {
+    for (const t of ['dispatch', 'contractor', 'quasi_contractor']) expect(run(t, profileRow())).toBeNull();
+  });
+  it('登録がない人は、控除なしで警告だけ', () => {
+    expect(run('employee', null)).toEqual({ lines: [], notes: [], warnings: [NO_PROFILE_WARNING] });
+  });
+  it('役員に雇用保険のチェックが付いたままなら、警告する（役員は原則、雇用保険に入らない）', () => {
+    expect(run('executive', profileRow())!.warnings).toContain(EXECUTIVE_EMPLOYMENT_WARNING);
+    expect(run('executive', profileRow({ employment_insured: false }))!.warnings).not.toContain(EXECUTIVE_EMPLOYMENT_WARNING);
+    expect(run('employee', profileRow())!.warnings).not.toContain(EXECUTIVE_EMPLOYMENT_WARNING);
+    expect(amountOf(run('executive', profileRow({ employment_insured: false }))!, 'employment')).toBeUndefined();
+  });
+  it('立替金の行は支給の合計に入れない', () => {
+    const r = deductionsFor(company, { worker_type: 'employee', withholding_class: 'ko' }, profileRow(), '2026-11-25', '2026-10-31', [...items, { kind: 'earning', label: '立替金精算', amount: 50_000, system_key: 'expense_reimbursement' }])!;
+    expect(amountOf(r, 'employment')).toBe(1_500);
   });
 });

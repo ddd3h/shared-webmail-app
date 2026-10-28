@@ -29,7 +29,9 @@ export default function DeductionsPanel() {
   const [form, setForm] = useState(blankForm);
   function startEdit(p: Person) {
     const x = p.profile;
-    setForm(x ? { birth_date: x.birth_date ?? '', health_insured: x.health_insured, employment_insured: x.employment_insured, standard_monthly: x.standard_monthly === null ? '' : String(x.standard_monthly), dependents: String(x.dependents), resident_tax: String(x.resident_tax), resident_tax_first: x.resident_tax_first === null ? '' : String(x.resident_tax_first), withholding_class: p.withholding_class } : { ...blankForm, withholding_class: p.withholding_class });
+    // 役員は原則、雇用保険に入らない。初めて登録するときは外しておく（兼務役員で労働者の性格がある人だけ、チェックを入れる）
+    const blank = { ...blankForm, employment_insured: p.worker_type !== 'executive', withholding_class: p.withholding_class };
+    setForm(x ? { birth_date: x.birth_date ?? '', health_insured: x.health_insured, employment_insured: x.employment_insured, standard_monthly: x.standard_monthly === null ? '' : String(x.standard_monthly), dependents: String(x.dependents), resident_tax: String(x.resident_tax), resident_tax_first: x.resident_tax_first === null ? '' : String(x.resident_tax_first), withholding_class: p.withholding_class } : blank);
     setOpen({ id: p.id, mode: 'edit' });
   }
   async function save(p: Person) {
@@ -95,6 +97,13 @@ export default function DeductionsPanel() {
                   </label>
                   <label className="flex items-center gap-2 text-xs text-gray-700"><input type="checkbox" checked={form.health_insured} onChange={e => setForm({ ...form, health_insured: e.target.checked })} />健康保険・厚生年金に入っている</label>
                   <label className="flex items-center gap-2 text-xs text-gray-700"><input type="checkbox" checked={form.employment_insured} onChange={e => setForm({ ...form, employment_insured: e.target.checked })} />雇用保険に入っている</label>
+                  {(p.worker_type === 'executive' || p.worker_type === 'part') && (
+                    <p className="sm:col-span-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                      {p.worker_type === 'executive'
+                        ? '役員は、原則として雇用保険に入りません（兼務役員で、労働者の性格がある人だけ入ります）。入っていなければ、雇用保険のチェックを外してください。'
+                        : 'パートは、週の所定労働時間や勤め先の規模によって、健康保険・厚生年金・雇用保険に入るかどうかが変わります。実際に加入している保険だけにチェックを入れてください。'}
+                    </p>
+                  )}
                   <label className={field}>標準報酬月額（円・空なら、その月の支給から等級を引く）<input type="number" min={1} inputMode="numeric" className={inp} value={form.standard_monthly} onChange={e => setForm({ ...form, standard_monthly: e.target.value })} /></label>
                   <label className={field}>扶養親族等の数（甲欄）／従たる給与の扶養親族等の数（乙欄）<input type="number" min={0} max={20} inputMode="numeric" className={inp} value={form.dependents} onChange={e => setForm({ ...form, dependents: e.target.value })} /></label>
                   <label className={field}>住民税（月額・特別徴収の通知額）<input type="number" min={0} inputMode="numeric" className={inp} value={form.resident_tax} onChange={e => setForm({ ...form, resident_tax: e.target.value })} /></label>

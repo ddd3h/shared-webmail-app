@@ -10,6 +10,7 @@ export type ProfileRow = {
 };
 type Line = { kind: string; label: string; amount: number; system_key?: string | null };
 
+export const EXECUTIVE_EMPLOYMENT_WARNING = '役員は、原則として雇用保険に入りません（兼務役員で労働者の性格がある場合だけ）。雇用保険料を引いています。入っていないなら、「控除」のタブで外してください';
 export const NO_PROFILE_WARNING = '控除の登録（生年月日・扶養親族等の数など）がないため、控除は入れていません。「オートフロー → 控除」で登録してください';
 
 export function toPerson(p: ProfileRow, withholdingClass: string | null | undefined): DeductionPerson {
@@ -26,9 +27,12 @@ export function toPerson(p: ProfileRow, withholdingClass: string | null | undefi
  */
 export function deductionsFor(
   company: DeductionCompany, user: { worker_type: string; withholding_class: string }, profile: ProfileRow | null | undefined,
-  payDate: string, items: Line[],
+  payDate: string, closingDate: string, items: Line[],
 ): DeductionResult | null {
   if (!DEDUCTION_TYPES.includes(user.worker_type as WorkerType)) return null;
   if (!profile) return { lines: [], notes: [], warnings: [NO_PROFILE_WARNING] };
-  return computeDeductions(company, toPerson(profile, user.withholding_class), { pay_date: payDate, earnings_total: earningTotal(items), nontaxable: commuteTotal(items) });
+  const r = computeDeductions(company, toPerson(profile, user.withholding_class), { pay_date: payDate, closing_date: closingDate, earnings_total: earningTotal(items), nontaxable: commuteTotal(items) });
+  // 登録の初期値は雇用保険ありだが、法人の役員は入らないのがふつう。入れたままなら、気づけるように警告する
+  if (user.worker_type === 'executive' && profile.employment_insured) r.warnings.push(EXECUTIVE_EMPLOYMENT_WARNING);
+  return r;
 }

@@ -31,6 +31,7 @@ import { POST as estimate } from '@/app/api/autoflow/deductions/estimate/route';
 import { PUT as putProfile } from '@/app/api/autoflow/profiles/[userId]/route';
 import { generateFixedDrafts } from '@/lib/fixed-pay-server';
 import { DEFAULT_CONFIG, type AutoflowConfig } from '@/lib/autoflow/config';
+import { EXECUTIVE_EMPLOYMENT_WARNING } from '@/lib/payroll/for-payslip';
 import { loadConfig } from '@/lib/autoflow/config-server';
 import { prisma } from '@/lib/db';
 import { financeActor } from '@/lib/finance-guard';
@@ -365,7 +366,8 @@ describe('控除の自動計算', () => {
     expect(data.note).toContain('【自動計算】');
     expect(data.note).toContain('2026-10分');
     expect(out[0].deductions).toBe(Object.values(deductionsOf()).reduce((a, b) => a + b, 0));
-    expect(out[0].warnings).toEqual([]);
+    // 役員なのに雇用保険のチェックが付いているので、その警告だけが出る
+    expect(out[0].warnings).toEqual([EXECUTIVE_EMPLOYMENT_WARNING]);
   });
 
   it('登録がない人は控除なしで作り、警告を結果とメモに残す', async () => {
@@ -445,6 +447,22 @@ describe('控除の自動計算', () => {
       expect(note).not.toContain('古い');
       expect(note).toContain('2026-10分');
       expect((logAudit as any).mock.calls.at(-1)[0].actionType).toBe('payslip_deductions_recalc');
+    });
+    it('手で入れた「所得税」（欄の名前なし）も置き換える。二重にしない', async () => {
+      db.payslips.findUnique.mockResolvedValue(slip({ items: [
+        { kind: 'earning', label: '役員報酬', amount: 500000, sort: 0, system_key: null },
+        { kind: 'deduction', label: '所得税', amount: 40000, sort: 1, system_key: null },
+      ] }));
+      await recalc(json({ payslip_id: 'slip1' }));
+      expect(db.payslip_items.deleteMany.mock.calls[0][0].where.label.in).toContain('所得税');
+      const created = db.payslip_items.createMany.mock.calls[0][0].data as { label: string; sort: number }[];
+      expect(created.filter(i => i.label.startsWith('所得税'))).toHaveLength(1);
+    });
+    it('役員に雇用保険のチェックが付いたままなら、結果とメモに警告が出る', async () => {
+      db.payslips.findUnique.mockResolvedValue(slip());
+      const body = await (await recalc(json({ payslip_id: 'slip1' }))).json();
+      expect(body.warnings).toContain(EXECUTIVE_EMPLOYMENT_WARNING);
+      expect(db.payslips.update.mock.calls[0][0].data.note).toContain('役員は、原則として雇用保険に入りません');
     });
     it('立替金の行は、支給の合計に入れない（給与ではない）', async () => {
       db.payslips.findUnique.mockResolvedValue(slip());

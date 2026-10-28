@@ -90,6 +90,22 @@
 | GET | `/api/notifications/unread-count` | `src/app/api/notifications/unread-count/route.ts` |
 | GET | `/api/cron/embeddings` | `src/app/api/cron/embeddings/route.ts` |
 | GET | `/api/search/semantic` | `src/app/api/search/semantic/route.ts` |
+| GET | `/api/autoflow/config` | `src/app/api/autoflow/config/route.ts` |
+| PUT | `/api/autoflow/config` | `src/app/api/autoflow/config/route.ts` |
+| POST | `/api/autoflow/run` | `src/app/api/autoflow/run/route.ts` |
+| GET | `/api/autoflow/notices` | `src/app/api/autoflow/notices/route.ts` |
+| GET | `/api/autoflow/plans` | `src/app/api/autoflow/plans/route.ts` |
+| POST | `/api/autoflow/plans` | `src/app/api/autoflow/plans/route.ts` |
+| PUT | `/api/autoflow/plans/[id]` | `src/app/api/autoflow/plans/[id]/route.ts` |
+| DELETE | `/api/autoflow/plans/[id]` | `src/app/api/autoflow/plans/[id]/route.ts` |
+| GET | `/api/autoflow/extras` | `src/app/api/autoflow/extras/route.ts` |
+| POST | `/api/autoflow/extras` | `src/app/api/autoflow/extras/route.ts` |
+| DELETE | `/api/autoflow/extras/[id]` | `src/app/api/autoflow/extras/[id]/route.ts` |
+| POST | `/api/autoflow/fixed/generate` | `src/app/api/autoflow/fixed/generate/route.ts` |
+| GET | `/api/autoflow/profiles` | `src/app/api/autoflow/profiles/route.ts` |
+| PUT | `/api/autoflow/profiles/[userId]` | `src/app/api/autoflow/profiles/[userId]/route.ts` |
+| POST | `/api/autoflow/deductions/estimate` | `src/app/api/autoflow/deductions/estimate/route.ts` |
+| POST | `/api/autoflow/deductions/recalc` | `src/app/api/autoflow/deductions/recalc/route.ts` |
 
 ---
 

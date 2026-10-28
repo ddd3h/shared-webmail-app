@@ -114,6 +114,22 @@
 | GET | `/api/admin/spam-senders` | スパム送信者リスト取得 | 必要 | ✅ |
 | POST | `/api/admin/spam-senders` | スパム送信者追加 | 必要 | ✅ |
 | DELETE | `/api/admin/spam-senders/[id]` | スパム送信者削除 | 必要 | ✅ |
+| GET | `/api/autoflow/config` | オートフローの設定の取得 | 必要 | 経理・管理者 |
+| PUT | `/api/autoflow/config` | オートフローの設定の保存 | 必要 | 経理・管理者 |
+| POST | `/api/autoflow/run` | 今日の通知の確認／送信（`dry:false` と明示したときだけ送る） | 必要 | 経理・管理者 |
+| GET | `/api/autoflow/notices` | 送信履歴 | 必要 | 経理・管理者 |
+| GET | `/api/autoflow/plans` | 固定報酬の一覧と、登録できる人 | 必要 | 経理・管理者 |
+| POST | `/api/autoflow/plans` | 固定報酬の登録 | 必要 | 経理・管理者 |
+| PUT | `/api/autoflow/plans/[id]` | 固定報酬の変更（止める・再開もここ） | 必要 | 経理・管理者 |
+| DELETE | `/api/autoflow/plans/[id]` | 固定報酬の削除 | 必要 | 経理・管理者 |
+| GET | `/api/autoflow/extras` | 月ごとの加算・賞与の一覧 | 必要 | 経理・管理者 |
+| POST | `/api/autoflow/extras` | 加算・賞与の追加 | 必要 | 経理・管理者 |
+| DELETE | `/api/autoflow/extras/[id]` | 加算・賞与の取り消し | 必要 | 経理・管理者 |
+| POST | `/api/autoflow/fixed/generate` | 指定した月の固定報酬の下書きを作る | 必要 | 経理・管理者 |
+| GET | `/api/autoflow/profiles` | 控除の対象の人と、一人ひとりの登録（生年月日を含む） | 必要 | 経理・管理者 |
+| PUT | `/api/autoflow/profiles/[userId]` | 控除の登録の保存 | 必要 | 経理・管理者 |
+| POST | `/api/autoflow/deductions/estimate` | 控除の試算（明細は作らない） | 必要 | 経理・管理者 |
+| POST | `/api/autoflow/deductions/recalc` | 自動で作った下書きの控除を計算し直す | 必要 | 経理・管理者 |
 
 ---
 

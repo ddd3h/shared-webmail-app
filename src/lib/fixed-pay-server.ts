@@ -2,13 +2,13 @@
 // 「控除の自動計算」がONなら、社会保険料・雇用保険料・源泉所得税・住民税の行も入れる。
 // すでに全銀ファイルに入った明細（batch_id あり）は、金額が変わらないよう、決して触らない。
 import { prisma } from '@/lib/db';
-import { DEFAULT_SCHEDULES, payDate } from '@/lib/pay-schedule';
+import { closingDate, DEFAULT_SCHEDULES, payDate } from '@/lib/pay-schedule';
 import { loadSchedules } from '@/lib/pay-schedule-server';
 import { isBonusTitle, toDbDate, type WorkerType } from '@/lib/work';
 import { autoNoteSection, bonusKey, COMMUTE_LABEL, commuteTotal, deductionItems, DEDUCTION_SORT, draftPeriod, earningItems, earningTotal, fixedKey, isPlanDue, withAutoNote, type DraftItem } from '@/lib/fixed-pay';
 import type { AutoflowConfig } from '@/lib/autoflow/config';
 import { loadConfig } from '@/lib/autoflow/config-server';
-import { AUTO_LABEL_LIST, type DeductionCompany, type DeductionResult } from '@/lib/payroll/deductions';
+import { REPLACEABLE_LABELS, type DeductionCompany, type DeductionResult } from '@/lib/payroll/deductions';
 import { deductionsFor, type ProfileRow } from '@/lib/payroll/for-payslip';
 
 export type DraftResult = {
@@ -39,9 +39,9 @@ async function profilesOf(userIds: string[]): Promise<Map<string, ProfileRow>> {
 }
 
 /** 下書きの控除。ONでない・対象でない区分なら null。 */
-function draftDeductions(config: AutoflowConfig, user: { worker_type: string; withholding_class: string }, profile: ProfileRow | undefined, pay: string, earnings: DraftItem[]): DeductionResult | null {
+function draftDeductions(config: AutoflowConfig, user: { worker_type: string; withholding_class: string }, profile: ProfileRow | undefined, pay: string, closing: string, earnings: DraftItem[]): DeductionResult | null {
   if (!config.deductions.enabled) return null;
-  return deductionsFor(companyOf(config), user, profile, pay, earnings);
+  return deductionsFor(companyOf(config), user, profile, pay, closing, earnings);
 }
 
 /**
@@ -80,7 +80,7 @@ export async function generateFixedDrafts(opts: { today: string; month?: string;
     const addons = await prisma.pay_extras.findMany({ where: { user_id: plan.user_id, pay_month: month, kind: 'addon' }, orderBy: { created_at: 'asc' } });
     const pay = payDate(month, schedule);
     const earnings = earningItems(plan, addons);
-    const ded = draftDeductions(config, plan.user, profiles.get(plan.user_id), pay, earnings);
+    const ded = draftDeductions(config, plan.user, profiles.get(plan.user_id), pay, closingDate(month, schedule), earnings);
     const extra = ded ? { deductions: sum(ded.lines), warnings: ded.warnings } : {};
     if (opts.dry) { out.push({ ...row, status: 'new', ...extra }); continue; }
 
@@ -132,14 +132,15 @@ export async function rebuildPristine(userId: string, month: string, opts: { con
   if (!slip) return 'none';
   if (slip.status !== 'planned' || slip.batch_id) return 'locked';
   if (slip.auto_edited) return 'edited';
-  const config = opts.config ?? await loadConfig();
+  const [config, { schedules }] = await Promise.all([opts.config ? Promise.resolve(opts.config) : loadConfig(), loadSchedules()]);
+  const schedule = schedules[slip.user.worker_type as WorkerType] ?? DEFAULT_SCHEDULES.employee;
   const addons = await prisma.pay_extras.findMany({ where: { user_id: userId, pay_month: month, kind: 'addon' }, orderBy: { created_at: 'asc' } });
   // 固定の月額（sort 0）と通勤手当（sort 1）は今の下書きの行をそのまま使う。固定報酬を変えても、できた下書きの金額は変えない。
   const kept: DraftItem[] = slip.items.filter(i => i.kind === 'earning' && !i.system_key && i.sort < 10).map(i => ({ kind: 'earning', label: i.label, amount: i.amount, sort: i.sort, system_key: null }));
   const earnings = [...kept, ...earningItems({ label: '', amount: 0 }, addons).slice(1)];
-  const pay = slip.pay_date ? dayOf(slip.pay_date) : payDate(month, DEFAULT_SCHEDULES.employee);
+  const pay = slip.pay_date ? dayOf(slip.pay_date) : payDate(month, schedule);
   const profile = config.deductions.enabled ? (await profilesOf([userId])).get(userId) : undefined;
-  const ded = draftDeductions(config, slip.user, profile, pay, earnings);
+  const ded = draftDeductions(config, slip.user, profile, pay, closingDate(month, schedule), earnings);
   await prisma.$transaction([
     prisma.payslip_items.deleteMany({ where: { payslip_id: slip.id, system_key: null } }), // 立替金精算の行（system_key あり）は残す
     prisma.payslip_items.createMany({ data: [...earnings, ...deductionItems(ded?.lines ?? [])].map(i => ({ ...i, payslip_id: slip.id })) }),
@@ -154,7 +155,7 @@ export type Recalc =
 
 /**
  * 明細の支給の行から、控除をもう一度計算する（「控除を再計算」ボタン）。
- * 名前が自動の控除の名前（健康保険料・所得税（甲欄）など）の行だけを置き換え、経理が足した別の控除の行はそのまま残す。
+ * 名前が自動の控除の名前（健康保険料・所得税（甲欄）など。手で入れた「所得税」も）の行だけを置き換え、経理が足した別の控除の行はそのまま残す。
  * 支給の行を直したあとや、登録（扶養・標準報酬月額など）を変えたあとに使う。
  */
 export async function recalcDeductions(payslipId: string, opts: { config?: AutoflowConfig } = {}): Promise<Recalc> {
@@ -165,16 +166,17 @@ export async function recalcDeductions(payslipId: string, opts: { config?: Autof
   if (!slip) return { status: 'not_found' };
   if (!slip.auto_key?.startsWith('fixed:')) return { status: 'not_fixed' };
   if (slip.status !== 'planned' || slip.batch_id) return { status: 'locked' };
-  const config = opts.config ?? await loadConfig();
+  const [config, { schedules }] = await Promise.all([opts.config ? Promise.resolve(opts.config) : loadConfig(), loadSchedules()]);
   if (!config.deductions.enabled) return { status: 'disabled' };
+  const schedule = schedules[slip.user.worker_type as WorkerType] ?? DEFAULT_SCHEDULES.employee;
   const profile = (await profilesOf([slip.user_id])).get(slip.user_id);
-  const pay = slip.pay_date ? dayOf(slip.pay_date) : payDate(slip.pay_month, DEFAULT_SCHEDULES.employee);
-  const ded = deductionsFor(companyOf(config), slip.user, profile, pay, slip.items);
+  const pay = slip.pay_date ? dayOf(slip.pay_date) : payDate(slip.pay_month, schedule);
+  const ded = deductionsFor(companyOf(config), slip.user, profile, pay, closingDate(slip.pay_month, schedule), slip.items);
   if (!ded) return { status: 'not_target' };
-  const manual = slip.items.filter(i => !i.system_key && !(i.kind === 'deduction' && AUTO_LABEL_LIST.includes(i.label)));
+  const manual = slip.items.filter(i => !i.system_key && !(i.kind === 'deduction' && REPLACEABLE_LABELS.includes(i.label)));
   const from = Math.max(DEDUCTION_SORT - 1, ...manual.map(i => i.sort)) + 1;
   await prisma.$transaction([
-    prisma.payslip_items.deleteMany({ where: { payslip_id: slip.id, kind: 'deduction', system_key: null, label: { in: AUTO_LABEL_LIST } } }),
+    prisma.payslip_items.deleteMany({ where: { payslip_id: slip.id, kind: 'deduction', system_key: null, label: { in: REPLACEABLE_LABELS } } }),
     ...(ded.lines.length > 0 ? [prisma.payslip_items.createMany({ data: deductionItems(ded.lines, from).map(i => ({ ...i, payslip_id: slip.id })) })] : []),
     prisma.payslips.update({ where: { id: slip.id }, data: { note: withAutoNote(slip.note, autoNoteSection(ded)) } }),
   ]);
@@ -205,7 +207,7 @@ export async function estimateDeductions(userId: string, month: string, over: { 
     const addons = plan ? await prisma.pay_extras.findMany({ where: { user_id: userId, pay_month: month, kind: 'addon' }, orderBy: { created_at: 'asc' } }) : [];
     earnings = plan ? earningItems(plan, addons) : [];
   }
-  const result = deductionsFor(companyOf(config), user, user.payroll_profile, pay, earnings) ?? { lines: [], notes: [], warnings: ['この区分（派遣・業務委託・準業務委託）は、控除を自動で引く対象ではありません'] };
+  const result = deductionsFor(companyOf(config), user, user.payroll_profile, pay, closingDate(month, schedule), earnings) ?? { lines: [], notes: [], warnings: ['この区分（派遣・業務委託・準業務委託）は、控除を自動で引く対象ではありません'] };
   if (earnings.length === 0) result.warnings.unshift(`${month}分に有効な固定報酬がありません。金額を入れて試算してください`);
   const total = earningTotal(earnings);
   const deductions = sum(result.lines);

@@ -20,7 +20,8 @@ export type DeductionPerson = {
   resident_tax_first: number | null;   // 6月に支給する給与の住民税（通知書の初回分。空なら月額と同じ）
 };
 export type DeductionInput = {
-  pay_date: string;                    // 給与を払う日 'YYYY-MM-DD'
+  pay_date: string;                    // 給与を払う日 'YYYY-MM-DD'。社会保険料を引く月と、源泉所得税の年分を決める
+  closing_date: string;                // 賃金の締切日 'YYYY-MM-DD'。雇用保険料率の年度を決める（支払日ではない）
   earnings_total: number;              // 支給の合計
   nontaxable: number;                  // うち、非課税の通勤手当（月15万円までが非課税）
 };
@@ -29,12 +30,17 @@ export type DeductionLine = { key: DeductionKey; label: string; amount: number }
 export type DeductionResult = { lines: DeductionLine[]; notes: string[]; warnings: string[] };
 
 export const NONTAXABLE_COMMUTE_LIMIT = 150_000;
-/** 自動で入れる控除の行の名前。「再計算」は、この名前の行だけを作り直す。 */
+/** 自動で入れる控除の行の名前。「再計算」は、この名前の行を作り直す。 */
 export const AUTO_LABELS = {
   health: '健康保険料', care: '介護保険料', support: '子ども・子育て支援金', pension: '厚生年金保険料', employment: '雇用保険料',
   income_tax_ko: '所得税（甲欄）', income_tax_otsu: '所得税（乙欄）', resident_tax: '住民税',
 } as const;
 export const AUTO_LABEL_LIST: string[] = Object.values(AUTO_LABELS);
+/**
+ * 「控除を再計算」で置き換える行の名前。自動の名前に加えて、手で入れた「所得税」（欄の名前がないもの。明細の画面が所得税の行として扱う）も入れる。
+ * 入れないと、手で「所得税」を入れた下書きを再計算したとき、所得税の行が二重になる。
+ */
+export const REPLACEABLE_LABELS: string[] = [...AUTO_LABEL_LIST, '所得税'];
 
 const yen = (n: number) => `${n.toLocaleString('ja-JP')}円`;
 const addMonth = (ym: string, d: number) => { const [y, m] = ym.split('-').map(Number); const t = new Date(Date.UTC(y, m - 1 + d, 1)); return t.toISOString().slice(0, 7); };
@@ -99,9 +105,10 @@ export function computeDeductions(company: DeductionCompany, person: DeductionPe
 
   // ---- 雇用保険 ----
   if (person.employment_insured) {
-    const r = EMPLOYMENT_RATES.find(x => input.pay_date >= x.from && input.pay_date <= x.until) ?? null;
+    // 雇用保険料率は、賃金の締切日で年度が決まる（4/1以降に最初に来る締切日の賃金から新しい料率）
+    const r = EMPLOYMENT_RATES.find(x => input.closing_date >= x.from && input.closing_date <= x.until) ?? null;
     const last = EMPLOYMENT_RATES[EMPLOYMENT_RATES.length - 1];
-    if (!r && input.pay_date < EMPLOYMENT_RATES[0].from) warnings.push('この日付の雇用保険料率が登録されていません。雇用保険料は計算していません');
+    if (!r && input.closing_date < EMPLOYMENT_RATES[0].from) warnings.push('この締切日の雇用保険料率が登録されていません。雇用保険料は計算していません');
     else {
       const rate = r ?? last;
       if (!r) warnings.push('新しい年度の雇用保険料率がまだ登録されていません。前の年度の料率で計算しています');

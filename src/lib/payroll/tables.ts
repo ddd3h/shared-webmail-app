@@ -133,7 +133,7 @@ export const CARE_RATES: RatePeriod<number>[] = [{ from: '2026-03', until: '2027
 export const SUPPORT_RATES: RatePeriod<number>[] = [{ from: '2026-04', until: '2027-02', value: 0.23 }];
 /** 厚生年金保険料率（%）。平成29年9月分から 18.3%。 */
 export const PENSION_RATES: RatePeriod<number>[] = [{ from: '2017-09', until: '9999-12', value: 18.3 }];
-/** 雇用保険料率 労働者負担（‰）。一般の事業。`from`〜`until` は賃金の支払日（YYYY-MM-DD）。 */
+/** 雇用保険料率 労働者負担（‰）。一般の事業。`from`〜`until` は**賃金の締切日**（YYYY-MM-DD。支払日ではない: 3/31締め・4/25払いは前の年度の料率）。 */
 export const EMPLOYMENT_RATES: { from: string; until: string; permille: number }[] = [
   { from: '2025-04-01', until: '2026-03-31', permille: 5.5 },
   { from: '2026-04-01', until: '2027-03-31', permille: 5 },
