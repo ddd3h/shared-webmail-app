@@ -4,6 +4,9 @@ import { useSearchParams } from 'next/navigation';
 import FoldCard from '@/components/mobile/FoldCard';
 import MileageSettingsCard from '@/components/admin/MileageSettingsCard';
 import FreeeSettingsCard from '@/components/admin/FreeeSettingsCard';
+import { pageNumbers } from '@/lib/pagination';
+
+const SPAM_PAGE_SIZE = 50;
 
 type Item = { key: string; value: string; isSecret: boolean };
 type User = { id: string; name: string; email: string; role: string; mattermost_user_id: string | null };
@@ -61,6 +64,9 @@ function AdminSettingsContent({ tab }: { tab: AdminTab }) {
   // Spam senders state
   const [spamSenders, setSpamSenders] = useState<{ id: string; type: string; address: string; note: string | null; created_at: string; creator: { name: string } | null }[]>([]);
   const [spamTab, setSpamTab] = useState<'blocklist' | 'whitelist'>('blocklist');
+  const [spamPage, setSpamPage] = useState(1);
+  const [spamPages, setSpamPages] = useState(1);
+  const [spamTotal, setSpamTotal] = useState(0);
   const [spamNewAddress, setSpamNewAddress] = useState('');
   const [spamNewNote, setSpamNewNote] = useState('');
   const [spamAdding, setSpamAdding] = useState(false);
@@ -120,9 +126,14 @@ function AdminSettingsContent({ tab }: { tab: AdminTab }) {
     }
   }
 
-  async function loadSpamSenders() {
-    const res = await fetch('/api/admin/spam-senders');
-    if (res.ok) { const d = await res.json(); setSpamSenders(d.items || []); }
+  async function loadSpamSenders(type = spamTab, wanted = spamPage) {
+    const res = await fetch(`/api/admin/spam-senders?type=${type}&page=${wanted}&pageSize=${SPAM_PAGE_SIZE}`);
+    if (!res.ok) return;
+    const d = await res.json();
+    setSpamSenders(d.items || []);
+    setSpamTotal(d.total ?? 0);
+    setSpamPages(d.pages ?? 1);
+    if (d.page !== wanted) setSpamPage(d.page); // the page was past the end (the last row of it was deleted)
   }
 
   async function handleSpamAdd(e: React.FormEvent) {
@@ -136,7 +147,7 @@ function AdminSettingsContent({ tab }: { tab: AdminTab }) {
       body: JSON.stringify({ type: spamTab, address, note: spamNewNote.trim() || null })
     });
     setSpamAdding(false);
-    if (res.ok) { setSpamNewAddress(''); setSpamNewNote(''); loadSpamSenders(); showMsg('success', '追加しました'); }
+    if (res.ok) { setSpamNewAddress(''); setSpamNewNote(''); setSpamPage(1); loadSpamSenders(spamTab, 1); showMsg('success', '追加しました'); } // new rows are at the top of page 1
     else { const d = await res.json().catch(() => ({})); setSpamError(d.error || '追加に失敗しました'); }
   }
 
@@ -225,9 +236,15 @@ function AdminSettingsContent({ tab }: { tab: AdminTab }) {
       setLoading(false);
     });
     if (tab === 'mailboxes') loadMailboxes();
-    if (tab === 'spam') { loadSpamSenders(); loadMlStats(); }
+    if (tab === 'spam') loadMlStats();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams, tab]);
+
+  // the list is read again whenever the list (ブロック / ホワイト) or the page changes
+  useEffect(() => {
+    if (tab === 'spam') loadSpamSenders(spamTab, spamPage);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, spamTab, spamPage]);
 
   function getVal(key: string) {
     return items.find(i => i.key === key)?.value || '';
@@ -1307,7 +1324,7 @@ function AdminSettingsContent({ tab }: { tab: AdminTab }) {
             {(['blocklist', 'whitelist'] as const).map(t => (
               <button
                 key={t}
-                onClick={() => setSpamTab(t)}
+                onClick={() => { setSpamTab(t); setSpamPage(1); setSpamError(''); }}
                 className={`px-4 py-1.5 text-sm font-medium rounded-md transition-colors ${spamTab === t ? 'bg-white text-gray-900 shadow-xs' : 'text-gray-500 hover:text-gray-700'}`}
               >
                 {t === 'blocklist' ? 'ブロックリスト' : 'ホワイトリスト'}
@@ -1352,7 +1369,7 @@ function AdminSettingsContent({ tab }: { tab: AdminTab }) {
 
           {/* List */}
           {(() => {
-            const filtered = spamSenders.filter(s => s.type === spamTab);
+            const filtered = spamSenders.filter(s => s.type === spamTab); // the page read for the other list is not shown while this one loads
             return filtered.length === 0 ? (
               <p className="text-sm text-gray-400 text-center py-8">登録なし</p>
             ) : (
@@ -1387,6 +1404,19 @@ function AdminSettingsContent({ tab }: { tab: AdminTab }) {
                       ))}
                     </tbody>
                   </table>
+                </div>
+                <div className="flex flex-wrap items-center justify-between gap-2 border-t border-gray-100 px-4 py-2.5 text-xs text-gray-500">
+                  <span>全{spamTotal}件（{spamPage} / {spamPages} ページ）</span>
+                  {spamPages > 1 && (
+                    <nav className="flex flex-wrap items-center gap-1" aria-label="ページ">
+                      <button className="btn btn-secondary btn-sm" onClick={() => setSpamPage(spamPage - 1)} disabled={spamPage <= 1}>前へ</button>
+                      {pageNumbers(spamPage, spamPages).map((p, i) => p === '…'
+                        ? <span key={`gap${i}`} className="px-1 text-gray-400">…</span>
+                        : <button key={p} onClick={() => setSpamPage(p)} aria-current={p === spamPage ? 'page' : undefined}
+                            className={`min-w-8 rounded-md px-2 py-1 text-sm ${p === spamPage ? 'bg-gray-900 font-semibold text-white' : 'text-gray-600 hover:bg-gray-100'}`}>{p}</button>)}
+                      <button className="btn btn-secondary btn-sm" onClick={() => setSpamPage(spamPage + 1)} disabled={spamPage >= spamPages}>次へ</button>
+                    </nav>
+                  )}
                 </div>
               </div>
             );

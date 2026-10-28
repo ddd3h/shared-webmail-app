@@ -8,6 +8,7 @@ import { randomUUID } from 'crypto';
 import { deleteImapMessagesBulk } from '@/lib/mail/delete-utils';
 import { getSetting } from '@/lib/settings';
 import { deleteStoredFiles } from '@/lib/attachment-storage';
+import { senderAddresses, whitelistUpserts } from '@/lib/spam-whitelist';
 
 // POST /api/threads/bulk
 export async function POST(req: NextRequest) {
@@ -214,16 +215,19 @@ export async function POST(req: NextRequest) {
         where: { id: { in: chunk } },
         data: { is_spam: false, spam_reason: null, spam_flagged_at: null }
       });
-      // Also remove these threads' incoming senders from the blocklist
+      // These threads' incoming senders leave the blocklist and go on the whitelist (same as the single 「迷惑メールでない」)
       const senderRows = await prisma.messages.findMany({
         where: { thread_id: { in: chunk }, direction: 'incoming' },
         select: { from_email: true }
       });
-      const uniqueAddresses = [...new Set(senderRows.map(r => r.from_email.toLowerCase()).filter(Boolean))];
+      const uniqueAddresses = senderAddresses(senderRows);
       if (uniqueAddresses.length > 0) {
-        await prisma.spam_senders.deleteMany({
-          where: { type: 'blocklist', address: { in: uniqueAddresses } }
-        });
+        await prisma.$transaction([
+          prisma.spam_senders.deleteMany({
+            where: { type: 'blocklist', address: { in: uniqueAddresses } }
+          }),
+          ...whitelistUpserts(uniqueAddresses, session!.userId)
+        ]);
       }
     } else if (action === 'delete') {
       const threadsToDelete = await prisma.threads.findMany({
