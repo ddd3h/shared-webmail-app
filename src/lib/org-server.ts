@@ -41,7 +41,8 @@ export async function usersInScope(actor: OrgUser, cap: Capability): Promise<str
   if (!(await capabilitiesOf(actor.id)).includes(cap)) return [];
   const scope = scopeOf(await loadUnits(), actor.id);
   if (scope.size === 0) return [];
-  const rows = await prisma.users.findMany({ where: { org_unit_id: { in: [...scope] }, id: { not: actor.id } }, select: { id: true } });
+  // the main 部署 or any 兼務 of the person is inside the actor's scope
+  const rows = await prisma.users.findMany({ where: { id: { not: actor.id }, OR: [{ org_unit_id: { in: [...scope] } }, { extra_units: { some: { unit_id: { in: [...scope] } } } }] }, select: { id: true } });
   return rows.map(r => r.id);
 }
 
@@ -51,20 +52,28 @@ export async function canReviewUser(actor: OrgUser, targetUserId: string): Promi
   if (actor.id === targetUserId) return false;
   const [caps, target, units] = await Promise.all([
     capabilitiesOf(actor.id),
-    prisma.users.findUnique({ where: { id: targetUserId }, select: { org_unit_id: true } }),
+    prisma.users.findUnique({ where: { id: targetUserId }, select: { org_unit_id: true, extra_units: { select: { unit_id: true } } } }),
     loadUnits(),
   ]);
-  return caps.includes('approve_requests') && !!target?.org_unit_id && scopeOf(units, actor.id).has(target.org_unit_id);
+  if (!caps.includes('approve_requests') || !target) return false;
+  const scope = scopeOf(units, actor.id);
+  return unitIdsOf(target).some(id => scope.has(id));
 }
 
-/** Everybody who can approve the requests of `userId` besides admins: unit heads up the chain that hold the permission. */
+/** Every 部署 of a person: the main one first, then the 兼務. */
+export const unitIdsOf = (u: { org_unit_id: string | null; extra_units: { unit_id: string }[] }): string[] =>
+  [...new Set([...(u.org_unit_id ? [u.org_unit_id] : []), ...u.extra_units.map(e => e.unit_id)])];
+
+/** Everybody who can approve the requests of `userId` besides admins: unit heads up the chain (of every 部署 the person is in) that hold the permission. */
 export async function approversOf(userId: string): Promise<{ id: string; email: string }[]> {
-  const [{ units, capsOf }, user] = await Promise.all([loadOrg(), prisma.users.findUnique({ where: { id: userId }, select: { org_unit_id: true } })]);
-  if (!user?.org_unit_id) return [];
+  const [{ units, capsOf }, user] = await Promise.all([loadOrg(), prisma.users.findUnique({ where: { id: userId }, select: { org_unit_id: true, extra_units: { select: { unit_id: true } } } })]);
+  if (!user) return [];
   const byId = new Map(units.map(u => [u.id, u]));
   const heads = new Set<string>();
-  for (let cur = byId.get(user.org_unit_id), hops = 0; cur && hops <= units.length; cur = cur.parent_id ? byId.get(cur.parent_id) : undefined, hops++) {
-    if (cur.head_user_id && cur.head_user_id !== userId && capsOf(cur.head_user_id).includes('approve_requests')) heads.add(cur.head_user_id);
+  for (const start of unitIdsOf(user)) {
+    for (let cur = byId.get(start), hops = 0; cur && hops <= units.length; cur = cur.parent_id ? byId.get(cur.parent_id) : undefined, hops++) {
+      if (cur.head_user_id && cur.head_user_id !== userId && capsOf(cur.head_user_id).includes('approve_requests')) heads.add(cur.head_user_id);
+    }
   }
   return heads.size === 0 ? [] : prisma.users.findMany({ where: { id: { in: [...heads] } }, select: { id: true, email: true } });
 }

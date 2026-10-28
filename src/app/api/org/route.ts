@@ -16,7 +16,7 @@ export async function GET() {
   const [units, positions, users, all] = await Promise.all([
     prisma.org_units.findMany({ orderBy: [{ sort: 'asc' }, { name: 'asc' }], select: { id: true, name: true, parent_id: true, head_user_id: true, sort: true } }),
     prisma.org_positions.findMany({ orderBy: [{ level: 'desc' }, { name: 'asc' }], select: { id: true, name: true, level: true, permissions: true } }),
-    prisma.users.findMany({ orderBy: { created_at: 'asc' }, select: { id: true, name: true, email: true, role: true, org_unit_id: true, position_id: true } }),
+    prisma.users.findMany({ orderBy: { created_at: 'asc' }, select: { id: true, name: true, email: true, role: true, org_unit_id: true, position_id: true, extra_units: { select: { unit_id: true } } } }),
     loadUnits(),
   ]);
   const me = users.find(u => u.id === actor.id);
@@ -26,7 +26,7 @@ export async function GET() {
     positions: positions.map(p => ({ ...p, permissions: p.permissions.filter(isCapability) })),
     // who is a system admin and the e-mail addresses are for admins only; `can_evaluate` is what the evaluator picker needs
     members: users.map(u => ({
-      id: u.id, name: u.name, org_unit_id: u.org_unit_id, position_id: u.position_id,
+      id: u.id, name: u.name, org_unit_id: u.org_unit_id, extra_unit_ids: u.extra_units.map(e => e.unit_id), position_id: u.position_id,
       can_evaluate: u.role === 'admin' || !!positions.find(p => p.id === u.position_id)?.permissions.includes('evaluate'),
       ...(admin ? { role: u.role, email: u.email } : {}),
     })),

@@ -28,4 +28,10 @@ export const positionSchema = z.object({
   permissions: z.array(z.enum(CAPABILITY_KEYS as [string, ...string[]])).max(CAPABILITY_KEYS.length).default([]),
 });
 
-export const memberSchema = z.object({ org_unit_id: z.string().min(1).nullable(), position_id: z.string().min(1).nullable() });
+export const MAX_EXTRA_UNITS = 10;
+// org_unit_id = the main 部署 (主所属); extra_unit_ids = 兼務 (kept as they are when not sent; cleared when there is no main 部署)
+export const memberSchema = z.object({
+  org_unit_id: z.string().min(1).nullable(),
+  position_id: z.string().min(1).nullable(),
+  extra_unit_ids: z.array(z.string().min(1)).max(MAX_EXTRA_UNITS).optional(),
+});

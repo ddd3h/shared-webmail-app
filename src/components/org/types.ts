@@ -2,7 +2,7 @@ import type { Capability } from '@/lib/org';
 
 export type OrgUnit = { id: string; name: string; parent_id: string | null; head_user_id: string | null; sort: number };
 export type OrgPosition = { id: string; name: string; level: number; permissions: Capability[] };
-export type OrgMember = { id: string; name: string; org_unit_id: string | null; position_id: string | null; can_evaluate: boolean; role?: string; email?: string };
+export type OrgMember = { id: string; name: string; org_unit_id: string | null; extra_unit_ids: string[]; position_id: string | null; can_evaluate: boolean; role?: string; email?: string };
 export type OrgData = {
   units: OrgUnit[]; positions: OrgPosition[]; members: OrgMember[];
   me: { id: string; is_admin: boolean; capabilities: Capability[]; headed_unit_ids: string[]; can_year_end?: boolean };

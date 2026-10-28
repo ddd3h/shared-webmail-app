@@ -119,6 +119,7 @@ model users {
   withholding_class      String   @default("ko") // 源泉徴収（所得税）の税額表: 'ko' = 甲欄 (主たる給与), 'otsu' = 乙欄 (従たる給与)
   bank_account               user_bank_accounts?      @relation("bank_owner")
   year_end_declarations      year_end_declarations[]  @relation("year_end_owner")
+  extra_units                org_unit_extra_members[]
   year_end_confirmed         year_end_declarations[]  @relation("year_end_confirmer")
   org_unit_id                String?
   position_id                String?
@@ -1188,6 +1189,7 @@ model org_units {
   children org_units[] @relation("unit_tree")
   head     users?      @relation("unit_head", fields: [head_user_id], references: [id], onDelete: SetNull)
   members  users[]     @relation("unit_members")
+  extra_members org_unit_extra_members[]
 
   @@index([parent_id])
 }
@@ -1383,4 +1385,18 @@ model year_end_declarations {
 
   @@unique([user_id, year])
   @@index([year, status])
+}
+
+// 兼務: the other 部署 a person belongs to besides their main one (users.org_unit_id = 主所属). A unit head may approve for, and sees,
+// the people of the units they head whether it is the main or an additional one. The evaluator is found from the main 部署 only.
+model org_unit_extra_members {
+  user_id    String
+  unit_id    String
+  created_at DateTime @default(now())
+
+  user users     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  unit org_units @relation(fields: [unit_id], references: [id], onDelete: Cascade)
+
+  @@id([user_id, unit_id])
+  @@index([unit_id])
 }
