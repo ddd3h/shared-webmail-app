@@ -39,6 +39,7 @@
 | `EMBEDDING_PROVIDER` / `EMBEDDING_API_URL` / `EMBEDDING_API_KEY` / `EMBEDDING_MODEL` / `EMBEDDING_DIMENSIONS` / `EMBEDDING_CACHE_DIR` / `EMBEDDING_LOCAL_ONLY` / `EMBEDDING_MIN_SCORE` | △ | 意味検索（Embedding）。`EMBEDDING_PROVIDER=local`（サーバー内のモデル）か `EMBEDDING_API_URL`（外部サービス）のどちらも無ければ機能ごと無効（詳しくは [30_semantic_search.md](30_semantic_search.md)） | `src/lib/embedding.ts`, `src/lib/semantic-search.ts` | いいえ |
 | `BOT_BLOCK` / `BOT_ALLOW_UA` | △ | ロボット遮断を全体で止める（`off`）／例外にする User-Agent の一部。詳しくは [24_security.md](24_security.md) | `src/lib/bot-guard.ts` | いいえ |
 | `SLOW_REQUEST_MS` | - | これ以上かかったリクエストを `[slow] GET /api/threads 200 1235ms` の形で1行ログに出す（既定 500、`0` で無効）。クエリ文字列は残さず、IDは `:id` にまとめる。遅い画面の特定用（`pm2 logs shared-webmail-app \| grep '\[slow\]'`） | `src/lib/slow-requests.ts` | いいえ |
+| `BIG_RESPONSE_MB` | - | これ以上の大きさの応答を `[big] GET /api/threads/:id 200 34.7MB` の形で1行ログに出す（既定 3、`0` で無効）。あわせてサーバーのメモリ（`[mem] rss=… heap=… external=…`）を、50MB以上動いたとき・10分ごとに記録し、その間に多かったリクエストを添える。メモリ不足の原因調査用（`pm2 logs shared-webmail-app \| grep -E '\[big\]\|\[mem\]'`）。`SLOW_REQUEST_MS=0` のときは、これらもすべて止まる | `src/lib/slow-requests.ts` | いいえ |
 | `PRISMA_LOG_QUERIES` | - | `1` で、実行したSQLをすべて標準出力に出す（画面ごとのSQL本数を数えるとき。普段は付けない。[32_admin_console.md](32_admin_console.md)） | `src/lib/db.ts` | いいえ |
 | `ENCRYPTION_KEY_VERSION` | △ | 暗号鍵バージョン識別子（例: `"v1"`） | `src/lib/crypto.ts`（推定） | いいえ |
 | `GOOGLE_CLIENT_ID` | △ | Google OAuth クライアントID（コンタクト同期用） | `src/app/api/contacts/google/auth/route.ts`, `sync/route.ts`, `callback/route.ts` | ✅ |
