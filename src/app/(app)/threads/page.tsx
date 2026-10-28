@@ -1,6 +1,7 @@
 'use client';
 import { Suspense, useEffect, useState, useRef } from 'react';
 import useSWR from 'swr';
+import { UNREAD_KEY, refreshMail } from '@/lib/unread-client';
 import { useRouter, useSearchParams } from 'next/navigation';
 import ComposeForm, { type SendPayload } from '@/components/ComposeForm';
 import SenderAvatar from '@/components/SenderAvatar';
@@ -85,6 +86,8 @@ type Thread = {
   has_mattermost: boolean;
   has_draft: boolean;
   readers: ThreadReader[];
+  match?: 'semantic'; // found by meaning, not by the words (only in a search with 意味検索)
+  score?: number;
 };
 
 const MAILBOX_COLOR_PALETTE = [
@@ -101,7 +104,7 @@ function mailboxColorIndex(id: string): number {
 function mailboxDot(mailboxId: string, name: string) {
   const cls = MAILBOX_COLOR_PALETTE[mailboxColorIndex(mailboxId)];
   return (
-    <span title={name} className={`inline-block w-2 h-2 rounded-full flex-shrink-0 ${cls}`} />
+    <span title={name} className={`inline-block w-2 h-2 rounded-full shrink-0 ${cls}`} />
   );
 }
 
@@ -157,6 +160,7 @@ const TEAM_TABS = [
 // ── Search helpers ──────────────────────────────────────────────────────────
 
 const SEARCH_HISTORY_KEY = 'threads-search-history';
+const SEMANTIC_KEY = 'threads-search-semantic';
 function getSearchHistory(): string[] {
   try { return JSON.parse(localStorage.getItem(SEARCH_HISTORY_KEY) || '[]'); } catch { return []; }
 }
@@ -223,7 +227,7 @@ function ContactSuggestInput({ value, onChange, placeholder }: { value: string; 
     <div className="relative">
       <input type="text" value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder}
         onBlur={() => setTimeout(() => setOpen(false), 150)}
-        className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white" />
+        className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-blue-500 bg-white" />
       {open && (
         <div className="absolute z-20 top-full mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden">
           {suggestions.map((s, i) => (
@@ -255,7 +259,7 @@ type DraftItem = {
 };
 
 const AttachmentClip = () => (
-  <svg className="flex-shrink-0 w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-label="添付あり">
+  <svg className="shrink-0 w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-label="添付あり">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
   </svg>
 );
@@ -275,9 +279,10 @@ function setViewCookie(view: 'personal' | 'team') {
   document.cookie = `${VIEW_COOKIE}=${view}; path=/; max-age=${VIEW_COOKIE_MAX_AGE}; SameSite=Lax`;
 }
 
-function buildThreadsKey(view: string, tab: string, q: string, cursor?: { last: string; id: string }) {
+function buildThreadsKey(view: string, tab: string, q: string, cursor?: { last: string; id: string }, semantic = false, mailboxId = '') {
   const params = new URLSearchParams();
   params.set('type', view);
+  if (view === 'team' && mailboxId && !q) params.set('mailbox_id', mailboxId);
   if (tab === 'unread') params.set('unread', '1');
   else if (tab === 'mine') params.set('mine', '1');
   else if (tab === 'sent') params.set('sent', '1');
@@ -285,6 +290,7 @@ function buildThreadsKey(view: string, tab: string, q: string, cursor?: { last: 
   else if (tab === 'spam') params.set('spam', '1');
   else if (tab && tab !== 'all') params.set('status', tab);
   if (q) params.set('q', q);
+  if (q && semantic) params.set('semantic', '1');
   if (cursor) { params.set('cursor', cursor.last); params.set('cursor_id', cursor.id); }
   return `/api/threads?${params}`;
 }
@@ -310,8 +316,24 @@ function ThreadList() {
   const [filterBefore, setFilterBefore] = useState('');
   const [filterAttachment, setFilterAttachment] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
+  // phone: the search bar stays folded away until the magnifier is tapped (it also opens by itself while a search is active)
+  const [searchOpen, setSearchOpen] = useState(false);
+  const searchRef = useRef<HTMLInputElement>(null);
+  useEffect(() => { if (searchOpen) searchRef.current?.focus(); }, [searchOpen]);
   const [showHistory, setShowHistory] = useState(false);
   const [searchHistory, setSearchHistory] = useState<string[]>([]);
+  // 意味検索: offered only when the server has an embedding service; the choice is remembered in this browser
+  const { data: semanticStatus } = useSWR<{ enabled: boolean }>('/api/search/semantic', fetcher);
+  const [semanticOn, setSemanticOn] = useState(true);
+  useEffect(() => { try { if (localStorage.getItem(SEMANTIC_KEY) === '0') setSemanticOn(false); } catch {} }, []);
+  const semanticSearch = !!semanticStatus?.enabled && semanticOn;
+  // 共有メール: which shared mailboxes are shown (the person's own choice), and the chip that narrows the list to one of them
+  const [mailboxFilter, setMailboxFilter] = useState('');
+  const [showMailboxPicker, setShowMailboxPicker] = useState(false);
+  const [pickerHidden, setPickerHidden] = useState<Set<string>>(new Set());
+  const [pickerError, setPickerError] = useState('');
+  const { data: teamView, mutate: mutateTeamView } = useSWR<{ items: { id: string; name: string; shown: boolean; unread: number }[] }>(mailboxView === 'team' ? '/api/mailboxes/team-view' : null, fetcher, { refreshInterval: 30_000 });
+  const shownTeamMailboxes = (teamView?.items ?? []).filter(m => m.shown);
   const [showCompose, setShowCompose] = useState(false);
   const [openDraftId, setOpenDraftId] = useState<string | undefined>(undefined);
   const [initialTo, setInitialTo] = useState<string[] | undefined>(undefined);
@@ -351,11 +373,11 @@ function ThreadList() {
 
   const currentCursor = cursorStack[cursorStack.length - 1];
   const isSearching = search.trim().length > 0;
-  const threadsKey = initialized && tab !== 'drafts' && !isSearching ? buildThreadsKey(mailboxView, tab, search, currentCursor) : null;
-  const searchPersonalKey = initialized && isSearching ? buildThreadsKey('personal', '', search) : null;
-  const searchTeamKey = initialized && isSearching ? buildThreadsKey('team', '', search) : null;
+  const threadsKey = initialized && tab !== 'drafts' && !isSearching ? buildThreadsKey(mailboxView, tab, search, currentCursor, false, mailboxFilter) : null;
+  const searchPersonalKey = initialized && isSearching ? buildThreadsKey('personal', '', search, undefined, semanticSearch) : null;
+  const searchTeamKey = initialized && isSearching ? buildThreadsKey('team', '', search, undefined, semanticSearch) : null;
   const draftsKey = initialized && tab === 'drafts' ? '/api/drafts' : null;
-  const unreadCountsKey = initialized ? '/api/threads/unread-counts' : null;
+  const unreadCountsKey = initialized ? UNREAD_KEY : null;
 
   const { data: threadResult, isValidating: threadsValidating, mutate: mutateThreads } = useSWR(threadsKey, fetcher);
   const { data: searchPersonalResult, isValidating: searchPersonalValidating } = useSWR(searchPersonalKey, fetcher);
@@ -364,9 +386,16 @@ function ThreadList() {
   const { data: unreadResult } = useSWR(unreadCountsKey, fetcher);
 
   const threads: Thread[] = isSearching
-    ? [...(searchPersonalResult?.items || []), ...(searchTeamResult?.items || [])]
-        .sort((a, b) => new Date(b.last).getTime() - new Date(a.last).getTime())
+    ? (() => {
+        const all: Thread[] = [...(searchPersonalResult?.items || []), ...(searchTeamResult?.items || [])];
+        // the word hits by date, then the ones only close in meaning, closest first
+        const byWords = all.filter(t => t.match !== 'semantic').sort((a, b) => new Date(b.last).getTime() - new Date(a.last).getTime());
+        const byMeaning = all.filter(t => t.match === 'semantic').sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
+        return [...byWords, ...byMeaning];
+      })()
     : threadResult?.items || [];
+  const firstSemanticIndex = threads.findIndex(t => t.match === 'semantic');
+  const semanticDown = isSearching && semanticSearch && (searchPersonalResult?.semantic?.used === false || searchTeamResult?.semantic?.used === false);
   const drafts: DraftItem[] = draftResult?.drafts || [];
   const nextCursor: { last: string; id: string } | null = (!isSearching && threadResult?.nextCursor) || null;
   const personalUnread: number = unreadResult?.personal || 0;
@@ -435,6 +464,7 @@ function ThreadList() {
     const filters = {
       status: (!isSearching && (tab === 'all' || tab === 'unread' || tab === 'sent' || tab === 'mine' || tab === 'assigned' || tab === 'spam')) ? undefined : tab,
       type: mailboxView,
+      mailbox_id: mailboxView === 'team' && !search ? mailboxFilter || undefined : undefined,
       q: search || undefined,
       mine: tab === 'mine' ? '1' : '0',
       unread: tab === 'unread' ? '1' : '0',
@@ -496,7 +526,7 @@ function ThreadList() {
     setIsAllSelected(false);
     setConfirmDelete(false);
     setBulkLoading(false);
-    mutateThreads();
+    refreshMail(); // the list and the unread counts
   }
 
   async function bulkMarkRead() { await performBulkAction('read'); }
@@ -556,6 +586,7 @@ function ThreadList() {
   function switchView(view: 'personal' | 'team') {
     setViewCookie(view);
     setMailboxView(view);
+    setMailboxFilter('');
     setTab('unread');
     setCursorStack([]);
     resetFilters();
@@ -642,7 +673,7 @@ function ThreadList() {
       {showCompose && (
         <ComposeModal
           onClose={() => { setShowCompose(false); setOpenDraftId(undefined); setInitialTo(undefined); setInitialSubject(undefined); }}
-          onSent={() => { mutateThreads(); }}
+          onSent={() => { refreshMail(); }}
           initialDraftId={openDraftId}
           initialTo={initialTo}
           initialSubject={initialSubject}
@@ -650,7 +681,7 @@ function ThreadList() {
       )}
 
       {modernConfirm && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/40 backdrop-blur-[2px]">
+        <div className="fixed inset-0 z-100 flex items-center justify-center p-4 bg-black/40 backdrop-blur-[2px]">
           <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full overflow-hidden animate-in fade-in zoom-in duration-200">
             <div className="p-6">
               <div className="w-12 h-12 rounded-full bg-amber-100 flex items-center justify-center text-amber-600 mb-4">
@@ -670,7 +701,7 @@ function ThreadList() {
               </button>
               <button
                 onClick={() => { modernConfirm.onConfirm(); setModernConfirm(null); }}
-                className="flex-1 px-4 py-2 text-sm font-semibold text-white bg-blue-600 rounded-xl hover:bg-blue-700 transition-colors shadow-sm shadow-blue-200"
+                className="flex-1 px-4 py-2 text-sm font-semibold text-white bg-blue-600 rounded-xl hover:bg-blue-700 transition-colors shadow-xs shadow-blue-200"
               >
                 リクエスト
               </button>
@@ -680,7 +711,7 @@ function ThreadList() {
       )}
 
       {modernAlert && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/40 backdrop-blur-[2px]">
+        <div className="fixed inset-0 z-100 flex items-center justify-center p-4 bg-black/40 backdrop-blur-[2px]">
           <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full overflow-hidden animate-in fade-in zoom-in duration-200">
             <div className="p-6 text-center">
               <div className={`w-12 h-12 rounded-full mx-auto flex items-center justify-center mb-4 ${
@@ -717,11 +748,19 @@ function ThreadList() {
           <h1 className="text-xl font-bold text-gray-900">メール</h1>
           <div className="flex items-center gap-2">
             <button
+              onClick={() => setSearchOpen(v => !v)} aria-expanded={searchOpen || !!search} aria-label="検索を開く"
+              className={`sm:hidden p-2 rounded-lg border ${searchOpen || search ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-gray-300 text-gray-600'}`}
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+            </button>
+            <button
               onClick={() => setShowCompose(true)}
-              className="inline-flex items-center gap-2 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 text-white font-semibold shadow-md hover:shadow-lg hover:from-blue-600 hover:to-indigo-700 active:scale-95 transition-all duration-150 px-3 py-2 sm:px-4"
+              className="inline-flex items-center gap-2 rounded-full bg-linear-to-br from-blue-500 to-indigo-600 text-white font-semibold shadow-md hover:shadow-lg hover:from-blue-600 hover:to-indigo-700 active:scale-95 transition-all duration-150 px-3 py-2 sm:px-4"
               title="新規メール作成"
             >
-              <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
               </svg>
               <span className="hidden sm:inline text-sm">新規メール</span>
@@ -736,7 +775,7 @@ function ThreadList() {
                     boxes.map(mb => fetch(`/api/mailboxes/${mb.id}/resync`, { method: 'POST' }))
                   );
                 } catch {}
-                if (tab === 'drafts') await mutateDrafts(); else await mutateThreads();
+                if (tab === 'drafts') await mutateDrafts(); else await refreshMail();
                 setSyncing(false);
               }}
               disabled={syncing}
@@ -751,20 +790,20 @@ function ThreadList() {
         </div>
 
         {/* Search bar */}
-        <form onSubmit={handleSearch} className="space-y-2">
+        <form onSubmit={handleSearch} className={`space-y-2 ${searchOpen || search || showFilters ? "" : "hidden sm:block"}`}>
           <div className="flex gap-2">
             <div className="relative flex-1">
               <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
               </svg>
               <input
-                type="search"
+                type="search" ref={searchRef}
                 placeholder="検索… (from: to: cc: subject: body: mailbox: status: assigned:)"
                 value={searchInput}
                 onChange={(e) => { setSearchInput(e.target.value); setShowHistory(false); }}
                 onFocus={() => { if (!searchInput) { setSearchHistory(getSearchHistory()); setShowHistory(true); } }}
                 onBlur={() => setTimeout(() => setShowHistory(false), 150)}
-                className="w-full pl-9 pr-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
+                className="w-full pl-9 pr-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
               />
               {/* Search history dropdown */}
               {showHistory && searchHistory.length > 0 && (
@@ -780,7 +819,7 @@ function ThreadList() {
                       setSearchInput(h); setSearch(h); setShowHistory(false);
                       setTab(''); setCursorStack([]);
                     }} className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors flex items-center gap-2">
-                      <svg className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <svg className="w-3.5 h-3.5 text-gray-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                       </svg>
                       <span className="truncate">{h}</span>
@@ -820,6 +859,19 @@ function ThreadList() {
             )}
           </div>
 
+          {semanticStatus?.enabled && (
+            <label className="flex items-start gap-2 text-xs text-gray-600 cursor-pointer select-none">
+              <input
+                type="checkbox" checked={semanticOn} className="mt-0.5 w-4 h-4 rounded text-blue-600 border-gray-300"
+                onChange={e => { setSemanticOn(e.target.checked); try { localStorage.setItem(SEMANTIC_KEY, e.target.checked ? '1' : '0'); } catch {} }}
+              />
+              <span className="font-medium text-gray-700">意味検索</span>
+            </label>
+          )}
+          {semanticDown && (
+            <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-1.5">意味検索を一時的に使えません。言葉が一致したメールだけを表示しています。</p>
+          )}
+
           {/* Advanced filters */}
           {showFilters && (
             <div className="bg-gray-50 border border-gray-200 rounded-xl p-3 space-y-2">
@@ -843,17 +895,17 @@ function ThreadList() {
                 <div>
                   <label className="block text-xs font-medium text-gray-500 mb-1">BCC (bcc:)</label>
                   <input type="text" value={filterBcc} onChange={e => setFilterBcc(e.target.value)} placeholder="名前またはアドレス"
-                    className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white" />
+                    className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-blue-500 bg-white" />
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-gray-500 mb-1">件名 (subject:)</label>
                   <input type="text" value={filterSubject} onChange={e => setFilterSubject(e.target.value)} placeholder="件名キーワード"
-                    className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white" />
+                    className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-blue-500 bg-white" />
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-gray-500 mb-1">本文 (body:)</label>
                   <input type="text" value={filterBody} onChange={e => setFilterBody(e.target.value)} placeholder="本文キーワード"
-                    className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white" />
+                    className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-blue-500 bg-white" />
                 </div>
               </div>
               {/* Row 3: Mailbox, Status, Assigned */}
@@ -861,12 +913,12 @@ function ThreadList() {
                 <div>
                   <label className="block text-xs font-medium text-gray-500 mb-1">メールボックス (mailbox:)</label>
                   <input type="text" value={filterMailbox} onChange={e => setFilterMailbox(e.target.value)} placeholder="メールボックス名"
-                    className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white" />
+                    className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-blue-500 bg-white" />
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-gray-500 mb-1">ステータス (status:)</label>
                   <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}
-                    className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
+                    className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-blue-500 bg-white">
                     <option value="">指定しない</option>
                     <option value="open">未対応</option>
                     <option value="in_progress">対応中</option>
@@ -877,7 +929,7 @@ function ThreadList() {
                 <div>
                   <label className="block text-xs font-medium text-gray-500 mb-1">担当者 (assigned:)</label>
                   <input type="text" value={filterAssigned} onChange={e => setFilterAssigned(e.target.value)} placeholder="担当者名"
-                    className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white" />
+                    className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-blue-500 bg-white" />
                 </div>
               </div>
               {/* Row 4: Date range */}
@@ -885,17 +937,17 @@ function ThreadList() {
                 <div>
                   <label className="block text-xs font-medium text-gray-500 mb-1">期間（開始）</label>
                   <input type="date" value={filterAfter} onChange={e => setFilterAfter(e.target.value)}
-                    className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white" />
+                    className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-blue-500 bg-white" />
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-gray-500 mb-1">期間（終了）</label>
                   <input type="date" value={filterBefore} onChange={e => setFilterBefore(e.target.value)}
-                    className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white" />
+                    className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-blue-500 bg-white" />
                 </div>
               </div>
               <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
                 <input type="checkbox" checked={filterAttachment} onChange={e => setFilterAttachment(e.target.checked)}
-                  className="w-4 h-4 rounded text-blue-600 border-gray-300" />
+                  className="w-4 h-4 rounded-sm text-blue-600 border-gray-300" />
                 添付ファイルあり
               </label>
             </div>
@@ -909,7 +961,7 @@ function ThreadList() {
                   {CHIP_PREFIX[chip.type] && <span className="opacity-60 text-[10px]">{CHIP_PREFIX[chip.type]}</span>}
                   <span>{chip.value}</span>
                   <button type="button" onClick={() => handleRemoveChip(chip.raw)}
-                    className="ml-0.5 p-0.5 rounded-full hover:bg-black/10 transition-colors flex-shrink-0">
+                    className="ml-0.5 p-0.5 rounded-full hover:bg-black/10 transition-colors shrink-0">
                     <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
                     </svg>
@@ -928,11 +980,11 @@ function ThreadList() {
           onClick={() => switchView('personal')}
           className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 px-2 sm:px-4 rounded-lg text-sm font-semibold transition-all ${
             mailboxView === 'personal'
-              ? 'bg-white shadow-sm text-gray-900'
+              ? 'bg-white shadow-xs text-gray-900'
               : 'text-gray-500 hover:text-gray-700'
           }`}
         >
-          <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
           </svg>
           個人メール
@@ -947,11 +999,11 @@ function ThreadList() {
           onClick={() => switchView('team')}
           className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 px-2 sm:px-4 rounded-lg text-sm font-semibold transition-all ${
             mailboxView === 'team'
-              ? 'bg-white shadow-sm text-gray-900'
+              ? 'bg-white shadow-xs text-gray-900'
               : 'text-gray-500 hover:text-gray-700'
           }`}
         >
-          <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
           </svg>
           共有メール
@@ -963,14 +1015,69 @@ function ThreadList() {
         </button>
       </div>
 
+      {/* 共有メール: which mailboxes — a chip per shown mailbox (narrows the list), and the person's own choice of what is shown */}
+      {mailboxView === 'team' && !isSearching && (teamView?.items.length ?? 0) > 1 && (
+        <div className="mb-3 -mt-1 flex items-center gap-1.5" data-testid="team-mailbox-chips">
+          <div className="flex min-w-0 flex-1 gap-1.5 overflow-x-auto pb-1 scrollbar-none" role="group" aria-label="表示するメールボックス">
+            <button type="button" onClick={() => { setMailboxFilter(''); setCursorStack([]); }} aria-pressed={mailboxFilter === ''}
+              className={`shrink-0 rounded-full border px-3 py-1 text-xs font-medium whitespace-nowrap ${mailboxFilter === '' ? 'border-violet-600 bg-violet-600 text-white' : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'}`}>
+              すべて{teamUnread > 0 && <span className="ml-1 opacity-80">{teamUnread}</span>}
+            </button>
+            {shownTeamMailboxes.map(m => (
+              <button key={m.id} type="button" onClick={() => { setMailboxFilter(m.id); setCursorStack([]); }} aria-pressed={mailboxFilter === m.id}
+                className={`flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium whitespace-nowrap ${mailboxFilter === m.id ? 'border-violet-600 bg-violet-50 text-violet-800' : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'}`}>
+                {mailboxDot(m.id, m.name)}{m.name}{m.unread > 0 && <span className="rounded-full bg-violet-600 px-1.5 text-[10px] font-bold text-white">{m.unread}</span>}
+              </button>
+            ))}
+          </div>
+          <button type="button" className="shrink-0 rounded-lg border border-gray-200 bg-white px-2.5 py-1 text-xs text-gray-600 hover:bg-gray-50"
+            onClick={() => { setPickerHidden(new Set((teamView?.items ?? []).filter(m => !m.shown).map(m => m.id))); setPickerError(''); setShowMailboxPicker(true); }}>
+            表示を選ぶ
+          </button>
+        </div>
+      )}
+
+      {showMailboxPicker && (
+        <div className="fixed inset-0 z-[90] flex items-end justify-center bg-black/40 p-0 sm:items-center sm:p-4" role="dialog" aria-modal="true" aria-labelledby="mb-picker-title" onClick={() => setShowMailboxPicker(false)}>
+          <div className="w-full max-w-md rounded-t-2xl bg-white p-5 shadow-xl sm:rounded-2xl" onClick={e => e.stopPropagation()}>
+            <h2 id="mb-picker-title" className="text-base font-semibold text-gray-900">共有メールに表示するメールボックス</h2>
+            <p className="mt-1 text-xs text-gray-500">チェックを外したメールボックスは、共有メールの一覧・未読の数に出ません（検索には出ます）。自分だけの設定です。</p>
+            <ul className="mt-3 max-h-72 space-y-1 overflow-y-auto">
+              {(teamView?.items ?? []).map(m => (
+                <li key={m.id}>
+                  <label className="flex items-center gap-2 rounded-lg px-2 py-2 text-sm hover:bg-gray-50">
+                    <input type="checkbox" className="h-4 w-4" checked={!pickerHidden.has(m.id)}
+                      onChange={e => setPickerHidden(prev => { const n = new Set(prev); if (e.target.checked) n.delete(m.id); else n.add(m.id); return n; })} />
+                    {mailboxDot(m.id, m.name)}<span className="min-w-0 flex-1 truncate">{m.name}</span>
+                    {m.unread > 0 && <span className="text-xs text-gray-400">未読 {m.unread}</span>}
+                  </label>
+                </li>
+              ))}
+            </ul>
+            {pickerError && <p role="alert" className="mt-2 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700">{pickerError}</p>}
+            <div className="mt-4 flex justify-end gap-2">
+              <button type="button" className="rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50" onClick={() => setShowMailboxPicker(false)}>閉じる</button>
+              <button type="button" className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700" onClick={async () => {
+                const res = await fetch('/api/mailboxes/team-view', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ hidden: [...pickerHidden] }) });
+                if (!res.ok) { setPickerError('少なくとも1つは表示してください'); return; }
+                if (pickerHidden.has(mailboxFilter)) setMailboxFilter('');
+                setCursorStack([]); setSelected(new Set());
+                await mutateTeamView(); await mutateThreads(); refreshMail();
+                setShowMailboxPicker(false);
+              }}>保存</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Tab bar — hidden while searching */}
       <div className={`border-b border-gray-200 mb-0 ${isSearching ? 'hidden' : ''}`}>
-        <nav className="flex overflow-x-auto">
+        <nav className="flex overflow-x-auto scrollbar-none">
           {currentTabs.map((t) => (
             <button
               key={t.id}
               onClick={() => switchTab(t.id)}
-              className={`flex-shrink-0 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
+              className={`shrink-0 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
                 tab === t.id
                   ? 'border-blue-600 text-blue-600'
                   : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
@@ -997,7 +1104,7 @@ function ThreadList() {
                   setSelected(new Set(drafts.map(d => d.id)));
                 }
               }}
-              className="w-4 h-4 rounded text-amber-600 border-gray-300 cursor-pointer flex-shrink-0"
+              className="w-4 h-4 rounded-sm text-amber-600 border-gray-300 cursor-pointer shrink-0"
             />
             <span className="text-sm font-medium text-white">{selected.size} 件選択中</span>
             <div className="flex-1" />
@@ -1032,7 +1139,7 @@ function ThreadList() {
               checked={selected.size === threads.length && threads.length > 0}
               ref={el => { if (el) el.indeterminate = !isAllSelected && selected.size > 0 && selected.size < threads.length; }}
               onChange={selectAll}
-              className="w-4 h-4 rounded border-white/50 cursor-pointer accent-white flex-shrink-0"
+              className="w-4 h-4 rounded-sm border-white/50 cursor-pointer accent-white shrink-0"
             />
             <span className="text-sm font-semibold text-white whitespace-nowrap">
               {isAllSelected ? `全 ${totalCount} 件を選択中` : `${selected.size} 件選択`}
@@ -1062,7 +1169,7 @@ function ThreadList() {
                   未読
                 </button>
                 {mailboxView === 'team' && (
-                  <select defaultValue="" onChange={(e) => { if (e.target.value) { bulkSetStatus(e.target.value); e.target.value = ''; } }} disabled={bulkLoading} className="px-2 py-1.5 rounded-lg text-xs font-medium bg-white/15 text-white border border-white/20 cursor-pointer disabled:opacity-50 focus:outline-none" style={{ colorScheme: 'dark' }}>
+                  <select defaultValue="" onChange={(e) => { if (e.target.value) { bulkSetStatus(e.target.value); e.target.value = ''; } }} disabled={bulkLoading} className="px-2 py-1.5 rounded-lg text-xs font-medium bg-white/15 text-white border border-white/20 cursor-pointer disabled:opacity-50 focus:outline-hidden" style={{ colorScheme: 'dark' }}>
                     <option value="" className="text-gray-900 bg-white">ステータス変更…</option>
                     <option value="open" className="text-gray-900 bg-white">未対応</option>
                     <option value="in_progress" className="text-gray-900 bg-white">対応中</option>
@@ -1090,7 +1197,7 @@ function ThreadList() {
 
             <button
               onClick={() => { setSelected(new Set()); setConfirmDelete(false); lastSelectedIndexRef.current = null; }}
-              className="p-1.5 rounded-lg text-white/70 hover:text-white hover:bg-white/15 transition-colors ml-1 flex-shrink-0"
+              className="p-1.5 rounded-lg text-white/70 hover:text-white hover:bg-white/15 transition-colors ml-1 shrink-0"
               title="選択解除"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1105,10 +1212,10 @@ function ThreadList() {
               <span className="flex-1 text-xs text-white/90 font-medium truncate">
                 {mailboxView === 'team' ? '全員から削除。' : `${selected.size}件削除。`}元に戻せません。
               </span>
-              <button onClick={bulkDelete} disabled={bulkLoading} className="flex-shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold bg-white text-red-600 hover:bg-red-50 disabled:opacity-50 transition-colors">
+              <button onClick={bulkDelete} disabled={bulkLoading} className="shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold bg-white text-red-600 hover:bg-red-50 disabled:opacity-50 transition-colors">
                 {bulkLoading ? '削除中…' : '削除する'}
               </button>
-              <button onClick={() => setConfirmDelete(false)} disabled={bulkLoading} className="flex-shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium bg-blue-500 text-white hover:bg-blue-400 border border-white/30 transition-colors">
+              <button onClick={() => setConfirmDelete(false)} disabled={bulkLoading} className="shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium bg-blue-500 text-white hover:bg-blue-400 border border-white/30 transition-colors">
                 戻る
               </button>
             </div>
@@ -1122,7 +1229,7 @@ function ThreadList() {
                 <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-blue-300 border border-blue-600" />
               </button>
               {mailboxView === 'team' && (
-                <select defaultValue="" onChange={(e) => { if (e.target.value) { bulkSetStatus(e.target.value); e.target.value = ''; } }} disabled={bulkLoading} className="w-16 px-1 py-2 rounded-lg text-xs font-medium bg-white/15 text-white border border-white/20 cursor-pointer disabled:opacity-50 focus:outline-none" style={{ colorScheme: 'dark' }}>
+                <select defaultValue="" onChange={(e) => { if (e.target.value) { bulkSetStatus(e.target.value); e.target.value = ''; } }} disabled={bulkLoading} className="w-16 px-1 py-2 rounded-lg text-xs font-medium bg-white/15 text-white border border-white/20 cursor-pointer disabled:opacity-50 focus:outline-hidden" style={{ colorScheme: 'dark' }}>
                   <option value="" className="text-gray-900 bg-white">状態</option>
                   <option value="open" className="text-gray-900 bg-white">未対応</option>
                   <option value="in_progress" className="text-gray-900 bg-white">対応中</option>
@@ -1138,7 +1245,7 @@ function ThreadList() {
       )}
 
       {/* Thread / Draft rows */}
-      <div ref={listRef} className="bg-white rounded-b-xl border-x border-b border-gray-200 overflow-hidden shadow-sm">
+      <div ref={listRef} className="bg-white rounded-b-xl border-x border-b border-gray-200 overflow-hidden shadow-xs">
         {showSpinner ? (
           <div className="py-16 text-center">
             <div className="inline-block w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
@@ -1171,7 +1278,7 @@ function ThreadList() {
                   <div className="flex items-start gap-3 px-4 py-3 sm:hidden">
                     <div
                       onClick={(e) => { e.stopPropagation(); toggleSelect(d.id, drafts.indexOf(d)); }}
-                      className={`flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center cursor-pointer transition-all mt-0.5 ${
+                      className={`shrink-0 w-10 h-10 rounded-full flex items-center justify-center cursor-pointer transition-all mt-0.5 ${
                         isDraftSelected ? 'bg-amber-500 text-white' : 'bg-amber-100 text-amber-600 hover:bg-amber-200'
                       }`}
                     >
@@ -1190,7 +1297,7 @@ function ThreadList() {
                         <span className="flex-1 min-w-0 truncate text-sm text-gray-600">
                           {d.to_raw ? `To: ${d.to_raw.split(/[,;\s]+/)[0]}` : '(宛先なし)'}
                         </span>
-                        <span className="flex-shrink-0 text-xs tabular-nums text-gray-400">{formatDate(d.updated_at)}</span>
+                        <span className="shrink-0 text-xs tabular-nums text-gray-400">{formatDate(d.updated_at)}</span>
                       </div>
                       <div className="flex items-center gap-1.5 mt-0.5">
                         <span className="flex-1 min-w-0 truncate text-sm text-amber-700 font-medium">
@@ -1198,7 +1305,7 @@ function ThreadList() {
                         </span>
                         {d._count?.attachments > 0 && <AttachmentClip />}
                         {d.is_shared && (
-                          <span className="flex-shrink-0 text-xs px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-600 font-medium">共有</span>
+                          <span className="shrink-0 text-xs px-1.5 py-0.5 rounded-sm bg-indigo-50 text-indigo-600 font-medium">共有</span>
                         )}
                       </div>
                     </div>
@@ -1206,37 +1313,37 @@ function ThreadList() {
 
                   {/* ── PCレイアウト (sm+) — 変更前のレイアウト ── */}
                   <div className="hidden sm:flex items-center gap-3 px-4 py-3">
-                    <div className="flex-shrink-0 w-5 flex items-center justify-center">
+                    <div className="shrink-0 w-5 flex items-center justify-center">
                       <input
                         type="checkbox"
                         checked={isDraftSelected}
                         onChange={() => {}}
                         onClick={(e) => { e.stopPropagation(); toggleSelect(d.id, drafts.indexOf(d)); }}
-                        className={`w-4 h-4 rounded text-amber-600 border-gray-300 cursor-pointer transition-opacity ${selectionMode || isDraftSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
+                        className={`w-4 h-4 rounded-sm text-amber-600 border-gray-300 cursor-pointer transition-opacity ${selectionMode || isDraftSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
                       />
                     </div>
-                    <div className="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center bg-amber-100 text-amber-600">
+                    <div className="shrink-0 w-8 h-8 rounded-full flex items-center justify-center bg-amber-100 text-amber-600">
                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                       </svg>
                     </div>
-                    <div className="flex-shrink-0 w-32 truncate text-sm text-gray-600">
+                    <div className="shrink-0 w-32 truncate text-sm text-gray-600">
                       {d.to_raw ? `To: ${d.to_raw.split(/[,;\s]+/)[0]}` : '(宛先なし)'}
                     </div>
                     <div className="flex-1 min-w-0 flex items-center gap-2">
                       <span className="truncate text-sm text-amber-700 font-medium">{d.thread?.subject ? `Re: ${d.thread.subject}` : d.subject || '(件名なし)'}</span>
                       {d._count?.attachments > 0 && <AttachmentClip />}
                       {d.is_shared && (
-                        <span className="flex-shrink-0 text-xs px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-600 font-medium">共有下書き</span>
+                        <span className="shrink-0 text-xs px-1.5 py-0.5 rounded-sm bg-indigo-50 text-indigo-600 font-medium">共有下書き</span>
                       )}
                       {d.mailbox && d.mailbox.type === 'team' && (
-                        <span className="flex-shrink-0 text-xs px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-600 font-medium">チーム</span>
+                        <span className="shrink-0 text-xs px-1.5 py-0.5 rounded-sm bg-indigo-50 text-indigo-600 font-medium">チーム</span>
                       )}
                     </div>
                     {d.is_shared && (
-                      <div className="flex-shrink-0 hidden lg:block w-20 truncate text-xs text-gray-400 text-right">{d.user.name}</div>
+                      <div className="shrink-0 hidden lg:block w-20 truncate text-xs text-gray-400 text-right">{d.user.name}</div>
                     )}
-                    <div className="flex-shrink-0 hidden md:block">
+                    <div className="shrink-0 hidden md:block">
                       {d.mailbox && <span className="text-xs text-gray-400">{d.mailbox.display_name}</span>}
                     </div>
                     {!selectionMode && (
@@ -1248,7 +1355,7 @@ function ThreadList() {
                           await fetch(`/api/drafts/${d.id}`, { method: 'DELETE' });
                           mutateDrafts();
                         }}
-                        className="flex-shrink-0 p-1.5 rounded text-gray-300 hover:text-red-500 hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-all"
+                        className="shrink-0 p-1.5 rounded-sm text-gray-300 hover:text-red-500 hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-all"
                         title="削除"
                       >
                         <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1256,7 +1363,7 @@ function ThreadList() {
                         </svg>
                       </button>
                     )}
-                    <div className="flex-shrink-0 text-xs tabular-nums w-14 text-right text-gray-400">{formatDate(d.updated_at)}</div>
+                    <div className="shrink-0 text-xs tabular-nums w-14 text-right text-gray-400">{formatDate(d.updated_at)}</div>
                   </div>
                 </div>
                 );
@@ -1305,10 +1412,15 @@ function ThreadList() {
                     isSelected ? 'bg-blue-50' : isUnread ? 'bg-white hover:bg-blue-50/50' : 'hover:bg-gray-50'
                   }`}
                 >
+                  {index === firstSemanticIndex && (
+                    <div onClick={e => e.stopPropagation()} className="px-4 py-1.5 bg-violet-50 border-y border-violet-100 text-xs font-medium text-violet-700 cursor-default">
+                      意味が近いメール <span className="font-normal text-violet-500">（言葉は一致しませんが、内容が近いものです）</span>
+                    </div>
+                  )}
                   {/* ── モバイルレイアウト (< sm) ── */}
                   <div className="flex items-start gap-3 px-4 py-3 sm:hidden">
                     {/* アバタータップで選択 */}
-                    <div className="relative flex-shrink-0 mt-0.5">
+                    <div className="relative shrink-0 mt-0.5">
                       <div
                         onClick={(e) => handleCheckboxClick(e, t.id, index)}
                         className={`w-10 h-10 rounded-full flex items-center justify-center transition-all ${
@@ -1334,17 +1446,17 @@ function ThreadList() {
                           {t.from_name || t.from_email?.split('@')[0] || '(不明)'}
                         </span>
                         {t.mailbox_type === 'team' && (
-                          <span className={`flex-shrink-0 inline-flex items-center px-1.5 py-0.5 rounded-full text-[11px] font-medium ring-1 ring-inset ${STATUS_CHIP[t.status] || 'bg-gray-50 text-gray-500 ring-gray-200'}`}>
+                          <span className={`shrink-0 inline-flex items-center px-1.5 py-0.5 rounded-full text-[11px] font-medium ring-1 ring-inset ${STATUS_CHIP[t.status] || 'bg-gray-50 text-gray-500 ring-gray-200'}`}>
                             {STATUS_LABELS[t.status] || t.status}
                           </span>
                         )}
-                        <span className={`flex-shrink-0 text-xs tabular-nums ${isUnread ? 'font-semibold text-gray-700' : 'text-gray-400'}`}>
+                        <span className={`shrink-0 text-xs tabular-nums ${isUnread ? 'font-semibold text-gray-700' : 'text-gray-400'}`}>
                           {formatDate(t.last)}
                         </span>
                       </div>
                       <div className="flex items-center gap-1.5 mt-0.5">
                         {isSearching
-                          ? <span className="flex-shrink-0 inline-flex items-center gap-1 text-[11px] text-gray-500 font-medium">
+                          ? <span className="shrink-0 inline-flex items-center gap-1 text-[11px] text-gray-500 font-medium">
                               {mailboxDot(t.mailbox_id, t.mailbox)}
                               <span className="truncate max-w-[80px]">{t.mailbox}</span>
                             </span>
@@ -1353,28 +1465,31 @@ function ThreadList() {
                         <span className={`flex-1 min-w-0 truncate text-sm ${isUnread ? 'font-medium text-gray-800' : 'text-gray-500'}`}>
                           {t.subject || '(件名なし)'}
                         </span>
+                        {t.match === 'semantic' && (
+                          <span title={`近さ ${t.score}`} className="shrink-0 text-[11px] px-1.5 py-0.5 rounded-sm bg-violet-50 text-violet-700 font-medium">意味</span>
+                        )}
                         {t.has_mattermost && (
-                          <span className="flex-shrink-0 text-xs px-1.5 py-0.5 rounded bg-purple-50 text-purple-600 font-medium">M</span>
+                          <span className="shrink-0 text-xs px-1.5 py-0.5 rounded-sm bg-purple-50 text-purple-600 font-medium">M</span>
                         )}
                         {t.has_draft && (
-                          <svg className="flex-shrink-0 w-3 h-3 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><title>下書きあり</title>
+                          <svg className="shrink-0 w-3 h-3 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><title>下書きあり</title>
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                           </svg>
                         )}
                       </div>
                       {t.mailbox_type === 'team' && t.readers.length > 0 && (
                         <div className="flex items-center gap-1.5 mt-1.5">
-                          <span className="text-[11px] text-gray-400 flex-shrink-0">既読</span>
+                          <span className="text-[11px] text-gray-400 shrink-0">既読</span>
                           <div className="flex items-center -space-x-1">
                             {t.readers.slice(0, 8).map(r => (
-                              <div key={r.id} title={r.name} className="w-5 h-5 rounded-full border-2 border-white overflow-hidden bg-gray-200 flex items-center justify-center text-[9px] font-bold text-gray-500 flex-shrink-0">
+                              <div key={r.id} title={r.name} className="w-5 h-5 rounded-full border-2 border-white overflow-hidden bg-gray-200 flex items-center justify-center text-[9px] font-bold text-gray-500 shrink-0">
                                 {r.mattermost_user_id ? (
                                   <img src={`/api/users/${r.id}/avatar`} alt={r.name} className="w-full h-full object-cover" onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.parentElement!.textContent = r.name[0]?.toUpperCase() || '?'; }} />
                                 ) : r.name[0]?.toUpperCase() || '?'}
                               </div>
                             ))}
                             {t.readers.length > 8 && (
-                              <div className="w-5 h-5 rounded-full border-2 border-white bg-gray-100 flex items-center justify-center text-[9px] font-bold text-gray-400 flex-shrink-0">+{t.readers.length - 8}</div>
+                              <div className="w-5 h-5 rounded-full border-2 border-white bg-gray-100 flex items-center justify-center text-[9px] font-bold text-gray-400 shrink-0">+{t.readers.length - 8}</div>
                             )}
                           </div>
                         </div>
@@ -1385,7 +1500,7 @@ function ThreadList() {
                   {/* ── PCレイアウト (sm+) — 変更前のレイアウト ── */}
                   <div className="hidden sm:flex items-center gap-3 px-4 py-3">
                     {/* 未読ドット / チェックボックス */}
-                    <div className="flex-shrink-0 w-5 flex items-center justify-center relative">
+                    <div className="shrink-0 w-5 flex items-center justify-center relative">
                       {isUnread && !selectionMode && (
                         <div className="w-2 h-2 rounded-full bg-blue-500 group-hover:opacity-0 transition-opacity" />
                       )}
@@ -1402,13 +1517,13 @@ function ThreadList() {
                     {/* アバター */}
                     <SenderAvatar email={t.from_email} name={t.from_name} size={32} />
                     {/* From */}
-                    <div className={`flex-shrink-0 w-32 truncate text-sm ${isUnread ? 'font-bold text-gray-900' : 'text-gray-600'}`}>
+                    <div className={`shrink-0 w-32 truncate text-sm ${isUnread ? 'font-bold text-gray-900' : 'text-gray-600'}`}>
                       {t.from_name || t.from_email?.split('@')[0] || '(不明)'}
                     </div>
                     {/* 件名 */}
                     <div className="flex-1 min-w-0 flex items-center gap-2">
                       {isSearching
-                        ? <span className="flex-shrink-0 inline-flex items-center gap-1 text-[11px] text-gray-500 font-medium whitespace-nowrap">
+                        ? <span className="shrink-0 inline-flex items-center gap-1 text-[11px] text-gray-500 font-medium whitespace-nowrap">
                             {mailboxDot(t.mailbox_id, t.mailbox)}
                             <span className="truncate max-w-[100px]">{t.mailbox}</span>
                           </span>
@@ -1417,11 +1532,14 @@ function ThreadList() {
                       <span className={`truncate text-sm ${isUnread ? 'font-semibold text-gray-900' : 'text-gray-700'}`}>
                         {t.subject || '(件名なし)'}
                       </span>
+                      {t.match === 'semantic' && (
+                        <span title={`近さ ${t.score}`} className="shrink-0 text-[11px] px-1.5 py-0.5 rounded-sm bg-violet-50 text-violet-700 font-medium">意味</span>
+                      )}
                       {t.has_mattermost && (
-                        <span className="flex-shrink-0 text-xs px-1.5 py-0.5 rounded bg-purple-50 text-purple-600 font-medium">M</span>
+                        <span className="shrink-0 text-xs px-1.5 py-0.5 rounded-sm bg-purple-50 text-purple-600 font-medium">M</span>
                       )}
                       {t.has_draft && (
-                        <svg className="flex-shrink-0 w-3.5 h-3.5 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><title>下書きあり</title>
+                        <svg className="shrink-0 w-3.5 h-3.5 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><title>下書きあり</title>
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                         </svg>
                       )}
@@ -1429,7 +1547,7 @@ function ThreadList() {
                     {/* チームメール: 担当 + ステータス + 既読 */}
                     {t.mailbox_type === 'team' && (
                       <>
-                        <div className="flex-shrink-0 hidden md:flex items-center gap-1.5 min-w-0 max-w-[120px]">
+                        <div className="shrink-0 hidden md:flex items-center gap-1.5 min-w-0 max-w-[120px]">
                           {t.assigned ? (
                             <span className="truncate text-xs font-medium text-blue-700 bg-blue-50 border border-blue-200 rounded-full px-2 py-0.5 max-w-full">
                               {t.assigned}
@@ -1438,13 +1556,13 @@ function ThreadList() {
                             <span className="text-xs text-gray-400 italic">未担当</span>
                           )}
                         </div>
-                        <div className="flex-shrink-0 hidden md:block">
+                        <div className="shrink-0 hidden md:block">
                           <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ring-1 ring-inset ${STATUS_CHIP[t.status] || 'bg-gray-50 text-gray-500 ring-gray-200'}`}>
                             {STATUS_LABELS[t.status] || t.status}
                           </span>
                         </div>
                         {t.readers.length > 0 && (
-                          <div className="flex-shrink-0 hidden sm:flex items-center -space-x-1.5">
+                          <div className="shrink-0 hidden sm:flex items-center -space-x-1.5">
                             {t.readers.slice(0, 5).map(r => (
                               <div key={r.id} title={r.name} className="w-5 h-5 rounded-full border border-white overflow-hidden bg-gray-200 flex items-center justify-center text-[9px] font-bold text-gray-500">
                                 {r.mattermost_user_id ? (
@@ -1460,7 +1578,7 @@ function ThreadList() {
                       </>
                     )}
                     {/* 日付 */}
-                    <div className={`flex-shrink-0 text-xs tabular-nums w-14 text-right ${isUnread ? 'font-semibold text-gray-700' : 'text-gray-400'}`}>
+                    <div className={`shrink-0 text-xs tabular-nums w-14 text-right ${isUnread ? 'font-semibold text-gray-700' : 'text-gray-400'}`}>
                       {formatDate(t.last)}
                     </div>
                   </div>

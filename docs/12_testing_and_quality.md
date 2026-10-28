@@ -15,7 +15,7 @@
 | **ユニットテスト** | 純粋なロジック（暗号化、正規化、スレッド統合） | Vitest | `tests/unit/`, `tests/*.test.ts` |
 | **APIテスト** | Route Handlers (バリデーション、認可、DB副作用) | Vitest + Mock Prisma | `tests/api/` |
 | **コンポーネントテスト** | Reactコンポーネント (UI、インタラクション) | RTL + jsdom | `tests/components/` |
-| **E2Eテスト** | 主要なユーザーストーリー (未実装) | Playwright (推奨) | - |
+| **E2Eテスト** | 主要なユーザーストーリー（認証・ナビ・カレンダー・勤怠給与・経費・出張・全銀振込）。実ブラウザ＋実DB | Playwright | `e2e/` （[実行方法](#e2eテストの実行)） |
 
 ### 主要なテストファイル
 
@@ -89,3 +89,18 @@ npx vitest run --coverage
 2.  **1テスト1責務**: 1つのテストケースで複数のパスを検証せず、失敗時に原因が特定できる粒度にする。
 3.  **モックの範囲**: 原則として Prisma Client や外部 API はモックするが、ロジック自体は極力モックせず実コードを動かす。
 4.  **認可の検証**: 更新系 API を追加した場合は、必ず「管理者以外による拒否」のケースを含めること。
+
+
+### E2Eテストの実行
+
+```bash
+npm run test:e2e                         # 全部（PC + モバイル）
+npx playwright test e2e/transfers.spec.ts --project=desktop   # 1ファイルだけ
+npm run test:e2e:report                  # 失敗時のレポート（スクショ・トレース）
+```
+
+- PostgreSQL（既定 `localhost:5433`、`E2E_DATABASE_URL` で変更可）に専用DB `webmail_e2e` を作り、`prisma db push --force-reset` で毎回作り直します。**開発用DBには触りません**。
+- `next dev` をポート3100で自動起動し、Mattermostはモックサーバー（8065）に向けます（実際には送信されません）。
+- ログインは最初に1回ずつAPIで行い、役割別のセッションを `e2e/.auth/` に保存して使い回します（管理者・副管理者・従業員・業務委託・役員・一般・経理担当）。
+- 1つのDBを共有するため `workers=1`。各specが使うテーブルは `beforeAll`/`beforeEach` で初期化します。
+- 開発サーバーの「N」バッジはモバイルの下部バーへのクリックを妨げるため、テスト中は非表示にしています（本番ビルドには存在しません）。

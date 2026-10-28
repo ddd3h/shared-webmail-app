@@ -1,12 +1,7 @@
 import { resolveTxt } from 'node:dns/promises';
 import { createHash } from 'node:crypto';
-import { readFile, writeFile, mkdir, stat } from 'fs/promises';
-import path from 'path';
-import { APP_ROOT } from '@/lib/app-root';
+import { cacheLife, cacheTag } from 'next/cache';
 
-const CACHE_DIR = path.join(APP_ROOT, 'storage', 'sender-icons');
-const TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
-const NEGATIVE_TTL_MS = 6 * 60 * 60 * 1000; // 6 hours for "no icon found"
 const MAX_ICON_BYTES = 512 * 1024;
 const FETCH_TIMEOUT_MS = 5000;
 
@@ -80,65 +75,42 @@ async function lookupGravatar(email: string): Promise<{ data: Buffer; contentTyp
   return fetchImage(`https://gravatar.com/avatar/${hash}?d=404&s=128`);
 }
 
-function cacheKey(email: string, domain: string): string {
-  // 個人ドメインはメール単位(Gravatar)、それ以外はドメイン単位でキャッシュ
-  const raw = isPersonalDomain(domain) ? `email:${email.toLowerCase().trim()}` : `domain:${domain}`;
-  return createHash('sha256').update(raw).digest('hex');
-}
+// Seconds: a found icon is reused for a day, "no icon" is looked up again after six hours; an expired entry is
+// replaced in the background while the old one is still served.
+const FOUND = { stale: 3600, revalidate: 24 * 3600, expire: 7 * 24 * 3600 };
+const MISSING = { stale: 300, revalidate: 6 * 3600, expire: 24 * 3600 };
 
-async function readCache(key: string): Promise<SenderIcon | null | undefined> {
-  try {
-    const file = path.join(CACHE_DIR, key);
-    const s = await stat(`${file}.meta`);
-    const meta = JSON.parse(await readFile(`${file}.meta`, 'utf8')) as { contentType: string; source: SenderIcon['source'] | 'none' };
-    if (meta.source === 'none') {
-      if (Date.now() - s.mtimeMs > NEGATIVE_TTL_MS) return undefined;
-      return null;
-    }
-    if (Date.now() - s.mtimeMs > TTL_MS) return undefined;
-    const data = await readFile(file);
-    return { data, contentType: meta.contentType, source: meta.source };
-  } catch {
-    return undefined; // キャッシュなし
-  }
-}
+// What the cache keeps: plain data only (a Buffer is a class instance, which cannot be stored), the image as base64.
+type StoredIcon = { base64: string; contentType: string; source: SenderIcon['source'] };
 
-async function writeCache(key: string, icon: SenderIcon | null): Promise<void> {
-  await mkdir(CACHE_DIR, { recursive: true });
-  const file = path.join(CACHE_DIR, key);
-  if (icon) {
-    await Promise.all([
-      writeFile(file, icon.data),
-      writeFile(`${file}.meta`, JSON.stringify({ contentType: icon.contentType, source: icon.source })),
-    ]);
+// Look the icon up on the internet; the cache keeps the answer for the lifetime above.
+// Personal domains are asked per address (Gravatar), the others per domain.
+async function resolveIcon(kind: 'email' | 'domain', value: string): Promise<StoredIcon | null> {
+  'use cache';
+  cacheTag('sender-icons');
+
+  let icon: SenderIcon | null = null;
+  if (kind === 'email') {
+    const g = await lookupGravatar(value);
+    if (g) icon = { ...g, source: 'gravatar' };
   } else {
-    await writeFile(`${file}.meta`, JSON.stringify({ source: 'none' }));
+    const bimi = await lookupBimi(value);
+    if (bimi) {
+      icon = { ...bimi, source: 'bimi' };
+    } else {
+      const fav = await lookupFavicon(value);
+      if (fav) icon = { ...fav, source: 'favicon' };
+    }
   }
+
+  cacheLife(icon ? FOUND : MISSING);
+  return icon && { base64: icon.data.toString('base64'), contentType: icon.contentType, source: icon.source };
 }
 
 // 解決順: BIMI → 企業favicon（個人ドメインは Gravatar のみ）。見つからなければ null。
 export async function lookupSenderIcon(email: string): Promise<SenderIcon | null> {
   const domain = extractDomain(email);
   if (!domain) return null;
-
-  const key = cacheKey(email, domain);
-  const cached = await readCache(key);
-  if (cached !== undefined) return cached;
-
-  let icon: SenderIcon | null = null;
-  if (isPersonalDomain(domain)) {
-    const g = await lookupGravatar(email);
-    if (g) icon = { ...g, source: 'gravatar' };
-  } else {
-    const bimi = await lookupBimi(domain);
-    if (bimi) {
-      icon = { ...bimi, source: 'bimi' };
-    } else {
-      const fav = await lookupFavicon(domain);
-      if (fav) icon = { ...fav, source: 'favicon' };
-    }
-  }
-
-  writeCache(key, icon).catch(() => {});
-  return icon;
+  const stored = isPersonalDomain(domain) ? await resolveIcon('email', email.toLowerCase().trim()) : await resolveIcon('domain', domain);
+  return stored && { data: Buffer.from(stored.base64, 'base64'), contentType: stored.contentType, source: stored.source };
 }

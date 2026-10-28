@@ -1,0 +1,18 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { prisma } from '@/lib/db';
+import { logAudit } from '@/lib/audit';
+import { financeActor, forbidden } from '@/lib/finance-guard';
+
+// DELETE /api/transfers/batches/:id - throw away a file that was never used (not yet marked paid).
+// The requests / statements in it become available for a new file again.
+export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const actor = await financeActor();
+  if (!actor) return forbidden();
+  const b = await prisma.transfer_batches.findUnique({ where: { id } });
+  if (!b) return NextResponse.json({ error: 'not_found' }, { status: 404 });
+  if (b.paid_at) return NextResponse.json({ error: 'already_paid' }, { status: 409 });
+  await prisma.transfer_batches.delete({ where: { id } }); // items' batch_id is set to NULL by the FK
+  await logAudit({ actorUserId: actor.id, actionType: 'transfer_batch_cancel', targetType: 'transfer_batches', targetId: id, metadata: { file: b.file_name, count: b.item_count } });
+  return NextResponse.json({ ok: true });
+}

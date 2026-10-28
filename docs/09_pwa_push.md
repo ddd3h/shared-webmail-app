@@ -75,7 +75,7 @@ Web Push には VAPID（Voluntary Application Server Identification）が必要�
 ## 通知購読の流れ
 
 ```
-1. ブラウザが /notifications ページを開く
+1. ブラウザがプロフィールの「通知とアプリ」（`/profile#notifications`。以前は `/notifications` にあった）を開く
 2. src/app/sw-client.tsx がマウント
 3. navigator.serviceWorker.register('/sw.js')
 4. 通知許可を確認（Notification.permission）
@@ -146,3 +146,9 @@ Web Push には VAPID（Voluntary Application Server Identification）が必要�
 - Service Worker を変更した場合は `public/sw.js` を更新し、ブラウザのSWキャッシュをクリアして動作確認すること
 - VAPID鍵を再生成した場合は全ユーザーのPush購読が無効になるため、再購読が必要になることをユーザーに通知すること
 - Push Payload のフォーマットを変更した場合は `sw.js` と `src/lib/push.ts` の両方を更新すること
+
+---
+
+## アプリのログイン維持
+
+ホーム画面に追加したアプリは、端末ごとの鍵で本人の端末かを確かめて、最後に使ってから30日間はパスワードなしで入り直せます（一度も使わなければ30日でログアウト）。仕組みと安全のための条件は [24_security.md](24_security.md) の「アプリ（PWA）のログイン維持（端末の鍵）」を参照してください。

@@ -73,7 +73,6 @@
 | POST | `/api/push/test` | `src/app/api/push/test/route.ts` |
 | GET | `/api/push/devices` | `src/app/api/push/devices/route.ts` |
 | DELETE | `/api/push/devices/[id]` | `src/app/api/push/devices/[id]/route.ts` |
-| GET | `/api/dashboard` | `src/app/api/dashboard/route.ts` |
 | GET | `/api/admin/settings` | `src/app/api/admin/settings/route.ts` |
 | PUT | `/api/admin/settings` | `src/app/api/admin/settings/route.ts` |
 | POST | `/api/admin/settings/generate-vapid` | `src/app/api/admin/settings/generate-vapid/route.ts` |
@@ -84,6 +83,13 @@
 | POST | `/api/admin/notification-errors/[id]/retry` | `src/app/api/admin/notification-errors/[id]/retry/route.ts` |
 | GET | `/api/admin/users` | `src/app/api/admin/users/route.ts` |
 | GET | `/api/cron/sync` | `src/app/api/cron/sync/route.ts` |
+| POST | `/api/auth/resume/challenge` | `src/app/api/auth/resume/challenge/route.ts` |
+| POST | `/api/auth/resume` | `src/app/api/auth/resume/route.ts` |
+| GET | `/api/notifications` | `src/app/api/notifications/route.ts` |
+| POST | `/api/notifications/read` | `src/app/api/notifications/read/route.ts` |
+| GET | `/api/notifications/unread-count` | `src/app/api/notifications/unread-count/route.ts` |
+| GET | `/api/cron/embeddings` | `src/app/api/cron/embeddings/route.ts` |
+| GET | `/api/search/semantic` | `src/app/api/search/semantic/route.ts` |
 
 ---
 

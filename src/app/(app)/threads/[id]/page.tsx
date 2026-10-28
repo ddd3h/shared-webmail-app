@@ -3,6 +3,7 @@ import { use, useEffect, useState, useRef, useCallback, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import ComposeForm, { type SendPayload } from '@/components/ComposeForm';
+import { refreshMail } from '@/lib/unread-client';
 
 type Props = { params: Promise<{ id: string }> };
 
@@ -290,8 +291,8 @@ function ThreadDetailPageInner({ params }: Props) {
       setExpandedMsgs(new Set([lastId]));
     }
     setLoading(false);
-    // Always mark as read when opening a thread
-    fetch(`/api/threads/${id}/read`, { method: 'POST' }).catch(() => {});
+    // Always mark as read when opening a thread; the unread counts and lists are asked again only once that is saved
+    fetch(`/api/threads/${id}/read`, { method: 'POST' }).then(refreshMail).catch(() => {});
   }, [id, router]);
 
   useEffect(() => { load(); }, [load]);
@@ -454,19 +455,19 @@ function ThreadDetailPageInner({ params }: Props) {
 
   async function markUnread() {
     const res = await fetch(`/api/threads/${id}/unread`, { method: 'POST' });
-    if (res.ok) { router.push(backUrl); }
+    if (res.ok) { refreshMail(); router.push(backUrl); }
     else flashMsg('error', '未読にするのに失敗しました');
   }
 
   async function markSpam() {
     const res = await fetch(`/api/threads/${id}/spam`, { method: 'POST' });
-    if (res.ok) { router.push(backUrl); }
+    if (res.ok) { refreshMail(); router.push(backUrl); }
     else flashMsg('error', '迷惑メールとしてマークできませんでした');
   }
 
   async function markUnspam() {
     const res = await fetch(`/api/threads/${id}/unspam`, { method: 'POST' });
-    if (res.ok) { setData(prev => prev ? { ...prev, is_spam: false } : prev); flashMsg('success', '迷惑メールの設定を解除しました'); }
+    if (res.ok) { refreshMail(); setData(prev => prev ? { ...prev, is_spam: false } : prev); flashMsg('success', '迷惑メールの設定を解除しました'); }
     else flashMsg('error', '解除できませんでした');
   }
 
@@ -476,7 +477,7 @@ function ThreadDetailPageInner({ params }: Props) {
       : 'このスレッドとすべてのメッセージを完全に削除しますか？\nこの操作は元に戻せません。';
     if (!confirm(confirmMsg)) return;
     const res = await fetch(`/api/threads/${id}/delete`, { method: 'POST' });
-    if (res.ok) { router.push(backUrl); }
+    if (res.ok) { refreshMail(); router.push(backUrl); }
     else flashMsg('error', '削除に失敗しました');
   }
 
@@ -506,6 +507,7 @@ function ThreadDetailPageInner({ params }: Props) {
       setMoving(false);
       setShowMoveModal(false);
       setMoveStep('idle');
+      refreshMail();
       router.push(`/threads/${id}`);
       await load();
     } else {
@@ -593,15 +595,15 @@ function ThreadDetailPageInner({ params }: Props) {
         </div>
       )}
 
-      {/* Sticky header */}
-      <div className="sticky top-0 md:top-14 z-30 bg-white/95 backdrop-blur border-b border-gray-200 -mx-4 sm:-mx-6 lg:-mx-8 px-4 sm:px-6 lg:px-8 py-0 mb-4 shadow-sm">
+      {/* Sticky header. -mt-6 cancels the top padding of <main>: it starts where it sticks, so it does not jump up when the scrolling begins */}
+      <div className="sticky top-0 md:top-[calc(3.5rem+1px)] -mt-6 z-30 bg-white/95 backdrop-blur-sm border-b border-gray-200 -mx-4 sm:-mx-6 lg:-mx-8 px-4 sm:px-6 lg:px-8 py-0 mb-4 shadow-xs">
         <div>
           {/* Top row: back + subject + reply */}
           <div className="flex items-center gap-3 py-3 border-b border-gray-100">
             <Link
               href={backUrl}
               onClick={() => sessionStorage.setItem('threads-scroll', '0')}
-              className="flex-shrink-0 inline-flex items-center gap-1 text-sm text-gray-400 hover:text-blue-600 transition-colors"
+              className="shrink-0 inline-flex items-center gap-1 text-sm text-gray-400 hover:text-blue-600 transition-colors"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
@@ -614,14 +616,14 @@ function ThreadDetailPageInner({ params }: Props) {
             </h1>
 
             {canReply ? (
-              <button onClick={openReply} className="flex-shrink-0 inline-flex items-center gap-1.5 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 text-white text-xs font-semibold shadow-md hover:shadow-lg hover:from-blue-600 hover:to-indigo-700 active:scale-95 transition-all duration-150 px-3 py-1.5">
+              <button onClick={openReply} className="shrink-0 inline-flex items-center gap-1.5 rounded-full bg-linear-to-br from-blue-500 to-indigo-600 text-white text-xs font-semibold shadow-md hover:shadow-lg hover:from-blue-600 hover:to-indigo-700 active:scale-95 transition-all duration-150 px-3 py-1.5">
                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
                 </svg>
                 返信
               </button>
             ) : (
-              <span className="flex-shrink-0 inline-flex items-center gap-1 px-2.5 py-1 text-xs text-gray-400 bg-gray-100 rounded-lg cursor-not-allowed" title="返信権限がありません">
+              <span className="shrink-0 inline-flex items-center gap-1 px-2.5 py-1 text-xs text-gray-400 bg-gray-100 rounded-lg cursor-not-allowed" title="返信権限がありません">
                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
                 </svg>
@@ -635,18 +637,18 @@ function ThreadDetailPageInner({ params }: Props) {
             {/* Mailbox badge */}
             <span
               title={data.mailbox.email_address || data.mailbox.name}
-              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium border flex-shrink-0 ${
+              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium border shrink-0 ${
                 isTeam
                   ? 'bg-blue-50 text-blue-700 border-blue-200'
                   : 'bg-violet-50 text-violet-700 border-violet-200'
               }`}
             >
               {isTeam ? (
-                <svg className="w-3 h-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
                 </svg>
               ) : (
-                <svg className="w-3 h-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
                 </svg>
               )}
@@ -674,7 +676,7 @@ function ThreadDetailPageInner({ params }: Props) {
                       className={`w-full text-left px-3 py-2 text-sm transition-colors flex items-center gap-2 ${data.status === s.value ? 'bg-blue-50 text-blue-700 font-medium' : 'text-gray-700 hover:bg-gray-50'}`}
                     >
                       {data.status === s.value && (
-                        <svg className="w-3.5 h-3.5 text-blue-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <svg className="w-3.5 h-3.5 text-blue-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                         </svg>
                       )}
@@ -709,7 +711,7 @@ function ThreadDetailPageInner({ params }: Props) {
                       className={`w-full text-left px-3 py-2 text-sm transition-colors flex items-center gap-2 ${!data.assigned_user ? 'bg-blue-50 text-blue-700 font-medium' : 'text-gray-500 hover:bg-gray-50'}`}
                     >
                       {!data.assigned_user
-                        ? <svg className="w-3.5 h-3.5 text-blue-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                        ? <svg className="w-3.5 h-3.5 text-blue-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
                         : <span className="w-3.5" />}
                       未担当
                     </button>
@@ -720,7 +722,7 @@ function ThreadDetailPageInner({ params }: Props) {
                         className={`w-full text-left px-3 py-2 text-sm transition-colors flex items-center gap-2 ${data.assigned_user?.id === u.id ? 'bg-blue-50 text-blue-700 font-medium' : 'text-gray-700 hover:bg-gray-50'}`}
                       >
                         {data.assigned_user?.id === u.id
-                          ? <svg className="w-3.5 h-3.5 text-blue-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                          ? <svg className="w-3.5 h-3.5 text-blue-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
                           : <span className="w-3.5" />}
                         {u.name}
                       </button>
@@ -811,7 +813,7 @@ function ThreadDetailPageInner({ params }: Props) {
                   {!isTeam && (
                     <button onClick={openMoveModal}
                       className="w-full text-left px-3 py-2.5 text-sm text-amber-700 hover:bg-amber-50 transition-colors flex items-center gap-2.5">
-                      <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
                       </svg>
                       チームに移動
@@ -820,7 +822,7 @@ function ThreadDetailPageInner({ params }: Props) {
                   {isTeam && (
                     <button onClick={postMattermostDiscuss} disabled={discussPosting}
                       className="w-full text-left px-3 py-2.5 text-sm text-purple-700 hover:bg-purple-50 transition-colors flex items-center gap-2.5 disabled:opacity-50">
-                      <svg className="w-4 h-4 flex-shrink-0" fill="currentColor" viewBox="0 0 24 24">
+                      <svg className="w-4 h-4 shrink-0" fill="currentColor" viewBox="0 0 24 24">
                         <path d="M5.042 15.165a2.528 2.528 0 0 1-2.52 2.523A2.528 2.528 0 0 1 0 15.165a2.527 2.527 0 0 1 2.522-2.52h2.52v2.52zM6.313 15.165a2.527 2.527 0 0 1 2.521-2.52 2.527 2.527 0 0 1 2.521 2.52v6.313A2.528 2.528 0 0 1 8.834 24a2.528 2.528 0 0 1-2.521-2.522v-6.313zM8.834 5.042a2.528 2.528 0 0 1-2.521-2.52A2.528 2.528 0 0 1 8.834 0a2.528 2.528 0 0 1 2.521 2.522v2.52H8.834zM8.834 6.313a2.528 2.528 0 0 1 2.521 2.521 2.528 2.528 0 0 1-2.521 2.521H2.522A2.528 2.528 0 0 1 0 8.834a2.528 2.528 0 0 1 2.522-2.521h6.312zM18.956 8.834a2.528 2.528 0 0 1 2.522-2.521A2.528 2.528 0 0 1 24 8.834a2.528 2.528 0 0 1-2.522 2.521h-2.522V8.834zM17.688 8.834a2.528 2.528 0 0 1-2.523 2.521 2.527 2.527 0 0 1-2.52-2.521V2.522A2.527 2.527 0 0 1 15.165 0a2.528 2.528 0 0 1 2.523 2.522v6.312zM15.165 18.956a2.528 2.528 0 0 1 2.523 2.522A2.528 2.528 0 0 1 15.165 24a2.527 2.527 0 0 1-2.52-2.522v-2.522h2.52zM15.165 17.688a2.527 2.527 0 0 1-2.52-2.523 2.526 2.526 0 0 1 2.52-2.52h6.313A2.527 2.527 0 0 1 24 15.165a2.528 2.528 0 0 1-2.522 2.523h-6.313z"/>
                       </svg>
                       {discussPosting ? '投稿中…' : 'Mattermostで議論'}
@@ -828,14 +830,14 @@ function ThreadDetailPageInner({ params }: Props) {
                   )}
                   <button onClick={markUnread}
                     className="w-full text-left px-3 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors flex items-center gap-2.5">
-                    <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
                     </svg>
                     未読にする
                   </button>
                   <button onClick={openForward}
                     className="w-full text-left px-3 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors flex items-center gap-2.5">
-                    <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 9l3 3m0 0l-3 3m3-3H8m13 0a9 9 0 11-18 0 9 9 0 0118 0z" />
                     </svg>
                     転送
@@ -843,20 +845,20 @@ function ThreadDetailPageInner({ params }: Props) {
                   {data.is_spam ? (
                     <button onClick={markUnspam}
                       className="w-full text-left px-3 py-2.5 text-sm text-green-600 hover:bg-green-50 transition-colors flex items-center gap-2.5">
-                      <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                      <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
                       迷惑メールではない
                     </button>
                   ) : (
                     <button onClick={markSpam}
                       className="w-full text-left px-3 py-2.5 text-sm text-orange-600 hover:bg-orange-50 transition-colors flex items-center gap-2.5">
-                      <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" /></svg>
+                      <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" /></svg>
                       迷惑メール
                     </button>
                   )}
                   <div className="border-t border-gray-100 my-1" />
                   <button onClick={deleteThread}
                     className="w-full text-left px-3 py-2.5 text-sm text-red-600 hover:bg-red-50 transition-colors flex items-center gap-2.5">
-                    <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                     </svg>
                     削除
@@ -871,7 +873,7 @@ function ThreadDetailPageInner({ params }: Props) {
       {/* Mattermost channel link panel */}
       {showMmPanel && (
         <div className="card p-3 mb-3 flex items-center gap-2 border-purple-200 bg-purple-50">
-          <svg className="w-4 h-4 text-purple-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg className="w-4 h-4 text-purple-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
           </svg>
           <input
@@ -921,7 +923,7 @@ function ThreadDetailPageInner({ params }: Props) {
                 onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleMsg(m.id); } }}
               >
                 {/* Avatar */}
-                <div className={`flex-shrink-0 h-9 w-9 rounded-full flex items-center justify-center text-sm font-bold ${isOut ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600'}`}>
+                <div className={`shrink-0 h-9 w-9 rounded-full flex items-center justify-center text-sm font-bold ${isOut ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600'}`}>
                   {getInitial(m)}
                 </div>
 
@@ -963,14 +965,14 @@ function ThreadDetailPageInner({ params }: Props) {
                 </div>
 
                 {/* Date + chevron */}
-                <div className="flex-shrink-0 flex items-center gap-2">
+                <div className="shrink-0 flex items-center gap-2">
                   <span className="text-xs text-gray-400 hidden sm:block whitespace-nowrap">{formatDate(m.sent_at)}</span>
                   {m.has_attachments && (
                     <svg className="w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
                     </svg>
                   )}
-                  <svg className={`w-4 h-4 text-gray-400 transition-transform flex-shrink-0 ${isExpanded ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className={`w-4 h-4 text-gray-400 transition-transform shrink-0 ${isExpanded ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                   </svg>
                 </div>
@@ -1072,7 +1074,7 @@ function ThreadDetailPageInner({ params }: Props) {
             onClick={openReply}
             className="card px-4 py-3 flex items-center gap-3 cursor-text hover:border-blue-300 hover:shadow-md transition-all group"
           >
-            <div className="h-8 w-8 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
+            <div className="h-8 w-8 rounded-full bg-blue-100 flex items-center justify-center shrink-0">
               <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
               </svg>
@@ -1104,11 +1106,12 @@ function ThreadDetailPageInner({ params }: Props) {
       <div ref={bottomRef} />
 
       {/* Floating scroll buttons */}
-      <div className={`fixed right-16 flex flex-col gap-2 z-40 ${isTeam ? 'bottom-52' : 'bottom-20'}`}>
+      {/* in the bottom-right corner; on a phone above the bottom bar (the bar is about 6rem tall) */}
+      <div className="fixed right-4 md:right-6 bottom-[calc(env(safe-area-inset-bottom)+6.5rem)] md:bottom-6 flex flex-col gap-2 z-40">
         {showScrollTop && (
           <button
             onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
-            className="h-10 w-10 rounded-full bg-white border border-gray-200 shadow-lg flex items-center justify-center text-gray-500 hover:text-blue-600 hover:border-blue-300 hover:shadow-xl transition-all"
+            className="h-11 w-11 md:h-10 md:w-10 rounded-full bg-white border border-gray-200 shadow-lg flex items-center justify-center text-gray-500 hover:text-blue-600 hover:border-blue-300 hover:shadow-xl transition-all"
             title="ページ先頭へ"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1119,7 +1122,7 @@ function ThreadDetailPageInner({ params }: Props) {
         {showScrollBottom && (
           <button
             onClick={() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' })}
-            className="h-10 w-10 rounded-full bg-blue-600 shadow-lg flex items-center justify-center text-white hover:bg-blue-700 hover:shadow-xl transition-all"
+            className="h-11 w-11 md:h-10 md:w-10 rounded-full bg-blue-600 shadow-lg flex items-center justify-center text-white hover:bg-blue-700 hover:shadow-xl transition-all"
             title="ページ末尾へ（返信フォーム）"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1131,8 +1134,8 @@ function ThreadDetailPageInner({ params }: Props) {
 
       {/* ── Move Thread Modal ── */}
       {showMoveModal && (
-        <div className="fixed inset-0 z-[80] flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+        <div className="fixed inset-0 z-80 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-xs" />
           <div className="relative bg-gray-900 rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden border border-gray-700">
             {moving ? (
               /* Transfer animation */
@@ -1197,7 +1200,7 @@ function ThreadDetailPageInner({ params }: Props) {
               /* Confirm screen */
               <div className="p-6">
                 <div className="flex items-center gap-3 mb-4">
-                  <div className="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center flex-shrink-0">
+                  <div className="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center shrink-0">
                     <svg className="w-5 h-5 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
                     </svg>

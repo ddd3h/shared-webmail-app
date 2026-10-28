@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 import SWClient from './sw-client';
 
 export const metadata = {
+  robots: { index: false, follow: false, nocache: true, noarchive: true, nosnippet: true, noimageindex: true },
   title: '共有メールワークスペース',
   description: 'IMAP/SMTP ベースの共有メール運用システム',
   manifest: '/manifest.webmanifest',

@@ -6,8 +6,11 @@
 import { prisma } from '@/lib/db';
 import { syncMailbox } from '@/lib/mail/sync';
 import { reconcileIdleConnections } from '@/lib/mail/idle';
-import { computeMfiForAllUsers, runMfiNoonAlerts } from '@/lib/background-jobs';
+import { runStaleUnreadAlerts } from '@/lib/background-jobs';
 import { dispatchDueScheduledSends } from '@/lib/mail/deliver';
+import { embeddingEnabled } from '@/lib/embedding';
+import { indexPendingThreads } from '@/lib/semantic-search';
+import { triggerFreeeSync } from '@/lib/freee-sync';
 
 const DEFAULT_INTERVAL_SEC = 180;
 
@@ -42,6 +45,10 @@ async function runPollSync() {
 
 async function tick() {
   await runPollSync().catch(e => console.error('[cron] poll error:', e));
+  // meaning-vectors for the semantic search (does nothing unless EMBEDDING_API_URL is set)
+  if (embeddingEnabled()) await indexPendingThreads(50).catch(e => console.error('[embedding] index error:', e?.message || e));
+  // money paid since the last round goes to freee (does nothing unless automatic sending is on)
+  triggerFreeeSync();
   // Keep IDLE connections in sync with DB (picks up new/removed mailboxes)
   await reconcileIdleConnections().catch(e => console.error('[idle] reconcile error:', e));
 }
@@ -67,31 +74,13 @@ if (!g.__imapSyncStarted) {
   console.log('[cron] IMAP sync started — poll interval from SYNC_DEFAULT_INTERVAL_SEC, IDLE per mailbox');
 }
 
-// MFI snapshots — record for ALL users regardless of dashboard access.
-// Check every 15 minutes; actual writes are gated to once per 4 hours per user
-// by shouldCreateSnapshot() inside computeAndStoreMfi, so the short check
-// interval only bounds the drift past the 4-hour mark (worst case +15 min,
-// e.g. after a server restart).
-if (!g.__mfiSnapshotStarted) {
-  g.__mfiSnapshotStarted = true;
-
-  const runMfi = () =>
-    computeMfiForAllUsers().catch(e => console.error('[mfi] snapshot run failed:', e));
-
-  // First run shortly after startup to fill any gap from downtime.
-  setTimeout(runMfi, 15_000);
-  setInterval(runMfi, 15 * 60 * 1000);
-
-  console.log('[mfi] snapshot job started (15m check, 4h write cadence)');
-}
-
-// MFI low-score DM — judged once per weekday at 12:00 JST (not on every
-// snapshot). Checked every minute; the noon hour fires at most once per day
-// (lastAlertDate guard), so a restart during 12:00–12:59 still sends but a
-// second in-process trigger can't. The 12h DB throttle inside
-// sendMfiBelowThresholdDm additionally dedupes across restarts.
-if (!g.__mfiNoonAlertStarted) {
-  g.__mfiNoonAlertStarted = true;
+// Weekly stale-unread DM — every Monday at 09:00 JST, tell each user about
+// threads whose oldest unread message is 7+ days old. Checked every minute; the
+// 09:00 hour fires at most once per day (lastAlertDate guard), so a restart during
+// 09:00–09:59 still sends but a second in-process trigger can't. The 6-day DB
+// throttle inside sendStaleUnreadDm additionally dedupes across restarts.
+if (!g.__staleUnreadAlertStarted) {
+  g.__staleUnreadAlertStarted = true;
 
   const jstClock = new Intl.DateTimeFormat('en-US', {
     timeZone: 'Asia/Tokyo', weekday: 'short', hour: 'numeric', hour12: false,
@@ -102,16 +91,15 @@ if (!g.__mfiNoonAlertStarted) {
   setInterval(() => {
     const now = new Date();
     const parts = Object.fromEntries(jstClock.formatToParts(now).map(p => [p.type, p.value]));
-    const isWeekday = parts.weekday !== 'Sat' && parts.weekday !== 'Sun';
     const today = jstDate.format(now);
-    if (isWeekday && Number(parts.hour) === 12 && lastAlertDate !== today) {
+    if (parts.weekday === 'Mon' && Number(parts.hour) % 24 === 9 && lastAlertDate !== today) {
       lastAlertDate = today;
-      console.log('[mfi] running weekday-noon DM alerts');
-      runMfiNoonAlerts().catch(e => console.error('[mfi] noon alerts failed:', e));
+      console.log('[stale-unread] running weekly DM alerts');
+      runStaleUnreadAlerts().catch(e => console.error('[stale-unread] alerts failed:', e));
     }
   }, 60 * 1000);
 
-  console.log('[mfi] noon DM alert job started (weekdays 12:00 JST)');
+  console.log('[stale-unread] weekly DM alert job started (Mondays 09:00 JST)');
 }
 
 // Scheduled ("予約送信") emails — check every minute for anything whose

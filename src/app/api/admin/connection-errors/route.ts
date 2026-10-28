@@ -1,13 +1,13 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
-import { getSession, requireAuth } from '@/lib/auth';
+import { adminActor, forbidden } from '@/lib/finance-guard';
 
 export async function GET() {
-  const session = await getSession();
-  requireAuth(session);
+  if (!(await adminActor())) return forbidden();
 
   // Join mailbox info with credentials and sync states
   const mailboxes = await prisma.mailboxes.findMany({
+    relationLoadStrategy: 'join', // mailbox, credentials and sync state in one query
     select: {
       id: true,
       display_name: true,

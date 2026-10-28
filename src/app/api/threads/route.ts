@@ -1,11 +1,41 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/db';
 import { getSession, requireAuth } from '@/lib/auth';
-import { buildThreadsWhere } from '@/lib/threads-filter';
+import { buildThreadsWhere, queryText, queryWithoutText } from '@/lib/threads-filter';
+import { findSimilarThreads } from '@/lib/semantic-search';
+import { hiddenTeamMailboxIds } from '@/lib/team-view';
 
 const PAGE_LIMIT = 50;
 
+const THREAD_SELECT = {
+  id: true,
+  subject: true,
+  status: true,
+  last_message_at: true,
+  unread_count: true,
+  mailbox: { select: { id: true, display_name: true, type: true } },
+  assigned_user: { select: { name: true } },
+  last_replied_by: { select: { name: true } },
+  mattermost: { select: { id: true } },
+  messages: {
+    take: 1,
+    orderBy: { sent_at: 'asc' },
+    select: { from_email: true, from_name: true }
+  },
+  reads: {
+    select: {
+      last_read_at: true,
+      user_id: true,
+      user: { select: { id: true, name: true, mattermost_user_id: true } }
+    }
+  }
+} satisfies Prisma.threadsSelect;
+
+type ThreadRow = Prisma.threadsGetPayload<{ select: typeof THREAD_SELECT }>;
+
 // GET /api/threads?status=open&type=team&q=keyword&mine=1&unread=1&cursor=<ISO>&cursor_id=<id>
+// semantic=1 (with free words in q) also lists the threads close in meaning to those words, after the keyword hits.
 export async function GET(req: NextRequest) {
   const session = await getSession();
   requireAuth(session);
@@ -19,6 +49,8 @@ export async function GET(req: NextRequest) {
   const sent = url.searchParams.get('sent') === '1';
   const assigned = url.searchParams.get('assigned') === '1';
   const spam = url.searchParams.get('spam') === '1';
+  const semantic = url.searchParams.get('semantic') === '1';
+  const mailboxId = url.searchParams.get('mailbox_id') || undefined;
   const cursorLast = url.searchParams.get('cursor') || undefined;
   const cursorId = url.searchParams.get('cursor_id') || undefined;
 
@@ -32,9 +64,10 @@ export async function GET(req: NextRequest) {
     teamUnreadIds = rows.map(r => r.id);
   }
 
-  const threadsWhere = buildThreadsWhere({
-    session, status, type, q, mine, unread, sent, assigned, teamUnreadIds, spam
-  });
+  // the 共有メール list leaves out the mailboxes the person chose not to see; a search looks everywhere
+  const hiddenMailboxIds = type === 'team' && !q && !mailboxId ? await hiddenTeamMailboxIds(session!.userId) : undefined;
+  const filterParams = { session, status, type, mine, unread, sent, assigned, teamUnreadIds, spam, mailboxId: type === 'team' ? mailboxId : undefined, hiddenMailboxIds };
+  const threadsWhere = buildThreadsWhere({ ...filterParams, q });
 
   const threads = await prisma.threads.findMany({
     where: threadsWhere,
@@ -46,32 +79,10 @@ export async function GET(req: NextRequest) {
     } : {}),
     // Always fetch one extra to detect next page
     take: PAGE_LIMIT + 1,
-    select: {
-      id: true,
-      subject: true,
-      status: true,
-      last_message_at: true,
-      unread_count: true,
-      mailbox: { select: { id: true, display_name: true, type: true } },
-      assigned_user: { select: { name: true } },
-      last_replied_by: { select: { name: true } },
-      mattermost: { select: { id: true } },
-      messages: {
-        take: 1,
-        orderBy: { sent_at: 'asc' },
-        select: { from_email: true, from_name: true }
-      },
-      reads: {
-        select: {
-          last_read_at: true,
-          user_id: true,
-          user: { select: { id: true, name: true, mattermost_user_id: true } }
-        }
-      }
-    }
+    select: THREAD_SELECT,
   });
 
-  const items = threads.map((t) => {
+  const toItem = (t: ThreadRow) => {
     // For team threads: unread = no read record OR last_message_at > last_read_at
     const userRead = t.reads.find(r => r.user_id === session!.userId);
     const isUnreadForUser = t.mailbox.type === 'team'
@@ -101,7 +112,9 @@ export async function GET(req: NextRequest) {
       from_name: t.messages[0]?.from_name || null,
       readers
     };
-  });
+  };
+
+  const items = threads.map(toItem);
 
   let finalItems = unread ? items.filter(i => i.unread_count > 0) : items;
 
@@ -113,18 +126,43 @@ export async function GET(req: NextRequest) {
     nextCursor = { last: (lastItem.last as unknown as Date).toISOString(), id: lastItem.id };
   }
 
+  // Semantic search: threads that do not contain the words but are about the same thing, best match first.
+  // The other filters (from:, status:, ...) still apply; the keyword hits are not repeated.
+  type SemanticItem = ReturnType<typeof toItem> & { match: 'semantic'; score: number };
+  let semanticItems: SemanticItem[] = [];
+  let semanticUsed: boolean | undefined;
+  const words = q ? queryText(q) : '';
+  if (semantic && words && !cursorLast) {
+    const narrowed = buildThreadsWhere({ ...filterParams, q: queryWithoutText(q!) || undefined });
+    const hits = await findSimilarThreads({ AND: [narrowed, { NOT: threadsWhere }] }, words);
+    semanticUsed = hits !== null;
+    if (hits && hits.length > 0) {
+      const rows = await prisma.threads.findMany({ where: { id: { in: hits.map(h => h.id) } }, select: THREAD_SELECT });
+      const byId = new Map(rows.map(r => [r.id, r]));
+      semanticItems = hits.flatMap(h => {
+        const row = byId.get(h.id);
+        return row ? [{ ...toItem(row), match: 'semantic' as const, score: Math.round(h.score * 100) / 100 }] : [];
+      });
+    }
+  }
+
   // Check which threads have a saved draft by the current user
   const draftedThreadIds = new Set(
     (await prisma.drafts.findMany({
-      where: { user_id: session!.userId, thread_id: { in: finalItems.map(i => i.id) } },
+      where: { user_id: session!.userId, thread_id: { in: [...finalItems, ...semanticItems].map(i => i.id) } },
       select: { thread_id: true }
     })).map(d => d.thread_id).filter((tid): tid is string => tid !== null)
   );
 
-  const itemsWithDraft = finalItems.map(i => ({ ...i, has_draft: draftedThreadIds.has(i.id) }));
+  const withDraft = <T extends { id: string }>(list: T[]) => list.map(i => ({ ...i, has_draft: draftedThreadIds.has(i.id) }));
 
   // Also return total count for 'Select all' UI
-  const totalCount = await prisma.threads.count({ where: threadsWhere });
+  const totalCount = await prisma.threads.count({ where: threadsWhere }) + semanticItems.length;
 
-  return NextResponse.json({ items: itemsWithDraft, nextCursor, totalCount });
+  return NextResponse.json({
+    items: [...withDraft(finalItems), ...withDraft(semanticItems)],
+    nextCursor,
+    totalCount,
+    ...(semanticUsed === undefined ? {} : { semantic: { used: semanticUsed, count: semanticItems.length } }),
+  });
 }

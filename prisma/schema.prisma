@@ -1,7 +1,8 @@
 // Prisma schema for the MVP based on the spec
 
 generator client {
-  provider = "prisma-client-js"
+  provider        = "prisma-client-js"
+  previewFeatures = ["relationJoins"] // `relationLoadStrategy: 'join'` reads a row and its relations in one query
 }
 
 datasource db {
@@ -39,6 +40,17 @@ enum NotificationPriority {
   low
 }
 
+// 役員 / 正社員 / パート / 派遣 / 従業員（従来からの区分） / 業務委託 / 準業務委託
+enum WorkerType {
+  executive
+  employee
+  contractor
+  regular
+  part
+  dispatch
+  quasi_contractor
+}
+
 enum AuthType {
   password
   oauth
@@ -53,6 +65,7 @@ model users {
   mattermost_user_id     String?
   mattermost_link_status String?
   signature              String?
+  home_address           String?  // the person's home (mileage claims start from here); seen by themself, finance and administrators only
   created_at             DateTime @default(now())
   updated_at             DateTime @updatedAt
 
@@ -66,6 +79,7 @@ model users {
   thread_visibility          thread_visibility[]
   thread_reads               thread_reads[]
   mailbox_permissions        mailbox_permissions[]
+  hidden_team_mailboxes      hidden_team_mailboxes[]
   messages_sent              message_sends[]          @relation("sent_by_user")
   mattermost_links_created   mattermost_links[]       @relation("mm_link_created_by")
   mattermost_notifications   mattermost_notifications[]
@@ -79,13 +93,54 @@ model users {
   google_oauth_token         google_oauth_tokens?
   contacts_created           contacts[]
   password_reset_tokens      password_reset_tokens[]
-  mfi_snapshots              mfi_snapshots[]
   bulk_actions_requested     pending_bulk_actions[]
   spam_senders_created       spam_senders[]
   sessions                   sessions[]
   login_logs                 login_logs[]
   last_login_at              DateTime?
+  locked_at                  DateTime? // an admin locked the account: no login, sessions revoked
+  totp_secret_enc            String?   // authenticator-app secret (AES-GCM); set once the person confirmed a code
+  totp_enabled_at            DateTime?
+  totp_last_step             Int?      // the last accepted 30-second step: a code can't be used twice
+  recovery_codes             recovery_codes[]
+  known_devices              known_devices[]
+  worker_type                WorkerType               @default(employee)
+  attendance_records         attendance_records[]
+  work_reports               work_reports[]
+  payslips                   payslips[]               @relation("payslip_user")
+  payslips_created           payslips[]               @relation("payslip_creator")
+  expense_claims             expense_claims[]         @relation("expense_claimant")
+  expense_reviewed           expense_claims[]         @relation("expense_reviewer")
+  expense_reimbursed         expense_claims[]         @relation("expense_reimburser")
+  business_trips             business_trips[]         @relation("trip_applicant")
+  trips_reviewed             business_trips[]         @relation("trip_reviewer")
+  is_accounting              Boolean                  @default(false)
+  is_hr          Boolean  @default(false) // 人事担当: sees and finalizes every evaluation, whatever the unit or 役職
+  withholding_class      String   @default("ko") // 源泉徴収（所得税）の税額表: 'ko' = 甲欄 (主たる給与), 'otsu' = 乙欄 (従たる給与)
+  bank_account               user_bank_accounts?      @relation("bank_owner")
+  year_end_declarations      year_end_declarations[]  @relation("year_end_owner")
+  year_end_confirmed         year_end_declarations[]  @relation("year_end_confirmer")
+  org_unit_id                String?
+  position_id                String?
+  org_unit                   org_units?               @relation("unit_members", fields: [org_unit_id], references: [id], onDelete: SetNull)
+  position                   org_positions?           @relation(fields: [position_id], references: [id], onDelete: SetNull)
+  headed_units               org_units[]              @relation("unit_head")
+  evaluations_received       evaluations[]            @relation("eval_subject")
+  evaluations_to_do          evaluations[]            @relation("eval_evaluator")
+  bank_accounts_verified     user_bank_accounts[]     @relation("bank_verifier")
+  transfer_batches           transfer_batches[]       @relation("batch_creator")
+  payment_requests           payment_requests[]       @relation("payment_applicant")
+  payments_reviewed          payment_requests[]       @relation("payment_reviewer")
+  payments_paid              payment_requests[]       @relation("payment_payer")
+  vendors_created            payment_vendors[]        @relation("vendor_creator")
+  vendors_verified           payment_vendors[]        @relation("vendor_verifier")
   scheduled_sends            scheduled_sends[]
+  calendar_events_created    calendar_events[]        @relation("calendar_event_creator")
+  calendar_events_owned      calendar_events[]        @relation("calendar_event_owner")
+  todos_created              todos[]                  @relation("todo_creator")
+  todos_assigned             todos[]                  @relation("todo_assignee")
+  todos_done                 todos[]                  @relation("todo_done_by")
+  calendar_google_links      calendar_google_links[]
 }
 
 model mailboxes {
@@ -107,12 +162,16 @@ model mailboxes {
 
   credentials mailbox_credentials?
   permissions mailbox_permissions[]
+  hidden_by   hidden_team_mailboxes[]
   threads     threads[]
   messages    messages[]
   sends       message_sends[]
   sync_state  mailbox_sync_states?
   drafts      drafts[]
   scheduled_sends scheduled_sends[]
+  calendar_events calendar_events[]
+  calendar_google_links calendar_google_links[]
+  todos todos[]
 }
 
 model mailbox_credentials {
@@ -135,6 +194,18 @@ model mailbox_credentials {
   updated_at             DateTime  @updatedAt
 
   mailbox mailboxes @relation(fields: [mailbox_id], references: [id])
+}
+
+// The shared mailboxes a person has chosen NOT to see in their 共有メール view (nothing hidden = all they may view are shown).
+model hidden_team_mailboxes {
+  user_id    String
+  mailbox_id String
+  created_at DateTime @default(now())
+
+  user    users     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  mailbox mailboxes @relation(fields: [mailbox_id], references: [id], onDelete: Cascade)
+
+  @@id([user_id, mailbox_id])
 }
 
 model mailbox_permissions {
@@ -186,6 +257,7 @@ model threads {
   notifications         notification_events[]
   drafts                drafts[]
   scheduled_sends       scheduled_sends[]
+  embedding             thread_embeddings?
 }
 
 // Per-user read tracking for shared (team) mail threads
@@ -370,11 +442,14 @@ model notification_events {
   body       String
   url        String
   priority   NotificationPriority
+  read_at    DateTime?
   created_at DateTime             @default(now())
 
   user       users   @relation(fields: [user_id], references: [id])
   thread     threads? @relation(fields: [thread_id], references: [id])
   deliveries notification_deliveries[]
+
+  @@index([user_id, created_at])
 }
 
 model notification_deliveries {
@@ -486,22 +561,6 @@ model password_reset_tokens {
   user users @relation(fields: [user_id], references: [id], onDelete: Cascade)
 }
 
-// MFI (Mail Freshness Index) snapshots — one per user per 5-minute bucket
-model mfi_snapshots {
-  id           String   @id @default(cuid())
-  user_id      String
-  recorded_at  DateTime @default(now())
-  mfi          Float
-  price        Float
-  debt         Float
-  volume       Float    @default(0)
-  streak_hours Float    @default(0)
-
-  user users @relation(fields: [user_id], references: [id], onDelete: Cascade)
-
-  @@index([user_id, recorded_at])
-}
-
 // Email drafts
 model drafts {
   id          String    @id @default(cuid())
@@ -587,8 +646,13 @@ model sessions {
   ip_address       String
   user_agent       String?
   network_type     String   @default("residential")
+  country          String?
+  city             String?
+  device_id        String?
   expires_at       DateTime
   last_activity_at DateTime @default(now())
+  // the last time the person themself did something (keys, taps; sent by the page) - background requests do not move it. Idle logout reads this.
+  last_input_at    DateTime @default(now())
   created_at       DateTime @default(now())
 
   user users @relation(fields: [user_id], references: [id], onDelete: Cascade)
@@ -615,6 +679,7 @@ model login_logs {
 
   @@index([created_at])
   @@index([ip_address])
+  @@index([success, created_at]) // the 24-hour failure counts of the security overview
 }
 
 // Emails scheduled to be sent at a future time. Kept separate from `messages`
@@ -659,4 +724,663 @@ model scheduled_send_attachments {
   created_at        DateTime @default(now())
 
   scheduled_send scheduled_sends @relation(fields: [scheduled_send_id], references: [id], onDelete: Cascade)
+}
+
+// Google Calendar linked to a mailbox's shared calendar (read-only import).
+// display_mode 'busy_only' hides titles/details: only `busy_label` is shown
+// and the real summary is never stored.
+model calendar_google_links {
+  id                 String    @id @default(cuid())
+  mailbox_id         String
+  linked_by_user_id  String
+  encrypted_token    String
+  google_calendar_id String?
+  name               String    @default("Googleカレンダー")
+  color              String    @default("#6366f1")
+  display_mode       String    @default("busy_only") // 'busy_only' | 'full'
+  busy_label         String    @default("予定あり")
+  last_synced_at     DateTime?
+  last_error         String?
+  created_at         DateTime  @default(now())
+  updated_at         DateTime  @updatedAt
+
+  mailbox   mailboxes         @relation(fields: [mailbox_id], references: [id], onDelete: Cascade)
+  linked_by users             @relation(fields: [linked_by_user_id], references: [id], onDelete: Cascade)
+  events    calendar_events[]
+
+  @@index([mailbox_id])
+}
+
+// Events of a mailbox's shared calendar. source 'local' = created in this app,
+// 'google' = imported copy of a Google event (title_override is the team's own
+// name for it and survives re-syncs).
+model calendar_events {
+  id              String    @id @default(cuid())
+  mailbox_id      String
+  source          String    @default("local") // 'local' | 'google'
+  link_id         String?
+  google_event_id String?
+  title           String?   // local title, or Google summary (null in busy_only mode)
+  title_override  String?
+  description     String?
+  location        String?
+  all_day         Boolean   @default(false)
+  start_at        DateTime
+  end_at          DateTime
+  created_by_id   String?
+  owner_user_id   String?   // whose schedule this is; null = whole team
+  created_at      DateTime  @default(now())
+  updated_at      DateTime  @updatedAt
+
+  mailbox mailboxes              @relation(fields: [mailbox_id], references: [id], onDelete: Cascade)
+  link    calendar_google_links? @relation(fields: [link_id], references: [id], onDelete: Cascade)
+  creator users?                 @relation("calendar_event_creator", fields: [created_by_id], references: [id], onDelete: SetNull)
+  owner   users?                 @relation("calendar_event_owner", fields: [owner_user_id], references: [id], onDelete: SetNull)
+
+  @@unique([link_id, google_event_id])
+  @@index([mailbox_id, start_at])
+  @@index([owner_user_id])
+}
+
+// A to-do shared by the people of a mailbox's team. They see it with the calendar (it shows on its due date);
+// the same permissions apply: view = can_view, edit = can_reply. assignee null = the whole team.
+model todos {
+  id            String    @id @default(cuid())
+  mailbox_id    String
+  title         String
+  description   String?
+  due_date      DateTime? @db.Date // Japan-local date, no time
+  assignee_id   String?
+  done_at       DateTime?
+  done_by_id    String?
+  created_by_id String?
+  created_at    DateTime  @default(now())
+  updated_at    DateTime  @updatedAt
+
+  mailbox  mailboxes @relation(fields: [mailbox_id], references: [id], onDelete: Cascade)
+  assignee users?    @relation("todo_assignee", fields: [assignee_id], references: [id], onDelete: SetNull)
+  done_by  users?    @relation("todo_done_by", fields: [done_by_id], references: [id], onDelete: SetNull)
+  creator  users?    @relation("todo_creator", fields: [created_by_id], references: [id], onDelete: SetNull)
+
+  @@index([mailbox_id, due_date])
+  @@index([assignee_id])
+}
+
+// One row per employee per day (work_date is the Japan-local date). Times are UTC instants.
+model attendance_records {
+  id               String    @id @default(cuid())
+  user_id          String
+  work_date        DateTime  @db.Date
+  clock_in_at      DateTime?
+  clock_out_at     DateTime?
+  break_started_at DateTime?
+  break_minutes    Int       @default(0)
+  note             String?
+  edited_by_id     String?   // set when an admin corrected the record
+  created_at       DateTime  @default(now())
+  updated_at       DateTime  @updatedAt
+
+  user users @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@unique([user_id, work_date])
+}
+
+// Work report submitted by a contractor (業務報告書)
+model work_reports {
+  id          String   @id @default(cuid())
+  user_id     String
+  report_date DateTime @db.Date
+  title       String
+  content     String
+  hours       Decimal? @db.Decimal(5, 2)
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+
+  user users @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@index([user_id, report_date])
+}
+
+// Pay statement (給与・報酬・賞与の明細). Amounts are whole yen; net = earnings - deductions.
+model payslips {
+  id            String    @id @default(cuid())
+  user_id       String
+  pay_month     String    // 'YYYY-MM' the payment is for
+  title         String    @default("給与")
+  status        String    @default("planned") // 'planned' (支払予定) | 'paid' (支払済)
+  pay_date      DateTime? @db.Date
+  note          String?
+  created_by_id String?
+  batch_id      String?   // the 全銀 transfer file this statement was put into
+  created_at    DateTime  @default(now())
+  updated_at    DateTime  @updatedAt
+
+  batch   transfer_batches? @relation(fields: [batch_id], references: [id], onDelete: SetNull)
+  user    users           @relation("payslip_user", fields: [user_id], references: [id], onDelete: Cascade)
+  creator users?          @relation("payslip_creator", fields: [created_by_id], references: [id], onDelete: SetNull)
+  items   payslip_items[]
+  expense_claims expense_claims[]
+
+  @@index([user_id, pay_month])
+  @@index([pay_month])
+  @@index([batch_id])
+}
+
+model payslip_items {
+  id         String @id @default(cuid())
+  payslip_id String
+  kind       String // 'earning' | 'deduction'
+  label      String
+  amount     Int
+  sort       Int    @default(0)
+  system_key String? // set on rows the app maintains itself (e.g. 'expense_reimbursement')
+
+  payslip payslips @relation(fields: [payslip_id], references: [id], onDelete: Cascade)
+
+  @@index([payslip_id])
+}
+
+// Expense claim (経費申請). payment_method 'personal' = the claimant paid out of pocket
+// (立替) and is owed a reimbursement once approved; 'company' = paid by the company.
+// status: pending -> approved | rejected; approved personal claims -> paid (返金済).
+model expense_claims {
+  id               String    @id @default(cuid())
+  user_id          String
+  expense_date     DateTime  @db.Date
+  category         String
+  title            String
+  amount           Int
+  payment_method   String    @default("personal")
+  description      String?
+  status           String    @default("pending")
+  reviewed_by_id   String?
+  reviewed_at      DateTime?
+  review_comment   String?
+  reimbursed_at    DateTime? @db.Date
+  reimbursed_by_id String?
+  reimburse_note   String?
+  payslip_id       String?   // set when the reimbursement was merged into a pay statement
+  batch_id         String?   // the 全銀 transfer file this reimbursement was put into (a monthly file; see transfer-server.ts)
+  trip_id          String?   // the approved business trip this expense belongs to
+  // own-car claims (category 自家用車): what the amount was worked out from, kept as it was on the day (the rate and the home address may change later)
+  mileage_origin     String?
+  mileage_destination String?
+  mileage_distance_m Int?      // the whole round trip
+  mileage_rate       Int?      // yen per km
+  mileage_source     String?   // 'google' (route search) or 'manual' (typed in; only when no route service is set up)
+  // public transport (category 交通費): where the person went from and to, and the route that was shown, so the approver can check the fare
+  transit_from       String?
+  transit_to         String?
+  transit_summary    String?
+  created_at       DateTime  @default(now())
+  updated_at       DateTime  @updatedAt
+
+  user         users             @relation("expense_claimant", fields: [user_id], references: [id], onDelete: Cascade)
+  reviewer     users?            @relation("expense_reviewer", fields: [reviewed_by_id], references: [id], onDelete: SetNull)
+  reimburser   users?            @relation("expense_reimburser", fields: [reimbursed_by_id], references: [id], onDelete: SetNull)
+  payslip      payslips?         @relation(fields: [payslip_id], references: [id], onDelete: SetNull)
+  batch        transfer_batches? @relation(fields: [batch_id], references: [id], onDelete: SetNull)
+  trip         business_trips?   @relation(fields: [trip_id], references: [id], onDelete: SetNull)
+  receipts     expense_receipts[]
+
+  @@index([user_id, expense_date])
+  @@index([status])
+  @@index([payslip_id])
+  @@index([trip_id])
+  @@index([batch_id])
+}
+
+model expense_receipts {
+  id           String   @id @default(cuid())
+  claim_id     String
+  filename     String
+  content_type String
+  size         Int
+  storage_key  String
+  created_at   DateTime @default(now())
+
+  claim expense_claims @relation(fields: [claim_id], references: [id], onDelete: Cascade)
+
+  @@index([claim_id])
+}
+
+// Business trip request (出張申請): "I will be at <destination> from <start> to <end>".
+// status: pending -> approved | rejected; approved -> cancelled. Allowances are snapshotted in
+// trip_allowance_lines so later rate changes never alter an existing request.
+model business_trips {
+  id             String    @id @default(cuid())
+  user_id        String
+  destination    String
+  purpose        String
+  start_date     DateTime  @db.Date
+  end_date       DateTime  @db.Date
+  status         String    @default("pending")
+  reviewed_by_id String?
+  reviewed_at    DateTime?
+  review_comment String?
+  cancelled_at   DateTime?
+  created_at     DateTime  @default(now())
+  updated_at     DateTime  @updatedAt
+
+  user           users                  @relation("trip_applicant", fields: [user_id], references: [id], onDelete: Cascade)
+  reviewer       users?                 @relation("trip_reviewer", fields: [reviewed_by_id], references: [id], onDelete: SetNull)
+  allowances     trip_allowance_lines[]
+  expense_claims expense_claims[]
+
+  @@index([user_id, start_date])
+  @@index([status])
+}
+
+// Rate master edited by admins. kind 'daily' = 日当 (pick one per trip), 'addon' = 業務内容による加算金 (pick any).
+// unit: per_day (× days), per_night (× nights), per_trip (flat).
+model trip_allowance_types {
+  id          String   @id @default(cuid())
+  name        String
+  kind        String
+  unit        String
+  amount      Int
+  description String?
+  is_active   Boolean  @default(true)
+  sort        Int      @default(0)
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+
+  lines trip_allowance_lines[]
+}
+
+model trip_allowance_lines {
+  id       String  @id @default(cuid())
+  trip_id  String
+  type_id  String?
+  name     String
+  kind     String
+  unit     String
+  rate     Int
+  quantity Int
+  amount   Int
+  sort     Int     @default(0)
+
+  trip business_trips         @relation(fields: [trip_id], references: [id], onDelete: Cascade)
+  type trip_allowance_types?  @relation(fields: [type_id], references: [id], onDelete: SetNull)
+
+  @@index([trip_id])
+}
+
+// Payee (取引先) with its bank account. The account number is encrypted at rest; only the last
+// digits are kept in clear for display. verified_at is set by an admin; any change to the bank
+// details clears it, and a request can only be approved while its vendor is verified.
+model payment_vendors {
+  id                 String    @id @default(cuid())
+  name               String
+  name_kana          String?
+  bank_name          String
+  bank_code          String?
+  branch_name        String
+  branch_code        String?
+  account_type       String    // 'ordinary' | 'checking' | 'savings'
+  account_number_enc String
+  account_last4      String
+  account_holder     String    // 口座名義（カナ）
+  notes              String?
+  is_active          Boolean   @default(true)
+  verified_at        DateTime?
+  verified_by_id     String?
+  created_by_id      String?
+  created_at         DateTime  @default(now())
+  updated_at         DateTime  @updatedAt
+
+  verifier users?                @relation("vendor_verifier", fields: [verified_by_id], references: [id], onDelete: SetNull)
+  creator  users?                @relation("vendor_creator", fields: [created_by_id], references: [id], onDelete: SetNull)
+  requests payment_requests[]
+
+  @@index([name])
+}
+
+// Bank transfer request (振込申請). status: pending -> approved | rejected; approved -> paid (振込済).
+// transfer amount = amount - deduction_amount - (fee if fee_bearer = 'vendor').
+model payment_requests {
+  id               String    @id @default(cuid())
+  user_id          String
+  vendor_id        String
+  title            String
+  amount           Int
+  deduction_amount Int       @default(0)
+  fee              Int       @default(0)
+  fee_bearer       String    @default("us") // 'us' (当方負担) | 'vendor' (先方負担: deducted from the transfer)
+  invoice_number   String?
+  invoice_date     DateTime? @db.Date
+  due_date         DateTime  @db.Date
+  description      String?
+  status           String    @default("pending")
+  reviewed_by_id   String?
+  reviewed_at      DateTime?
+  review_comment   String?
+  paid_at          DateTime? @db.Date
+  paid_by_id       String?
+  paid_note        String?
+  batch_id         String?   // the 全銀 transfer file this request was put into
+  created_at       DateTime  @default(now())
+  updated_at       DateTime  @updatedAt
+
+  batch     transfer_batches?  @relation(fields: [batch_id], references: [id], onDelete: SetNull)
+  user      users              @relation("payment_applicant", fields: [user_id], references: [id], onDelete: Cascade)
+  vendor    payment_vendors    @relation(fields: [vendor_id], references: [id])
+  reviewer  users?             @relation("payment_reviewer", fields: [reviewed_by_id], references: [id], onDelete: SetNull)
+  payer     users?             @relation("payment_payer", fields: [paid_by_id], references: [id], onDelete: SetNull)
+  documents payment_documents[]
+
+  @@index([user_id, due_date])
+  @@index([status])
+  @@index([vendor_id, invoice_number])
+  @@index([batch_id])
+}
+
+model payment_documents {
+  id           String   @id @default(cuid())
+  request_id   String
+  filename     String
+  content_type String
+  size         Int
+  storage_key  String
+  created_at   DateTime @default(now())
+
+  request payment_requests @relation(fields: [request_id], references: [id], onDelete: Cascade)
+
+  @@index([request_id])
+}
+
+// A person's own bank account (where salary and expense reimbursements are paid). Number encrypted at rest.
+// verified_at is set by finance staff (never by the owner); any change by the owner clears it.
+model user_bank_accounts {
+  id                 String    @id @default(cuid())
+  user_id            String    @unique
+  bank_name          String
+  bank_code          String
+  branch_name        String
+  branch_code        String
+  account_type       String    // 'ordinary' | 'checking' | 'savings'
+  account_number_enc String
+  account_last4      String
+  account_holder     String    // 口座名義（カナ）
+  verified_at        DateTime?
+  verified_by_id     String?
+  changed_by_id      String?   // finance staff who last changed it on the owner's behalf (null = the owner); they may not verify their own change
+  created_at         DateTime  @default(now())
+  updated_at         DateTime  @updatedAt
+
+  user     users  @relation("bank_owner", fields: [user_id], references: [id], onDelete: Cascade)
+  verifier users? @relation("bank_verifier", fields: [verified_by_id], references: [id], onDelete: SetNull)
+}
+
+// A generated 全銀 (総合振込 / 給与振込) file. `content_b64` is the exact bytes that were downloaded.
+// kind 'payment' = payment requests, 'payroll' = pay statements. category_code is the 種別コード (21 総合 / 11 給与 / 12 賞与).
+// 締め日・振込日 per kind of worker (役員 / 正社員 / …). A kind without a row uses the defaults (src/lib/pay-schedule.ts).
+// Days: 0 = the last day of the month. The pay month is the closing month plus `pay_month_offset`.
+model pay_schedules {
+  worker_type          WorkerType @id
+  closing_day          Int        @default(0)
+  pay_month_offset     Int        @default(1)
+  pay_day              Int        @default(25)
+  pay_day_shift        String     @default("before") // when the pay day is a Saturday/Sunday: 'before' (the Friday), 'after' (the Monday) or 'none'
+  report_deadline_days Int        @default(5)        // 業務報告書: handed in this many days after the closing day (0 = on the closing day)
+  expense_deadline_days Int       @default(5)        // 経費: same
+  updated_by_id        String?
+  updated_at           DateTime   @updatedAt
+}
+
+// Money that moved out (a paid pay statement, payment request or expense reimbursement) and what became of sending it to freee.
+// One row per source: a thing is never sent twice.
+model freee_exports {
+  id            String    @id @default(cuid())
+  source_type   String    // 'payslip' | 'payment' | 'expense'
+  source_id     String
+  status        String    @default("pending") // 'pending' | 'sending' | 'sent' | 'failed' | 'skipped'
+  amount        Int
+  paid_date     DateTime  @db.Date
+  description   String
+  freee_deal_id Int?
+  error         String?
+  attempts      Int       @default(0)
+  sent_at       DateTime?
+  created_at    DateTime  @default(now())
+  updated_at    DateTime  @updatedAt
+
+  @@unique([source_type, source_id])
+  @@index([status])
+  @@index([paid_date])
+}
+
+model transfer_batches {
+  id            String    @id @default(cuid())
+  kind          String
+  category_code String
+  transfer_date DateTime  @db.Date
+  item_count    Int
+  total_amount  Int
+  file_name     String
+  content_b64   String    @db.Text
+  created_by_id String?
+  created_at    DateTime  @default(now())
+  paid_at       DateTime? @db.Date
+  paid_by_id    String?
+
+  creator  users?             @relation("batch_creator", fields: [created_by_id], references: [id], onDelete: SetNull)
+  payments payment_requests[]
+  payslips payslips[]
+  expense_claims expense_claims[]
+
+  @@index([created_at])
+}
+
+
+// ---- 組織 ----
+// 部署・チーム。親子でツリーになる。head_user_id が部署長（部下の承認・評価の担当）。
+model org_units {
+  id           String   @id @default(cuid())
+  name         String
+  parent_id    String?
+  head_user_id String?
+  sort         Int      @default(0)
+  created_at   DateTime @default(now())
+  updated_at   DateTime @updatedAt
+
+  parent   org_units?  @relation("unit_tree", fields: [parent_id], references: [id], onDelete: SetNull)
+  children org_units[] @relation("unit_tree")
+  head     users?      @relation("unit_head", fields: [head_user_id], references: [id], onDelete: SetNull)
+  members  users[]     @relation("unit_members")
+
+  @@index([parent_id])
+}
+
+// 役職。permissions は ORG_CAPABILITIES のキー。部署長になっている部署（配下を含む）にだけ効く。
+model org_positions {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  level       Int      @default(0) // 大きいほど上位（表示順）
+  permissions String[]
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+
+  members users[]
+}
+
+// ---- 人事評価 ----
+// status: draft（準備中）→ open（評価中）→ closed（終了）
+model eval_cycles {
+  id            String    @id @default(cuid())
+  name          String
+  period_start  DateTime  @db.Date
+  period_end    DateTime  @db.Date
+  status        String    @default("draft")
+  created_by_id String?
+  opened_at     DateTime?
+  closed_at     DateTime?
+  created_at    DateTime  @default(now())
+  updated_at    DateTime  @updatedAt
+
+  criteria    eval_criteria[]
+  evaluations evaluations[]
+}
+
+model eval_criteria {
+  id          String  @id @default(cuid())
+  cycle_id    String
+  name        String
+  description String?
+  weight      Int     @default(1) // 重み（合計に対する比率で総合点に効く）
+  sort        Int     @default(0)
+
+  cycle  eval_cycles   @relation(fields: [cycle_id], references: [id], onDelete: Cascade)
+  scores eval_scores[]
+
+  @@index([cycle_id])
+}
+
+// 1人1期間につき1つ。自己評価 → 上長評価 → 人事が確定（確定すると本人に公開）。
+model evaluations {
+  id                   String    @id @default(cuid())
+  cycle_id             String
+  user_id              String
+  evaluator_id         String?
+  self_comment         String?
+  self_submitted_at    DateTime?
+  manager_comment      String?
+  manager_submitted_at DateTime?
+  score                Float? // 確定時の総合点（5点満点の加重平均）
+  grade                String? // 確定した等級（S/A/B/C/D）
+  final_comment        String?
+  finalized_at         DateTime?
+  finalized_by_id      String?
+  created_at           DateTime  @default(now())
+  updated_at           DateTime  @updatedAt
+
+  cycle     eval_cycles   @relation(fields: [cycle_id], references: [id], onDelete: Cascade)
+  user      users         @relation("eval_subject", fields: [user_id], references: [id], onDelete: Cascade)
+  evaluator users?        @relation("eval_evaluator", fields: [evaluator_id], references: [id], onDelete: SetNull)
+  scores    eval_scores[]
+
+  @@unique([cycle_id, user_id])
+  @@index([evaluator_id])
+}
+
+model eval_scores {
+  id               String  @id @default(cuid())
+  evaluation_id    String
+  criterion_id     String
+  self_score       Int?
+  self_comment     String?
+  manager_score    Int?
+  manager_comment  String?
+
+  evaluation evaluations   @relation(fields: [evaluation_id], references: [id], onDelete: Cascade)
+  criterion  eval_criteria @relation(fields: [criterion_id], references: [id], onDelete: Cascade)
+
+  @@unique([evaluation_id, criterion_id])
+}
+
+
+// ---- セキュリティ ----
+// Browsers a person has logged in from before. The browser keeps a random token in a cookie; only its hash is stored here.
+// A login from a browser that is not in this table is a "new device" (the person is told about it).
+model known_devices {
+  id            String   @id @default(cuid())
+  user_id       String
+  token_hash    String   @unique
+  user_agent    String?
+  first_ip      String
+  last_ip       String
+  country       String?
+  city          String?
+  first_seen_at DateTime @default(now())
+  last_seen_at  DateTime @default(now())
+  mfa_trusted_until DateTime? // "trust this browser": the second step is skipped until then
+
+  // "Keep me logged in" of the installed app (PWA): the app holds a private key that cannot be exported from the device and
+  // proves it holds it by signing a challenge; this row keeps the matching public key. A login without a password is possible
+  // until remember_until (pushed forward on every use). key_id = sha256 of the public key: the number that identifies the device.
+  remember_until DateTime?
+  public_key     String?
+  key_id         String?
+  device_fp      String?  // browser + OS at the time the key was registered
+
+  user users @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@index([user_id])
+  @@index([key_id])
+}
+
+// Addresses that may not reach the app. `ip` is a single address or an IPv4 CIDR. source: 'manual' (an admin) | 'auto' (sweep detection).
+model ip_blocks {
+  id            String    @id @default(cuid())
+  ip            String    @unique
+  reason        String
+  source        String    @default("manual")
+  expires_at    DateTime? // null = until an admin removes it
+  created_by_id String?
+  created_at    DateTime  @default(now())
+
+  @@index([expires_at])
+}
+
+// Things worth a human's attention: attacks noticed, accounts locked, logins from new places. severity: info | warn | alert
+model security_events {
+  id         String   @id @default(cuid())
+  type       String
+  severity   String   @default("info")
+  ip         String?
+  user_id    String?
+  email      String?
+  detail     String?
+  created_at DateTime @default(now())
+
+  @@index([created_at])
+  @@index([type])
+}
+
+// One-time codes for when the authenticator app is unavailable. Only hashes are stored.
+model recovery_codes {
+  id         String    @id @default(cuid())
+  user_id    String
+  code_hash  String
+  used_at    DateTime?
+  created_at DateTime  @default(now())
+
+  user users @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@index([user_id])
+}
+
+// One meaning-vector per thread, for the "意味でも探す" search (src/lib/semantic-search.ts).
+// The vector is float32 little-endian, normalised, so a dot product is the cosine similarity.
+// A thread is stale when last_message_at is newer than embedded_at or the model/dims differ from the current setting.
+model thread_embeddings {
+  thread_id   String   @id
+  model       String
+  dims        Int
+  vector      Bytes
+  embedded_at DateTime @default(now())
+
+  thread threads @relation(fields: [thread_id], references: [id], onDelete: Cascade)
+}
+
+// 年末調整 (year-end tax adjustment): what a person declares for one calendar year (spouse, dependants, deductions).
+// The content is JSON (see src/lib/year-end.ts) encrypted at rest; it holds names, birth dates and incomes of family members.
+// The My Number is never collected. status: draft -> submitted -> confirmed (by 経理 / 人事); any later edit by the owner returns it to draft.
+model year_end_declarations {
+  id              String    @id @default(cuid())
+  user_id         String
+  year            Int
+  status          String    @default("draft") // 'draft' | 'submitted' | 'confirmed'
+  data_enc        String
+  submitted_at    DateTime?
+  confirmed_at    DateTime?
+  confirmed_by_id String?
+  created_at      DateTime  @default(now())
+  updated_at      DateTime  @updatedAt
+
+  user      users  @relation("year_end_owner", fields: [user_id], references: [id], onDelete: Cascade)
+  confirmer users? @relation("year_end_confirmer", fields: [confirmed_by_id], references: [id], onDelete: SetNull)
+
+  @@unique([user_id, year])
+  @@index([year, status])
 }

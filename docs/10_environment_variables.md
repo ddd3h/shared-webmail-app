@@ -20,6 +20,7 @@
 | 変数名 | 必須 | 用途 | 使用ファイル | シークレット |
 |---|---|---|---|---|
 | `DATABASE_URL` | ✅ | PostgreSQL接続文字列 | `prisma/schema.prisma` | ✅ |
+| `TRUSTED_PROXY_COUNT` | - | 手前のリバースプロキシの台数（既定 1）。`X-Forwarded-For` の右から何番目を接続元とみなすか。IPが取れないリクエストは拒否されるため、台数を誤るとログインできなくなる。詳細は [24_security.md](24_security.md) | `src/lib/client-ip.ts` | - |
 | `SESSION_SECRET` | ✅ | iron-webcryptoのセッション暗号化鍵（32文字以上） | `src/lib/auth.ts` | ✅ |
 | `ENCRYPTION_KEY_HEX` | ✅ | AES-256-GCM鍵（32バイト = 64桁の16進文字列） | `src/lib/crypto.ts` | ✅ |
 
@@ -35,8 +36,15 @@
 | `MATTERMOST_DEFAULT_CHANNEL_ID` | △ | Mattermost既定チャンネルID | 未実装（stub） | いいえ |
 | `NEXT_PUBLIC_APP_URL` | △ | アプリのベースURL（Push通知URLの生成等） | 要確認 | いいえ |
 | `CRON_SECRET` | △ | `/api/cron/sync` の認証トークン | `src/app/api/cron/sync/route.ts` | ✅ |
+| `EMBEDDING_PROVIDER` / `EMBEDDING_API_URL` / `EMBEDDING_API_KEY` / `EMBEDDING_MODEL` / `EMBEDDING_DIMENSIONS` / `EMBEDDING_CACHE_DIR` / `EMBEDDING_LOCAL_ONLY` / `EMBEDDING_MIN_SCORE` | △ | 意味検索（Embedding）。`EMBEDDING_PROVIDER=local`（サーバー内のモデル）か `EMBEDDING_API_URL`（外部サービス）のどちらも無ければ機能ごと無効（詳しくは [30_semantic_search.md](30_semantic_search.md)） | `src/lib/embedding.ts`, `src/lib/semantic-search.ts` | いいえ |
+| `BOT_BLOCK` / `BOT_ALLOW_UA` | △ | ロボット遮断を全体で止める（`off`）／例外にする User-Agent の一部。詳しくは [24_security.md](24_security.md) | `src/lib/bot-guard.ts` | いいえ |
+| `PRISMA_LOG_QUERIES` | - | `1` で、実行したSQLをすべて標準出力に出す（画面ごとのSQL本数を数えるとき。普段は付けない。[32_admin_console.md](32_admin_console.md)） | `src/lib/db.ts` | いいえ |
 | `ENCRYPTION_KEY_VERSION` | △ | 暗号鍵バージョン識別子（例: `"v1"`） | `src/lib/crypto.ts`（推定） | いいえ |
 | `GOOGLE_CLIENT_ID` | △ | Google OAuth クライアントID（コンタクト同期用） | `src/app/api/contacts/google/auth/route.ts`, `sync/route.ts`, `callback/route.ts` | ✅ |
+| `GOOGLE_MAPS_API_KEY` | △ | Google Maps（Routes API）のキー。Googleで距離を調べるときだけ必要（無料のOpenStreetMapでも調べられる）。管理画面から設定できる | `src/lib/route-distance.ts` | ✅ |
+| `FREEE_AUTH_URL` / `FREEE_API_URL` | × | freee の認可・APIのアドレス（テスト用の差し替え。既定は `https://accounts.secure.freee.co.jp` / `https://api.freee.co.jp`）。freeeの接続情報は管理画面で設定（`33_freee.md`） | `src/lib/freee.ts` | ❌ |
+| `GSI_URL` / `NOMINATIM_URL` / `OSRM_URL` | × | 無料の距離検索（国土地理院の住所検索・Nominatim・OSRM）のアドレスの差し替え（テスト用）。OSRM は管理画面（`OSRM_BASE_URL`）でも設定できる | `src/lib/route-distance.ts` | ❌ |
+| `MAPS_API_URL` | × | Routes API の代わりに使うサービスのアドレス（テスト用。既定は `https://routes.googleapis.com`） | `src/lib/route-distance.ts` | ❌ |
 | `GOOGLE_CLIENT_SECRET` | △ | Google OAuth クライアントシークレット（コンタクト同期用） | `src/app/api/contacts/google/sync/route.ts`, `callback/route.ts` | ✅ |
 | `OPENROUTER_API_KEY` | △ | OpenRouter APIキー（AI返信アシスト用） | `src/app/api/ai/reply/route.ts` | ✅ |
 | `OPENROUTER_MODEL` | △ | 使用LLMモデル（デフォルト: `anthropic/claude-3.5-haiku`） | `src/app/api/ai/reply/route.ts` | いいえ |

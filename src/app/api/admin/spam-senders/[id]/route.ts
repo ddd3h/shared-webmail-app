@@ -6,8 +6,8 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
   const { id } = await params;
   const session = await getSession();
   requireAuth(session);
-  const actor = await prisma.users.findUnique({ where: { id: session!.userId }, select: { role: true } });
-  if (actor?.role !== 'admin') return NextResponse.json({ error: 'forbidden' }, { status: 403 });
+  // the role is the one getSession read from the database a moment ago
+  if (session!.role !== 'admin') return NextResponse.json({ error: 'forbidden' }, { status: 403 });
 
   await prisma.spam_senders.delete({ where: { id } }).catch(() => {});
   return NextResponse.json({ ok: true });

@@ -2,8 +2,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getSession, requireAuth } from '@/lib/auth';
 import { lookupSenderIcon } from '@/lib/sender-icon';
 
-export const runtime = 'nodejs';
-
 // GET /api/sender-icon?email=... — 送信者アイコン（BIMI → 企業favicon → Gravatar）
 export async function GET(req: NextRequest) {
   const session = await getSession();

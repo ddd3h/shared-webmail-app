@@ -1,0 +1,41 @@
+# app + postgres. Secrets come from ./.env (not committed); DATABASE_URL is
+# overridden below to point at the db service.
+services:
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: webmail
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: webmail_app
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U webmail -d webmail_app"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  app:
+    build:
+      context: .
+      target: runner
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file: .env
+    # apply pending migrations (idempotent) before starting the server
+    command: sh -c "npx prisma migrate deploy && exec node --env-file-if-exists=.env .next/standalone/server.js"
+    environment:
+      DATABASE_URL: postgresql://webmail:${POSTGRES_PASSWORD}@db:5432/webmail_app?schema=public
+    volumes:
+      - ./storage:/app/storage
+    ports:
+      # Default loopback (nginx in front, see deploy/nginx-collab.conf).
+      # No nginx: set APP_BIND=<tailscale/LAN ip> in .env to expose directly.
+      - "${APP_BIND:-127.0.0.1}:3000:3000"
+      - "${APP_BIND:-127.0.0.1}:1234:1234"
+
+volumes:
+  pgdata:

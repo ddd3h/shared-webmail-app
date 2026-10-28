@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getAllSettings, setSetting, MANAGED_SETTING_KEYS, SECRET_SETTING_KEYS, type AppSettingKey } from '@/lib/settings';
-import { getSession, requireAuth } from '@/lib/auth';
+import { getAllSettings, MANAGED_SETTING_KEYS, SECRET_SETTING_KEYS, type AppSettingKey } from '@/lib/settings';
+import { adminActor, forbidden } from '@/lib/finance-guard';
+import { prisma } from '@/lib/db';
 import { logAudit } from '@/lib/audit';
 import { writeEnvValues } from '@/lib/env-file';
 
 export async function GET() {
-  const session = await getSession();
-  requireAuth(session);
+  if (!(await adminActor())) return forbidden();
 
   const dbRows = await getAllSettings();
   const dbMap = new Map(dbRows.map(r => [r.key, r]));
@@ -33,20 +33,28 @@ export async function GET() {
 }
 
 export async function PUT(req: NextRequest) {
-  const session = await getSession();
-  requireAuth(session);
+  const actor = await adminActor();
+  if (!actor) return forbidden();
   const body = await req.json().catch(() => ({}));
   const updates = Array.isArray(body.updates) ? body.updates : [];
 
   const envUpdates: Record<string, string> = {};
 
+  // all the changes in one batch (one round trip, all or nothing) instead of one request after another
+  const writes: ReturnType<typeof prisma.app_settings.upsert>[] = [];
   for (const u of updates) {
     if (!u?.key || typeof u.value !== 'string') continue;
     // Skip masked/placeholder values — unchanged secrets
     if (u.isSecret && (u.value === '••••••' || u.value === '(generated)')) continue;
-    await setSetting(u.key, u.value, !!u.isSecret, session!.userId);
+    const isSecret = !!u.isSecret;
+    writes.push(prisma.app_settings.upsert({
+      where: { key: u.key },
+      create: { key: u.key, value: u.value, is_secret: isSecret, updated_by: actor.id },
+      update: { value: u.value, is_secret: isSecret, updated_by: actor.id },
+    }));
     envUpdates[u.key] = u.value;
   }
+  if (writes.length > 0) await prisma.$transaction(writes);
 
   // Sync to .env file (fire-and-forget style, don't fail the request if this errors)
   if (Object.keys(envUpdates).length > 0) {
@@ -57,6 +65,6 @@ export async function PUT(req: NextRequest) {
     }
   }
 
-  await logAudit({ actorUserId: session!.userId, actionType: 'admin_settings_update', targetType: 'app_settings', metadata: { count: updates.length } });
+  await logAudit({ actorUserId: actor.id, actionType: 'admin_settings_update', targetType: 'app_settings', metadata: { count: updates.length } });
   return NextResponse.json({ ok: true });
 }

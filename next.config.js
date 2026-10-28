@@ -15,6 +15,12 @@ const SECURITY_HEADERS = [
     key: 'Permissions-Policy',
     value: 'camera=(), microphone=(), geolocation=(), payment=()',
   },
+  // Other sites' windows can't keep a handle on ours, and other sites can't embed our files
+  { key: 'Cross-Origin-Opener-Policy', value: 'same-origin' },
+  { key: 'Cross-Origin-Resource-Policy', value: 'same-origin' },
+  { key: 'X-Permitted-Cross-Domain-Policies', value: 'none' },
+  // Not for search engines or AI: nothing here is public, and nothing should be indexed, cached or used for training
+  { key: 'X-Robots-Tag', value: 'noindex, nofollow, noarchive, nosnippet, noimageai, noai' },
   {
     // 2-year HSTS — only effective over HTTPS; harmless over HTTP (browsers ignore it)
     key: 'Strict-Transport-Security',
@@ -51,10 +57,36 @@ const nextConfig = {
 
   // Keep ws external so the in-process collab server (src/lib/collab/embedded.ts)
   // gets a working ws module copied into the standalone node_modules.
-  serverExternalPackages: ['ws'],
+  // Same for the local embedding model: onnxruntime-node is a native library and cannot be bundled.
+  serverExternalPackages: ['ws', '@huggingface/transformers', 'onnxruntime-node'],
+
+  // The standalone build copies only what it can trace; the native part of the local embedding model is loaded by name at run
+  // time, so it is listed here (linux only, and without the GPU libraries: about 1/10 of the package).
+  outputFileTracingIncludes: {
+    '/api/**/*': [
+      './node_modules/onnxruntime-node/dist/**/*',
+      './node_modules/onnxruntime-node/lib/**/*',
+      './node_modules/onnxruntime-node/package.json',
+      './node_modules/onnxruntime-common/**/*',
+      './node_modules/onnxruntime-node/bin/napi-v6/linux/*/onnxruntime_binding.node',
+      './node_modules/onnxruntime-node/bin/napi-v6/linux/*/libonnxruntime.so.1',
+      './node_modules/onnxruntime-node/bin/napi-v6/linux/*/libonnxruntime_providers_shared.so',
+    ],
+  },
+  outputFileTracingExcludes: {
+    '/api/**/*': [
+      './node_modules/onnxruntime-node/bin/napi-v6/darwin/**/*',
+      './node_modules/onnxruntime-node/bin/napi-v6/win32/**/*',
+      './node_modules/onnxruntime-web/**/*',
+    ],
+  },
 
   // Suppress server identity disclosure
   poweredByHeader: false,
+
+  // Caching model of Next.js 16: nothing is cached unless the code says so ("use cache" + cacheLife / cacheTag).
+  cacheComponents: true,
+  partialPrefetching: true,
 
   experimental: {
     // proxy.ts buffers every request body, capped at 10MB by default — over that
@@ -84,6 +116,11 @@ const nextConfig = {
         source: '/(.*)',
         headers: SECURITY_HEADERS,
       },
+      // Answers that hold personal or financial data must never be kept by a browser or a shared cache
+      ...['/api/auth/:path*', '/api/security/:path*', '/api/admin/:path*', '/api/bank-accounts/:path*', '/api/transfers/:path*', '/api/profile/:path*'].map(source => ({
+        source,
+        headers: [{ key: 'Cache-Control', value: 'no-store, max-age=0' }],
+      })),
       // Service Worker must not be cached and must be allowed at root scope
       {
         source: '/sw.js',

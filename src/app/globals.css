@@ -1,6 +1,125 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import 'tailwindcss';
+
+@theme {
+  --color-brand-50: #eff6ff;
+  --color-brand-100: #dbeafe;
+  --color-brand-200: #bfdbfe;
+  --color-brand-300: #93c5fd;
+  --color-brand-400: #60a5fa;
+  --color-brand-500: #3b82f6;
+  --color-brand-600: #2563eb;
+  --color-brand-700: #1d4ed8;
+  --color-brand-800: #1e40af;
+  --color-brand-900: #1e3a8a;
+}
+
+/*
+  The default border color has changed to `currentcolor` in Tailwind CSS v4,
+  so we've added these compatibility styles to make sure everything still
+  looks the same as it did with Tailwind CSS v3.
+
+  If we ever want to remove these styles, we need to add an explicit border
+  color utility to any element that depends on these defaults.
+*/
+@layer base {
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--color-gray-200, currentcolor);
+  }
+}
+
+/* Tailwind 4 buttons keep the arrow cursor; every clickable control here used the hand */
+@layer base {
+  button:not(:disabled),
+  [role='button']:not(:disabled) {
+    cursor: pointer;
+  }
+}
+
+/* A row that scrolls sideways (tabs, chips) without drawing a scrollbar: on a computer a visible bar looks like the page can be scrolled there */
+@utility scrollbar-none {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  &::-webkit-scrollbar { display: none; }
+}
+
+/* A tab's content (and a list that has just loaded) comes in softly instead of popping in */
+@keyframes tab-fade-in { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
+@utility tab-fade {
+  animation: tab-fade-in 160ms ease-out backwards; /* no fill-forwards: a finished animation would keep a stacking context that puts modals under the header */
+  @media (prefers-reduced-motion: reduce) { animation: none; }
+}
+
+@utility btn {
+  @apply inline-flex items-center justify-center gap-1.5 rounded-lg px-4 py-2 text-sm font-medium transition-all duration-150 focus:outline-hidden focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed;
+}
+
+@utility btn-primary {
+  @apply btn bg-blue-600 text-white hover:bg-blue-700 focus:ring-blue-500;
+}
+
+@utility btn-secondary {
+  @apply btn bg-white text-gray-700 border border-gray-300 hover:bg-gray-50 focus:ring-gray-400;
+}
+
+@utility btn-danger {
+  @apply btn bg-red-600 text-white hover:bg-red-700 focus:ring-red-500;
+}
+
+@utility btn-success {
+  @apply btn bg-emerald-600 text-white hover:bg-emerald-700 focus:ring-emerald-500;
+}
+
+@utility btn-sm {
+  @apply px-3 py-1 text-xs;
+}
+
+@utility btn-ghost {
+  @apply btn bg-transparent text-gray-600 hover:bg-gray-100 hover:text-gray-900 focus:ring-gray-400;
+}
+
+@utility card {
+  @apply bg-white rounded-xl border border-gray-200 shadow-xs;
+}
+
+@utility input {
+  @apply block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:outline-hidden focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors;
+}
+
+@utility select {
+  @apply block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:outline-hidden focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors bg-white;
+}
+
+@utility label {
+  @apply block text-sm font-medium text-gray-700 mb-1;
+}
+
+@utility badge {
+  @apply inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold;
+}
+
+@utility badge-open {
+  @apply badge bg-emerald-100 text-emerald-700;
+}
+
+@utility badge-in_progress {
+  @apply badge bg-blue-100 text-blue-700;
+}
+
+@utility badge-waiting {
+  @apply badge bg-amber-100 text-amber-700;
+}
+
+@utility badge-done {
+  @apply badge bg-gray-100 text-gray-600;
+}
+
+@utility badge-archived {
+  @apply badge bg-gray-100 text-gray-400;
+}
 
 @layer base {
   html {
@@ -14,65 +133,6 @@
 
   a {
     @apply text-blue-600 hover:text-blue-800;
-  }
-}
-
-@layer components {
-  .btn {
-    @apply inline-flex items-center justify-center gap-1.5 rounded-lg px-4 py-2 text-sm font-medium transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed;
-  }
-  .btn-primary {
-    @apply btn bg-blue-600 text-white hover:bg-blue-700 focus:ring-blue-500;
-  }
-  .btn-secondary {
-    @apply btn bg-white text-gray-700 border border-gray-300 hover:bg-gray-50 focus:ring-gray-400;
-  }
-  .btn-danger {
-    @apply btn bg-red-600 text-white hover:bg-red-700 focus:ring-red-500;
-  }
-  .btn-success {
-    @apply btn bg-emerald-600 text-white hover:bg-emerald-700 focus:ring-emerald-500;
-  }
-  .btn-sm {
-    @apply px-3 py-1 text-xs;
-  }
-  .btn-ghost {
-    @apply btn bg-transparent text-gray-600 hover:bg-gray-100 hover:text-gray-900 focus:ring-gray-400;
-  }
-
-  .card {
-    @apply bg-white rounded-xl border border-gray-200 shadow-sm;
-  }
-
-  .input {
-    @apply block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors;
-  }
-
-  .select {
-    @apply block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors bg-white;
-  }
-
-  .label {
-    @apply block text-sm font-medium text-gray-700 mb-1;
-  }
-
-  .badge {
-    @apply inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold;
-  }
-  .badge-open {
-    @apply badge bg-emerald-100 text-emerald-700;
-  }
-  .badge-in_progress {
-    @apply badge bg-blue-100 text-blue-700;
-  }
-  .badge-waiting {
-    @apply badge bg-amber-100 text-amber-700;
-  }
-  .badge-done {
-    @apply badge bg-gray-100 text-gray-600;
-  }
-  .badge-archived {
-    @apply badge bg-gray-100 text-gray-400;
   }
 }
 

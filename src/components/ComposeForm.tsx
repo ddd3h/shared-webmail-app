@@ -625,7 +625,7 @@ export default function ComposeForm({
 
   const conflictBanner = draft.conflict ? (
     <div className="mx-4 mb-2 flex items-center gap-2 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800">
-      <svg className="w-4 h-4 flex-shrink-0 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <svg className="w-4 h-4 shrink-0 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
       </svg>
       <span className="flex-1">
@@ -642,12 +642,12 @@ export default function ComposeForm({
     <div className={`${!isModal ? 'border-b border-gray-100 px-4 py-2 space-y-1 text-xs' : 'px-2 sm:px-5 space-y-0'}`}>
       {/* From */}
       <div className={!isModal ? 'flex items-center gap-2 py-0.5' : 'flex items-center gap-3 border-b border-gray-100 py-2.5'}>
-        <span className={`text-gray-400 flex-shrink-0 ${!isModal ? 'w-7' : 'w-12 text-xs font-medium'}`}>From</span>
+        <span className={`text-gray-400 shrink-0 ${!isModal ? 'w-7' : 'w-12 text-xs font-medium'}`}>From</span>
         {mailboxes.length > 1 ? (
           <select
             value={selectedMailbox}
             onChange={e => setSelectedMailbox(e.target.value)}
-            className={!isModal ? 'flex-1 bg-transparent border-0 outline-none text-gray-700 cursor-pointer text-xs' : 'select flex-1 text-sm py-1'}
+            className={!isModal ? 'flex-1 bg-transparent border-0 outline-hidden text-gray-700 cursor-pointer text-xs' : 'select flex-1 text-sm py-1'}
           >
             {mailboxes.map(mb => <option key={mb.id} value={mb.id}>{mb.display_name} &lt;{mb.email_address}&gt;</option>)}
           </select>
@@ -658,7 +658,7 @@ export default function ComposeForm({
 
       {/* To */}
       <div className={!isModal ? 'flex items-start gap-2 py-0.5' : 'flex items-start gap-3 border-b border-gray-100 py-2'}>
-        <span className={`text-gray-400 flex-shrink-0 pt-0.5 ${!isModal ? 'w-7' : 'w-12 text-xs font-medium'}`}>To</span>
+        <span className={`text-gray-400 shrink-0 pt-0.5 ${!isModal ? 'w-7' : 'w-12 text-xs font-medium'}`}>To</span>
         <div className="flex-1 min-w-0">
           <EmailChipInput
             chips={toChips}
@@ -673,8 +673,8 @@ export default function ComposeForm({
                 type="button"
                 onClick={() => setShowCc(true)}
                 className={!isModal
-                  ? 'flex-shrink-0 px-1.5 py-0.5 rounded text-xs text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors'
-                  : 'text-xs text-blue-600 hover:underline flex-shrink-0 pt-2'}
+                  ? 'shrink-0 px-1.5 py-0.5 rounded-sm text-xs text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors'
+                  : 'text-xs text-blue-600 hover:underline shrink-0 pt-2'}
               >
                 CC
               </button>
@@ -684,8 +684,8 @@ export default function ComposeForm({
                 type="button"
                 onClick={() => setShowBcc(true)}
                 className={!isModal
-                  ? 'flex-shrink-0 px-1.5 py-0.5 rounded text-xs text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors'
-                  : 'text-xs text-blue-600 hover:underline flex-shrink-0 pt-2'}
+                  ? 'shrink-0 px-1.5 py-0.5 rounded-sm text-xs text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors'
+                  : 'text-xs text-blue-600 hover:underline shrink-0 pt-2'}
               >
                 BCC
               </button>
@@ -697,7 +697,7 @@ export default function ComposeForm({
       {/* CC */}
       {showCc && (
         <div className={!isModal ? 'flex items-start gap-2 py-0.5' : 'flex items-start gap-3 border-b border-gray-100 py-2'}>
-          <span className={`text-gray-400 flex-shrink-0 pt-0.5 ${!isModal ? 'w-7' : 'w-12 text-xs font-medium'}`}>CC</span>
+          <span className={`text-gray-400 shrink-0 pt-0.5 ${!isModal ? 'w-7' : 'w-12 text-xs font-medium'}`}>CC</span>
           <div className="flex-1 min-w-0">
             <EmailChipInput
               chips={ccChips}
@@ -709,8 +709,8 @@ export default function ComposeForm({
             type="button"
             onClick={() => { setShowCc(false); setCcChips([]); }}
             className={!isModal
-              ? 'flex-shrink-0 px-1.5 py-0.5 rounded text-xs text-blue-600 bg-blue-50 transition-colors'
-              : 'text-xs text-gray-400 hover:text-gray-600 flex-shrink-0 pt-2'}
+              ? 'shrink-0 px-1.5 py-0.5 rounded-sm text-xs text-blue-600 bg-blue-50 transition-colors'
+              : 'text-xs text-gray-400 hover:text-gray-600 shrink-0 pt-2'}
           >
             {!isModal ? 'CC' : '×'}
           </button>
@@ -720,7 +720,7 @@ export default function ComposeForm({
       {/* BCC */}
       {showBcc && (
         <div className={!isModal ? 'flex items-start gap-2 py-0.5' : 'flex items-start gap-3 border-b border-gray-100 py-2'}>
-          <span className={`text-gray-400 flex-shrink-0 pt-0.5 ${!isModal ? 'w-7' : 'w-12 text-xs font-medium'}`}>BCC</span>
+          <span className={`text-gray-400 shrink-0 pt-0.5 ${!isModal ? 'w-7' : 'w-12 text-xs font-medium'}`}>BCC</span>
           <div className="flex-1 min-w-0">
             <EmailChipInput
               chips={bccChips}
@@ -732,8 +732,8 @@ export default function ComposeForm({
             type="button"
             onClick={() => { setShowBcc(false); setBccChips([]); }}
             className={!isModal
-              ? 'flex-shrink-0 px-1.5 py-0.5 rounded text-xs text-blue-600 bg-blue-50 transition-colors'
-              : 'text-xs text-gray-400 hover:text-gray-600 flex-shrink-0 pt-2'}
+              ? 'shrink-0 px-1.5 py-0.5 rounded-sm text-xs text-blue-600 bg-blue-50 transition-colors'
+              : 'text-xs text-gray-400 hover:text-gray-600 shrink-0 pt-2'}
           >
             {!isModal ? 'BCC' : '×'}
           </button>
@@ -743,10 +743,10 @@ export default function ComposeForm({
       {/* Subject (compose + forward) */}
       {mode !== 'reply' && (
         <div className={!isModal ? 'flex items-center gap-2 py-0.5' : 'flex items-center gap-3 border-b border-gray-100 py-2.5'}>
-          <span className={`text-gray-400 flex-shrink-0 ${!isModal ? 'w-7' : 'w-12 text-xs font-medium'}`}>件名</span>
+          <span className={`text-gray-400 shrink-0 ${!isModal ? 'w-7' : 'w-12 text-xs font-medium'}`}>件名</span>
           <input
             type="text"
-            className="flex-1 text-sm text-gray-900 focus:outline-none placeholder-gray-400 bg-transparent"
+            className="flex-1 text-sm text-gray-900 focus:outline-hidden placeholder-gray-400 bg-transparent"
             placeholder="件名を入力"
             value={subject}
             onChange={e => { setSubject(e.target.value); saveDraft({ subject: e.target.value }); }}
@@ -757,7 +757,7 @@ export default function ComposeForm({
   );
 
   const presenceAvatars = (ydoc && collaborators.length > 0) ? (
-    <div className="flex -space-x-2 flex-shrink-0">
+    <div className="flex -space-x-2 shrink-0">
       {collaborators.map(c => (
         <div
           key={c.clientId}
@@ -812,7 +812,7 @@ export default function ComposeForm({
         {sigVisible && signature
           ? <p className="text-sm text-gray-900 whitespace-pre-wrap flex-1">{'\n'}{signature}</p>
           : <span className="flex-1 text-xs text-gray-300 self-center">署名なし</span>}
-        <div className="relative flex-shrink-0" ref={sigPickerRef}>
+        <div className="relative shrink-0" ref={sigPickerRef}>
           <button
             type="button"
             onClick={() => {
@@ -823,7 +823,7 @@ export default function ComposeForm({
               }
             }}
             title="署名を選択"
-            className={`p-1 rounded transition-colors ${(sigVisible && signature) ? 'text-blue-500 hover:text-blue-700' : 'text-gray-300 hover:text-gray-500'}`}
+            className={`p-1 rounded-sm transition-colors ${(sigVisible && signature) ? 'text-blue-500 hover:text-blue-700' : 'text-gray-300 hover:text-gray-500'}`}
           >
             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
@@ -839,7 +839,7 @@ export default function ComposeForm({
                   className={`w-full text-left px-3 py-1.5 text-sm hover:bg-gray-50 flex items-center gap-2 ${selectedSigUser?.id === u.id && sigVisible ? 'text-blue-700 font-medium' : 'text-gray-700'}`}
                 >
                   {selectedSigUser?.id === u.id && sigVisible && (
-                    <svg className="w-3 h-3 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" /></svg>
+                    <svg className="w-3 h-3 shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" /></svg>
                   )}
                   <span className={selectedSigUser?.id === u.id && sigVisible ? '' : 'ml-5'}>{u.name}</span>
                 </button>
@@ -851,7 +851,7 @@ export default function ComposeForm({
                   className={`w-full text-left px-3 py-1.5 text-sm hover:bg-gray-50 flex items-center gap-2 ${!sigVisible ? 'text-blue-700 font-medium' : 'text-gray-500'}`}
                 >
                   {!sigVisible && (
-                    <svg className="w-3 h-3 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" /></svg>
+                    <svg className="w-3 h-3 shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" /></svg>
                   )}
                   <span className={!sigVisible ? '' : 'ml-5'}>署名なし</span>
                 </button>
@@ -1017,11 +1017,11 @@ export default function ComposeForm({
   const modalTitle = mode === 'compose' ? (draftId ? '下書きを編集' : '新規メール作成') : mode === 'reply' ? '返信を作成' : '転送';
   const modalSub = mode === 'reply' ? (toChips[0] || '') : mode === 'forward' ? `Fw: ${subject}` : '';
   const modalIcon = mode === 'reply' ? (
-    <svg className="w-4 h-4 text-blue-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <svg className="w-4 h-4 text-blue-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
     </svg>
   ) : mode === 'forward' ? (
-    <svg className="w-4 h-4 text-green-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <svg className="w-4 h-4 text-green-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 9l3 3m0 0l-3 3m3-3H8m13 0a9 9 0 11-18 0 9 9 0 0118 0z" />
     </svg>
   ) : null;
@@ -1029,11 +1029,11 @@ export default function ComposeForm({
   // reply/forward's inline card (light header, colored icon) uses its own
   // theme-matching icon color instead of the modal shell's dark-bg variant.
   const inlineIcon = mode === 'reply' ? (
-    <svg className="w-4 h-4 text-blue-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <svg className="w-4 h-4 text-blue-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
     </svg>
   ) : (
-    <svg className="w-4 h-4 text-green-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <svg className="w-4 h-4 text-green-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 9l3 3m0 0l-3 3m3-3H8m13 0a9 9 0 11-18 0 9 9 0 0118 0z" />
     </svg>
   );
@@ -1047,7 +1047,7 @@ export default function ComposeForm({
   }
 
   const minimizeBtn = !isInline ? (
-    <button onClick={() => setMinimized(true)} className="p-1.5 rounded text-gray-300 hover:text-white hover:bg-gray-700 transition-colors" title="最小化">
+    <button onClick={() => setMinimized(true)} className="p-1.5 rounded-sm text-gray-300 hover:text-white hover:bg-gray-700 transition-colors" title="最小化">
       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" /></svg>
     </button>
   ) : null;
@@ -1058,8 +1058,8 @@ export default function ComposeForm({
       onClick={() => setIsFullscreen(v => !v)}
       title={isFullscreen ? '元のサイズに戻す' : 'フルスクリーンで開く'}
       className={isFullscreen
-        ? 'p-1.5 rounded text-gray-300 hover:text-white hover:bg-gray-700 transition-colors'
-        : 'text-gray-400 hover:text-gray-600 p-1 rounded hover:bg-gray-200 transition-colors'}
+        ? 'p-1.5 rounded-sm text-gray-300 hover:text-white hover:bg-gray-700 transition-colors'
+        : 'text-gray-400 hover:text-gray-600 p-1 rounded-sm hover:bg-gray-200 transition-colors'}
     >
       {isFullscreen ? (
         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1074,17 +1074,17 @@ export default function ComposeForm({
   ) : null;
 
   const modalHeaderBar = (
-    <div className="flex items-center justify-between px-3 sm:px-5 py-3 border-b border-gray-200 flex-shrink-0 bg-gray-800 sm:rounded-t-2xl">
+    <div className="flex items-center justify-between px-3 sm:px-5 py-3 border-b border-gray-200 shrink-0 bg-gray-800 sm:rounded-t-2xl">
       <div className="flex items-center gap-2 min-w-0">
         {modalIcon}
-        <h2 className="font-semibold text-white text-sm flex-shrink-0">{modalTitle}</h2>
+        <h2 className="font-semibold text-white text-sm shrink-0">{modalTitle}</h2>
         {modalSub && <span className="text-gray-400 text-xs truncate">→ {modalSub}</span>}
       </div>
-      <div className="flex items-center gap-1 flex-shrink-0">
+      <div className="flex items-center gap-1 shrink-0">
         {presenceAvatars}
         {minimizeBtn}
         {fullscreenToggleBtn}
-        <button onClick={onCancel} className="p-1.5 rounded text-gray-300 hover:text-white hover:bg-gray-700 transition-colors" title="閉じる">
+        <button onClick={onCancel} className="p-1.5 rounded-sm text-gray-300 hover:text-white hover:bg-gray-700 transition-colors" title="閉じる">
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
           </svg>
@@ -1094,16 +1094,16 @@ export default function ComposeForm({
   );
 
   const inlineHeaderBar = (
-    <div className="flex items-center justify-between px-4 py-2.5 bg-gray-50 border-b border-gray-200 flex-shrink-0">
+    <div className="flex items-center justify-between px-4 py-2.5 bg-gray-50 border-b border-gray-200 shrink-0">
       <div className="flex items-center gap-2 text-sm text-gray-700 min-w-0">
         {inlineIcon}
-        <span className="font-medium flex-shrink-0">{modalTitle}</span>
+        <span className="font-medium shrink-0">{modalTitle}</span>
         {modalSub && <span className="text-gray-400 text-xs truncate">→ {modalSub}</span>}
       </div>
-      <div className="flex items-center gap-1 flex-shrink-0">
+      <div className="flex items-center gap-1 shrink-0">
         {presenceAvatars}
         {fullscreenToggleBtn}
-        <button onClick={onCancel} className="text-gray-400 hover:text-gray-600 p-1 rounded hover:bg-gray-200 transition-colors">
+        <button onClick={onCancel} className="text-gray-400 hover:text-gray-600 p-1 rounded-sm hover:bg-gray-200 transition-colors">
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
           </svg>
@@ -1124,10 +1124,10 @@ export default function ComposeForm({
   );
 
   const footerBar = (
-    <div className="bg-gray-50 border-t border-gray-200 flex-shrink-0" style={isModal ? { paddingBottom: 'env(safe-area-inset-bottom)' } : undefined}>
+    <div className="bg-gray-50 border-t border-gray-200 shrink-0" style={isModal ? { paddingBottom: 'env(safe-area-inset-bottom)' } : undefined}>
       <div className="flex items-center justify-between px-3 pt-2 pb-0 md:hidden">
         <p className="text-xs text-amber-600 flex items-center gap-1">
-          <svg className="w-3 h-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg className="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
           </svg>
           外部に送信されます
@@ -1138,7 +1138,7 @@ export default function ComposeForm({
         <div className="flex items-center gap-1.5">
           {fileInput}
           <p className="hidden md:flex text-xs text-amber-600 items-center gap-1">
-            <svg className="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
             </svg>
             外部に送信されます
@@ -1151,7 +1151,7 @@ export default function ComposeForm({
   );
 
   const errorBanner = error && (
-    <div className="px-3 pb-2 flex-shrink-0">
+    <div className="px-3 pb-2 shrink-0">
       <p className="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">{error}</p>
     </div>
   );
@@ -1159,14 +1159,14 @@ export default function ComposeForm({
   if (isModal) {
     if (minimized) {
       return (
-        <div className="fixed bottom-0 right-6 z-[110] w-80 shadow-2xl rounded-t-xl overflow-hidden">
+        <div className="fixed bottom-0 right-6 z-110 w-80 shadow-2xl rounded-t-xl overflow-hidden">
           <div className="flex items-center justify-between px-4 py-2.5 bg-gray-800 text-white cursor-pointer hover:bg-gray-700 transition-colors" onClick={() => setMinimized(false)}>
             <span className="text-sm font-medium truncate">{modalTitle}</span>
-            <div className="flex items-center gap-1.5 ml-2 flex-shrink-0" onClick={e => e.stopPropagation()}>
-              <button onClick={() => setMinimized(false)} className="p-1 rounded hover:bg-gray-600 transition-colors" title="展開">
+            <div className="flex items-center gap-1.5 ml-2 shrink-0" onClick={e => e.stopPropagation()}>
+              <button onClick={() => setMinimized(false)} className="p-1 rounded-sm hover:bg-gray-600 transition-colors" title="展開">
                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" /></svg>
               </button>
-              <button onClick={onCancel} className="p-1 rounded hover:bg-gray-600 transition-colors" title="閉じる">
+              <button onClick={onCancel} className="p-1 rounded-sm hover:bg-gray-600 transition-colors" title="閉じる">
                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
               </button>
             </div>
@@ -1176,8 +1176,8 @@ export default function ComposeForm({
     }
 
     return (
-      <div className="fixed inset-0 z-[110] flex flex-col sm:items-center sm:justify-center sm:p-4">
-        <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={requestCollapse} />
+      <div className="fixed inset-0 z-110 flex flex-col sm:items-center sm:justify-center sm:p-4">
+        <div className="absolute inset-0 bg-black/30 backdrop-blur-xs" onClick={requestCollapse} />
         {newContactsPrompt}
         {overlay}
         {scheduleModal}
@@ -1252,7 +1252,7 @@ function NewContactsPrompt({ emails, onDone }: { emails: string[]; onDone: () =>
   }
 
   return (
-    <div className="fixed inset-0 z-[300] flex items-center justify-center p-4 bg-black/40">
+    <div className="fixed inset-0 z-300 flex items-center justify-center p-4 bg-black/40">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6">
         <h3 className="font-semibold text-gray-900 mb-1">連絡先に追加</h3>
         <p className="text-xs text-gray-500 mb-4">

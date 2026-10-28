@@ -125,7 +125,7 @@ export default function EmailChipInput({ chips, onChange, placeholder }: Props) 
               <button
                 type="button"
                 onClick={e => { e.stopPropagation(); onChange(chips.filter((_, j) => j !== i)); }}
-                className="w-3.5 h-3.5 rounded-full flex items-center justify-center opacity-50 hover:opacity-100 hover:bg-black/10 transition-opacity leading-none flex-shrink-0"
+                className="w-3.5 h-3.5 rounded-full flex items-center justify-center opacity-50 hover:opacity-100 hover:bg-black/10 transition-opacity leading-none shrink-0"
               >
                 ×
               </button>
@@ -148,7 +148,7 @@ export default function EmailChipInput({ chips, onChange, placeholder }: Props) 
             }, 150);
           }}
           placeholder={chips.length === 0 ? placeholder : ''}
-          className="flex-1 min-w-[140px] bg-transparent border-0 outline-none text-xs text-gray-700 placeholder-gray-400 py-0.5"
+          className="flex-1 min-w-[140px] bg-transparent border-0 outline-hidden text-xs text-gray-700 placeholder-gray-400 py-0.5"
         />
       </div>
 

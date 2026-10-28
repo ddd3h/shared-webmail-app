@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { getSession, requireAuth } from '@/lib/auth';
 import { buildThreadsWhere } from '@/lib/threads-filter';
+import { hiddenTeamMailboxIds } from '@/lib/team-view';
 import { sendBulkDeleteApprovalDm } from '@/lib/mattermost-dm';
 import { randomUUID } from 'crypto';
 import { deleteImapMessagesBulk } from '@/lib/mail/delete-utils';
@@ -21,8 +22,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'missing_action' }, { status: 400 });
   }
 
+  // "select all" in the 共有メール view means what is on screen: one mailbox (a chip), or all but the ones the person left out
+  const hiddenIds = filters?.type === 'team' && !filters?.q && !filters?.mailbox_id ? await hiddenTeamMailboxIds(session!.userId) : [];
   const where = buildThreadsWhere({
     session,
+    mailboxId: filters?.type === 'team' ? filters?.mailbox_id || undefined : undefined,
+    hiddenMailboxIds: hiddenIds,
     status: filters?.status,
     type: filters?.type,
     q: filters?.q,
@@ -46,7 +51,7 @@ export async function POST(req: NextRequest) {
         },
         select: { id: true }
       });
-      affectedMailboxIds = mailboxes.map(m => m.id);
+      affectedMailboxIds = filters?.mailbox_id ? mailboxes.filter(m => m.id === filters.mailbox_id).map(m => m.id) : mailboxes.filter(m => !hiddenIds.includes(m.id)).map(m => m.id);
     } else if (Array.isArray(ids) && ids.length > 0) {
       const threads = await prisma.threads.findMany({
         where: { id: { in: ids } },
@@ -109,7 +114,7 @@ export async function POST(req: NextRequest) {
           id: approvalId,
           user_id: session!.userId,
           action: 'delete',
-          filters_json: JSON.stringify(filters),
+          filters_json: JSON.stringify({ ...filters, ...(hiddenIds.length > 0 ? { hidden_mailbox_ids: hiddenIds } : {}) }), // what was on screen then
           count: totalTargetCount,
           expires_at: new Date(Date.now() + 5 * 60 * 1000) // 5m
         }

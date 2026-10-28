@@ -22,6 +22,7 @@ vi.mock('@/lib/password', () => ({
   hashPassword: vi.fn((p) => Promise.resolve(`hashed_${p}`)),
 }));
 
+vi.mock('@/lib/avatar', () => ({ forgetAvatar: vi.fn() }));
 vi.mock('@/lib/audit', () => ({
   logAudit: vi.fn(),
 }));

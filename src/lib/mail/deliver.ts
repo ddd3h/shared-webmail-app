@@ -45,7 +45,7 @@ export type DeliverResult = { threadId: string; messageId: string };
 // Dispatches every scheduled_sends row whose scheduled_at has arrived: creates the
 // real message (compose or reply) and sends it. Called both from the in-process
 // timer (instrumentation.node.ts, the app's actual dispatch path — mirrors how IMAP
-// sync/MFI jobs run) and from /api/cron/scheduled-send (kept for external cron /
+// sync job runs) and from /api/cron/scheduled-send (kept for external cron /
 // Vercel deployments that don't run the long-lived Node process).
 export async function dispatchDueScheduledSends() {
   const due = await prisma.scheduled_sends.findMany({

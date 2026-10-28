@@ -1,4 +1,5 @@
 // Mattermost DM sender — looks up user by email, creates DM channel, posts message
+import { fromDirectMessage, recordNotification } from '@/lib/notifications';
 import { prisma } from '@/lib/db';
 import { getSetting } from '@/lib/settings';
 
@@ -66,21 +67,35 @@ async function resolveMmUserId(
   return null;
 }
 
-export async function sendMfiBelowThresholdDm(
+// Neutralise mail-controlled text before embedding it in a Mattermost post:
+// no @mentions / channel pings, no markdown links or formatting, single line.
+export function mmText(s: string, max = 80): string {
+  const flat = s.replace(/[\r\n\t]+/g, ' ').trim();
+  const cut = flat.length > max ? flat.slice(0, max) + '…' : flat;
+  return cut
+    .replace(/([\\`*_{}\[\]()<>#+!|~])/g, '\\$1')
+    .replace(/@/g, '@\u200b');
+}
+
+const STALE_UNREAD_THROTTLE_MS = 6 * 24 * 3600 * 1000;
+const STALE_UNREAD_LIST_MAX = 10;
+
+export async function sendStaleUnreadDm(
   userId: string,
   email: string,
-  mfi: number
+  threads: { thread_id: string; subject: string; oldest_unread_at: Date }[]
 ): Promise<boolean> {
+  if (threads.length === 0) return false;
+
   const { baseUrl, token } = await getConfig();
   if (!baseUrl || !token) return false;
 
-  // Throttle: only send once per 12 hours per user
-  const twelveHoursAgo = new Date(Date.now() - 12 * 3600 * 1000);
+  // Throttle across restarts: at most one DM per ~week per user
   const recent = await prisma.mattermost_notifications.findFirst({
     where: {
       user_id: userId,
-      notification_type: 'mfi_low',
-      created_at: { gte: twelveHoursAgo },
+      notification_type: 'stale_unread',
+      created_at: { gte: new Date(Date.now() - STALE_UNREAD_THROTTLE_MS) },
     },
   });
   if (recent) return false;
@@ -89,18 +104,25 @@ export async function sendMfiBelowThresholdDm(
   if (!mmUserId) return false;
 
   const botId = await getBotUserId(baseUrl, token);
-
-  // Get or create DM channel
   const channel = await mmFetch(baseUrl, token, '/channels/direct', {
     method: 'POST',
     body: JSON.stringify([botId, mmUserId]),
   });
 
+  const appUrl = (process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000').replace(/\/$/, '');
+  const fmt = new Intl.DateTimeFormat('ja-JP', {
+    timeZone: 'Asia/Tokyo', month: 'numeric', day: 'numeric',
+  });
+  const lines = threads.slice(0, STALE_UNREAD_LIST_MAX).map(t =>
+    `- ${fmt.format(t.oldest_unread_at)}〜 [${mmText(t.subject || '(件名なし)')}](${appUrl}/threads/${encodeURIComponent(t.thread_id)})`
+  );
+  const rest = threads.length - lines.length;
+
   const message =
-    `📬 **メールボックスの健康度（MFI）が低下しています**\n\n` +
-    `現在のMFI: **${mfi.toFixed(1)}** / 100\n\n` +
-    `未読メールの放置が増えています。メールを確認してInboxを整理しましょう！\n` +
-    `ダッシュボードで詳細を確認: ${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}`;
+    `📬 **1週間以上放置された未読メールが ${threads.length} 件あります**\n\n` +
+    lines.join('\n') + '\n' +
+    (rest > 0 ? `…ほか ${rest} 件\n` : '') +
+    `\n未読一覧: ${appUrl}/threads?unread=1`;
 
   await mmFetch(baseUrl, token, '/posts', {
     method: 'POST',
@@ -110,7 +132,7 @@ export async function sendMfiBelowThresholdDm(
   await prisma.mattermost_notifications.create({
     data: {
       user_id: userId,
-      notification_type: 'mfi_low',
+      notification_type: 'stale_unread',
       target_mattermost_id: mmUserId,
       status: 'success',
     },
@@ -157,4 +179,55 @@ export async function sendBulkDeleteApprovalDm(
   });
 
   return true;
+}
+
+// Generic DM to one of our users (looked up by email, like the other senders).
+// Never throws: a Mattermost outage or an unknown user must not break the action that
+// triggered the notification. Returns whether a message was posted.
+export async function sendDirectMessage(
+  userId: string,
+  email: string,
+  message: string,
+  notificationType: string
+): Promise<boolean> {
+  // The same news goes to the notification list in the app, whether or not Mattermost is set up
+  await recordNotification({
+    userId, type: notificationType,
+    ...fromDirectMessage(message, (process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000').replace(/\/$/, '')),
+    priority: notificationType.startsWith('security_') ? 'high' : 'normal',
+  });
+
+  const { baseUrl, token } = await getConfig();
+  if (!baseUrl || !token) return false;
+
+  let mmUserId: string | null = null;
+  try {
+    mmUserId = await resolveMmUserId(userId, email, baseUrl, token);
+    if (!mmUserId) return false;
+
+    const botId = await getBotUserId(baseUrl, token);
+    const channel = await mmFetch(baseUrl, token, '/channels/direct', {
+      method: 'POST',
+      body: JSON.stringify([botId, mmUserId]),
+    });
+    await mmFetch(baseUrl, token, '/posts', {
+      method: 'POST',
+      body: JSON.stringify({ channel_id: channel.id, message }),
+    });
+    await prisma.mattermost_notifications.create({
+      data: { user_id: userId, notification_type: notificationType, target_mattermost_id: mmUserId, status: 'success' },
+    });
+    return true;
+  } catch (e: any) {
+    console.error(`[mattermost] ${notificationType} DM failed:`, e?.message || e);
+    if (mmUserId) {
+      await prisma.mattermost_notifications.create({
+        data: {
+          user_id: userId, notification_type: notificationType, target_mattermost_id: mmUserId,
+          status: 'failed', error_message: String(e?.message || e).slice(0, 500),
+        },
+      }).catch(() => {});
+    }
+    return false;
+  }
 }

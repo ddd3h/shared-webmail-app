@@ -8,7 +8,7 @@ const WINDOW = 60 * 1000; // 1 minute in MS
 
 // GET /api/cron/scheduled-send - dispatches scheduled emails whose scheduled_at has arrived.
 // The app's actual dispatch path is the in-process timer in instrumentation.node.ts
-// (same pattern as IMAP sync/MFI jobs); this route exists for external cron / Vercel
+// (same pattern as the IMAP sync job); this route exists for external cron / Vercel
 // deployments that don't run a persistent Node process.
 export async function GET(req: NextRequest) {
   const ip = getClientIp(req);

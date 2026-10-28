@@ -13,6 +13,9 @@ vi.mock('@/lib/db', () => ({
     push_subscriptions: { deleteMany: vi.fn() },
     thread_visibility: { deleteMany: vi.fn() },
     drafts: { deleteMany: vi.fn() },
+    draft_attachments: { findMany: vi.fn(async () => []) },
+    expense_receipts: { findMany: vi.fn(async () => []) },
+    payment_documents: { findMany: vi.fn(async () => []) },
     $transaction: vi.fn((operations) => Promise.all(operations)),
   }
 }));
@@ -21,6 +24,8 @@ vi.mock('@/lib/auth', () => ({
   getSession: vi.fn(),
   requireAuth: (s: any) => { if (!s) throw { status: 401 }; },
 }));
+
+vi.mock('@/lib/attachment-storage', () => ({ deleteStoredFiles: vi.fn() }));
 
 vi.mock('@/lib/audit', () => ({
   logAudit: vi.fn(),

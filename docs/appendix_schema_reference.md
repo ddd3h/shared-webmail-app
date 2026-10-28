@@ -49,6 +49,8 @@ enum AuthType      { password  oauth }
 | `thread_state_history` | `thread_state_history` | threads, users |
 | `thread_visibility` | `thread_visibility` | threads, users |
 | `thread_reads` | `thread_reads` | threads, users |
+| `known_devices`（追加列 `remember_until` `public_key` `key_id` `device_fp`） | `known_devices` | users（アプリのログイン維持。docs/24） |
+| `thread_embeddings` | `thread_embeddings` | threads（意味検索用のベクトル。docs/30） |
 | `message_sends` | `message_sends` | messages, threads, mailboxes, users |
 | `mattermost_links` | `mattermost_links` | threads, users |
 | `mattermost_notifications` | `mattermost_notifications` | threads, users |
