@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSession, requireAuth } from '@/lib/auth';
 import { prisma } from '@/lib/db';
+import { senderAddresses, whitelistUpserts } from '@/lib/spam-whitelist';
 
 export async function POST(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -21,13 +22,13 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
   });
   if (!canAccess) return NextResponse.json({ error: 'forbidden' }, { status: 403 });
 
-  // Also remove this thread's incoming senders from the blocklist, so a
-  // mistakenly-marked sender isn't silenced forever
+  // This thread's incoming senders leave the blocklist, so a mistakenly-marked sender isn't silenced forever,
+  // and go on the whitelist, so the next mail from them is not judged as spam again
   const incoming = await prisma.messages.findMany({
     where: { thread_id: id, direction: 'incoming' },
     select: { from_email: true }
   });
-  const addresses = [...new Set(incoming.map(m => m.from_email.toLowerCase()).filter(Boolean))];
+  const addresses = senderAddresses(incoming);
 
   await prisma.$transaction([
     prisma.threads.update({
@@ -36,8 +37,9 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
     }),
     prisma.spam_senders.deleteMany({
       where: { type: 'blocklist', address: { in: addresses } }
-    })
+    }),
+    ...whitelistUpserts(addresses, session!.userId)
   ]);
 
-  return NextResponse.json({ ok: true, unblocked: addresses });
+  return NextResponse.json({ ok: true, unblocked: addresses, whitelisted: addresses });
 }

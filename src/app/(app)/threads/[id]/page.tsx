@@ -467,7 +467,7 @@ function ThreadDetailPageInner({ params }: Props) {
 
   async function markUnspam() {
     const res = await fetch(`/api/threads/${id}/unspam`, { method: 'POST' });
-    if (res.ok) { refreshMail(); setData(prev => prev ? { ...prev, is_spam: false } : prev); flashMsg('success', '迷惑メールの設定を解除しました'); }
+    if (res.ok) { refreshMail(); setData(prev => prev ? { ...prev, is_spam: false } : prev); flashMsg('success', '迷惑メールの設定を解除しました。この送信者からのメールは、今後は迷惑メールになりません'); }
     else flashMsg('error', '解除できませんでした');
   }
 
