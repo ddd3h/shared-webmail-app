@@ -70,7 +70,8 @@ export type AppSettingKey =
   | 'ZENGIN_BRANCH_CODE'
   | 'ZENGIN_BRANCH_NAME'
   | 'ZENGIN_ACCOUNT_TYPE'
-  | 'ZENGIN_ACCOUNT_NUMBER';
+  | 'ZENGIN_ACCOUNT_NUMBER'
+  | 'AUTOFLOW_CONFIG';
 
 export const SECRET_SETTING_KEYS = new Set<AppSettingKey>([
   'VAPID_PRIVATE_KEY',

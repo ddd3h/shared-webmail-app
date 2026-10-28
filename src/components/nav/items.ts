@@ -49,6 +49,7 @@ export const WORK_ITEMS: NavItem[] = [
   item('/payments', '振込申請', 'bank', '取引先への支払いの申請'),
 ];
 export const TRANSFERS_ITEM = item('/transfers', '振込データ', 'download', '全銀ファイルの作成（経理）');
+export const AUTOFLOW_ITEM = item('/autoflow', 'オートフロー', 'clock', '報告書・経費・振込日の自動通知（経理）');
 
 // Personal items; they live in the account menu
 export const ACCOUNT_ITEMS: NavItem[] = [

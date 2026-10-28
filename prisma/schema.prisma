@@ -1384,3 +1384,27 @@ model year_end_declarations {
   @@unique([user_id, year])
   @@index([year, status])
 }
+
+// オートフロー: 期限に合わせて自動で送るDM。送る前にこの表に1行作って「送った」ことにする（同じ宛先・同じ段階を二度送らない）。
+model autoflow_notices {
+  id          String   @id @default(cuid())
+  rule        String   // 'report' | 'expense' | 'payment'
+  stage       String   // report: eve | closing | final / expense, payment: before | on
+  subject_key String   // 何についての通知か。例 'report:2026-10' 'expense:2026-10' 'payday:2026-11-25'
+  user_id     String   // 受け取る人
+  title       String   // 送った文面の1行目（履歴で見せる）
+  delivered   Boolean  @default(false) // Mattermost に届いたか（false でもアプリ内通知は残っている）
+  created_at  DateTime @default(now())
+
+  @@unique([rule, stage, subject_key, user_id])
+  @@index([created_at])
+}
+
+// オートフローを動かした日の記録。run_date（日本時間の日付）が unique なので、1日1回だけ動く。
+model autoflow_runs {
+  id          String    @id @default(cuid())
+  run_date    String    @unique // 'YYYY-MM-DD'
+  started_at  DateTime  @default(now())
+  finished_at DateTime?
+  summary     String?   // 実行結果の要約（JSON）
+}

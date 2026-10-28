@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import Icon from './Icon';
-import { ACCOUNT_ITEMS, ADMIN_ITEM, APPROVALS_ITEM, NOTIFICATIONS_ITEM, TODO_ITEM, ORG_GROUP_LABEL, ORG_ITEMS, TRANSFERS_ITEM, WORK_GROUP_LABEL, WORK_ITEMS, isActivePath, iconPath, type NavItem } from './items';
+import { ACCOUNT_ITEMS, ADMIN_ITEM, APPROVALS_ITEM, NOTIFICATIONS_ITEM, TODO_ITEM, ORG_GROUP_LABEL, ORG_ITEMS, TRANSFERS_ITEM, AUTOFLOW_ITEM, WORK_GROUP_LABEL, WORK_ITEMS, isActivePath, iconPath, type NavItem } from './items';
 import { logout, type NavUser } from './useNavUser';
 import CountBadge from './CountBadge';
 import { useNotificationCount } from '@/hooks/useNotificationCount';
@@ -76,7 +76,7 @@ export default function MobileNav({ user }: { user: NavUser }) {
   const unreadNotifications = useNotificationCount();
   const sheet = useSheet(pathname);
   const active = (href: string) => isActivePath(pathname, href);
-  const workItems = [...WORK_ITEMS, ...(user.canApprove ? [APPROVALS_ITEM] : []), ...(user.isFinance ? [TRANSFERS_ITEM] : [])];
+  const workItems = [...WORK_ITEMS, ...(user.canApprove ? [APPROVALS_ITEM] : []), ...(user.isFinance ? [TRANSFERS_ITEM, AUTOFLOW_ITEM] : [])];
   const otherItems = [TODO_ITEM, NOTIFICATIONS_ITEM, ...ACCOUNT_ITEMS, ...(user.isAdmin ? [ADMIN_ITEM] : [])];
 
   return (
