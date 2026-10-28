@@ -1,7 +1,7 @@
 import { test, expect } from './fixtures';
 import { AUTH, USERS } from './helpers/constants';
 import { db } from './helpers/db';
-import { buildOrg, type OrgIds } from './helpers/org';
+import { buildOrg, putMemberships, type OrgIds } from './helpers/org';
 import { makeClaim, makeTrip } from './helpers/factories';
 import { mm } from './helpers/mattermost-mock';
 import { clearNotifications, resetOrg } from './helpers/seed';
@@ -18,7 +18,7 @@ test.describe('組織の登録（システム管理者だけ）', () => {
       expect((await c.post('/api/org/units', { data: { name: 'x' } })).status(), r).toBe(403);
       expect((await c.post('/api/org/positions', { data: { name: 'x' } })).status(), r).toBe(403);
       expect((await c.post('/api/org/positions/defaults')).status(), r).toBe(403);
-      expect((await c.put(`/api/org/members/${USERS.tanaka.id}`, { data: { org_unit_id: null, position_id: null } })).status(), r).toBe(403);
+      expect((await c.put(`/api/org/members/${USERS.tanaka.id}`, { data: { memberships: [] } })).status(), r).toBe(403);
     }
   });
 
@@ -26,16 +26,16 @@ test.describe('組織の登録（システム管理者だけ）', () => {
     expect([307, 401]).toContain((await anon.get('/api/org', { maxRedirects: 0 })).status());
   });
 
-  test('部署を作り、親子にでき、名前・親・部署長を変えられる', async ({ as }) => {
+  test('部署を自由に作り、親子にでき、名前・親を変えられる', async ({ as }) => {
     const admin = await as('admin');
     const root = (await (await admin.post('/api/org/units', { data: { name: '本社' } })).json()).id;
-    const child = (await (await admin.post('/api/org/units', { data: { name: '営業部', parent_id: root, head_user_id: USERS.sato.id } })).json()).id;
-    expect(await db.org_units.findUnique({ where: { id: child } })).toMatchObject({ name: '営業部', parent_id: root, head_user_id: USERS.sato.id });
-    expect((await admin.put(`/api/org/units/${child}`, { data: { name: '第一営業部', parent_id: root, head_user_id: USERS.yamada.id } })).status()).toBe(200);
-    expect(await db.org_units.findUnique({ where: { id: child } })).toMatchObject({ name: '第一営業部', head_user_id: USERS.yamada.id });
+    const child = (await (await admin.post('/api/org/units', { data: { name: '営業部', parent_id: root } })).json()).id;
+    expect(await db.org_units.findUnique({ where: { id: child } })).toMatchObject({ name: '営業部', parent_id: root });
+    expect((await admin.put(`/api/org/units/${child}`, { data: { name: '第一営業部', parent_id: null } })).status()).toBe(200);
+    expect(await db.org_units.findUnique({ where: { id: child } })).toMatchObject({ name: '第一営業部', parent_id: null });
   });
 
-  const badUnits: [string, Record<string, unknown>][] = [['名前が空', { name: ' ' }], ['名前が長すぎる', { name: 'あ'.repeat(61) }], ['親が存在しない', { name: 'x', parent_id: 'nope' }], ['部署長が存在しない', { name: 'x', head_user_id: 'nope' }]];
+  const badUnits: [string, Record<string, unknown>][] = [['名前が空', { name: ' ' }], ['名前が長すぎる', { name: 'あ'.repeat(61) }], ['親が存在しない', { name: 'x', parent_id: 'nope' }]];
   for (const [label, body] of badUnits) {
     test(`不正な部署は作れない: ${label}`, async ({ as }) => {
       expect((await (await as('admin')).post('/api/org/units', { data: body })).status()).toBe(label.includes('存在しない') ? 400 : 400);
@@ -56,15 +56,16 @@ test.describe('組織の登録（システム管理者だけ）', () => {
     expect((await admin.put(`/api/org/units/${a}`, { data: { name: 'A', parent_id: a } })).status()).toBe(400);
   });
 
-  test('配下に部署がある部署は削除できない。空なら削除でき、所属していた人は未所属になる', async ({ as }) => {
+  test('配下に部署がある部署は削除できない。空なら削除でき、所属していた人はその部署から外れる（ほかの部署の所属は残る）', async ({ as }) => {
     const admin = await as('admin');
     const org = await buildOrg(as);
     const res = await admin.delete(`/api/org/units/${org.headquarters}`);
     expect(res.status()).toBe(409);
     expect((await res.json()).error).toBe('has_children');
+    await putMemberships(admin, USERS.tanaka.id, [{ unit_id: org.sales, position_id: null }, { unit_id: org.dev, position_id: null }]);
     const del = await admin.delete(`/api/org/units/${org.sales}`);
-    expect((await del.json()).unassigned).toBe(3);
-    expect((await db.users.findUnique({ where: { id: USERS.tanaka.id } }))!.org_unit_id).toBeNull();
+    expect((await del.json()).removed_members).toBe(3);
+    expect((await db.org_memberships.findMany({ where: { user_id: USERS.tanaka.id } })).map(m => m.unit_id)).toEqual([org.dev]);
     expect((await admin.delete('/api/org/units/none')).status()).toBe(404);
   });
 
@@ -92,16 +93,18 @@ test.describe('組織の登録（システム管理者だけ）', () => {
     expect((await db.org_positions.findUnique({ where: { id: org.positions['課長'] } }))!.permissions).toEqual(['evaluate']);
     expect((await admin.put(`/api/org/positions/${org.positions['課長']}`, { data: { name: '部長', permissions: [] } })).status()).toBe(409);
     expect((await (await admin.delete(`/api/org/positions/${org.positions['課長']}`)).json()).unassigned).toBe(1);
-    expect((await db.users.findUnique({ where: { id: USERS.sato.id } }))!.position_id).toBeNull();
+    expect((await db.org_memberships.findMany({ where: { user_id: USERS.sato.id } })).map(m => m.position_id)).toEqual([null]);   // still in the 部署, with no 役職
   });
 
   test('配置: 存在しない部署・役職は指定できない', async ({ as }) => {
     const admin = await as('admin');
     const put = (data: object) => admin.put(`/api/org/members/${USERS.tanaka.id}`, { data });
-    expect((await put({ org_unit_id: 'nope', position_id: null })).status()).toBe(400);
-    expect((await put({ org_unit_id: null, position_id: 'nope' })).status()).toBe(400);
+    const org = await buildOrg(as);
+    expect((await put({ memberships: [{ unit_id: 'nope', position_id: null }] })).status()).toBe(400);
+    expect((await put({ memberships: [{ unit_id: org.sales, position_id: 'nope' }] })).status()).toBe(400);
+    expect((await put({ memberships: [{ unit_id: org.sales, position_id: null }, { unit_id: org.sales, position_id: null }] })).status()).toBe(400);   // the same 部署 twice
     expect((await put({})).status()).toBe(400);
-    expect((await admin.put('/api/org/members/nobody', { data: { org_unit_id: null, position_id: null } })).status()).toBe(404);
+    expect((await admin.put('/api/org/members/nobody', { data: { memberships: [] } })).status()).toBe(404);
   });
 
   test('組織の変更はすべて監査ログに残る', async ({ as }) => {
@@ -120,13 +123,14 @@ test.describe('組織図の閲覧', () => {
     expect(JSON.stringify(await (await (await as('admin')).get('/api/org')).json())).toContain('sato@e2e.test');
   });
 
-  test('自分の権限と、担当している部署（配下を含む）が返る', async ({ as }) => {
+  test('自分の権限が返る。一覧には、各メンバーの所属（部署と、その部署での役職）が出る', async ({ as }) => {
     const org = await buildOrg(as);
     const me = (await (await (await as('sato')).get('/api/org')).json()).me;
     expect(me.capabilities).toEqual(['approve_requests', 'evaluate']);
-    expect(me.headed_unit_ids).toEqual([org.sales]);
-    expect((await (await (await as('tanaka')).get('/api/org')).json()).me).toMatchObject({ capabilities: [], headed_unit_ids: [] });
-    expect((await (await (await as('admin')).get('/api/org')).json()).me.headed_unit_ids.sort()).toEqual([org.dev, org.headquarters, org.sales].sort());
+    expect((await (await (await as('tanaka')).get('/api/org')).json()).me).toMatchObject({ capabilities: [] });
+    const members = (await (await (await as('tanaka')).get('/api/org')).json()).members as { id: string; memberships: { unit_id: string; position_id: string | null }[]; can_evaluate: boolean }[];
+    expect(members.find(m => m.id === USERS.sato.id)).toMatchObject({ memberships: [{ unit_id: org.sales, position_id: org.positions['課長'] }], can_evaluate: true });
+    expect(members.find(m => m.id === USERS.tanaka.id)!.can_evaluate).toBe(false);
   });
 });
 
@@ -134,14 +138,14 @@ test.describe('組織から決まる承認の権限', () => {
   const claim = (role: 'tanaka' | 'sato' | 'yamada') => makeClaim({ role, status: 'pending', title: `${role}の経費` });
   const review = async (c: any, who: any, id: string, action = 'approve') => (await c).post(`/api/expenses/${id}/review`, { data: { action, comment: 'x' } });
 
-  test('部署長（権限のある役職）は、自分の部署のメンバーの経費を承認できる', async ({ as }) => {
+  test('承認の権限のある役職（課長）は、その部署のメンバーの経費を承認できる', async ({ as }) => {
     await buildOrg(as);
     const c = await claim('tanaka');
     expect((await review(as('sato'), null, c.id)).status()).toBe(200);
     expect((await db.expense_claims.findUnique({ where: { id: c.id } }))).toMatchObject({ status: 'approved', reviewed_by_id: USERS.sato.id });
   });
 
-  test('他の部署の部署長は承認できない（権限があっても範囲が違う）', async ({ as }) => {
+  test('他の部署の部長は承認できない（権限があっても範囲が違う）', async ({ as }) => {
     await buildOrg(as);
     const c = await claim('tanaka');
     const res = await review(as('yamada'), null, c.id);
@@ -149,21 +153,32 @@ test.describe('組織から決まる承認の権限', () => {
     expect((await db.expense_claims.findUnique({ where: { id: c.id } }))!.status).toBe('pending');
   });
 
-  test('自分の申請は承認できない。上の部署の部署長（管理者）が承認する', async ({ as }) => {
+  test('自分の申請は承認できない。上の部署の部長（管理者）が承認する', async ({ as }) => {
     await buildOrg(as);
     const c = await claim('sato');
     expect((await review(as('sato'), null, c.id)).status()).toBe(403);
     expect((await review(as('admin'), null, c.id)).status()).toBe(200);
   });
 
-  test('部署長でない人は、権限のある役職でも承認できない', async ({ as }) => {
+  test('同じ部署でも、権限のない役職（メンバー）の人は承認できない。権限のある役職にすると承認できる', async ({ as }) => {
     const org = await buildOrg(as);
-    await (await as('admin')).put(`/api/org/members/${USERS.tanaka.id}`, { data: { org_unit_id: org.sales, position_id: org.positions['課長'] } });
-    const c = await claim('suzuki' as any);
+    const admin = await as('admin');
+    const c = await claim('sato');                              // 佐藤(課長)の申請を、同じ営業部の田中(メンバー)は承認できない
     expect((await review(as('tanaka'), null, c.id)).status()).toBe(403);
+    await putMemberships(admin, USERS.tanaka.id, [{ unit_id: org.sales, position_id: org.positions['部長'] }]);
+    expect((await review(as('tanaka'), null, c.id)).status()).toBe(200);
   });
 
-  test('部署長でも、役職に権限がなければ承認できない。役職の権限を外すとすぐ効く', async ({ as }) => {
+  test('部署ごとに別の役職: 営業部ではメンバー、開発部では課長（田中）なら、開発部の人の申請だけ承認できる', async ({ as }) => {
+    const org = await buildOrg(as);
+    await putMemberships(await as('admin'), USERS.tanaka.id, [{ unit_id: org.sales, position_id: org.positions['メンバー'] }, { unit_id: org.dev, position_id: org.positions['課長'] }]);
+    const inSales = await claim('sato');
+    const inDev = await claim('yamada');
+    expect((await review(as('tanaka'), null, inSales.id)).status()).toBe(403);   // 営業部では、ただのメンバー
+    expect((await review(as('tanaka'), null, inDev.id)).status()).toBe(200);     // 開発部では課長
+  });
+
+  test('課長でも、役職に権限がなければ承認できない。役職の権限を外すとすぐ効く', async ({ as }) => {
     const org = await buildOrg(as);
     const admin = await as('admin');
     const c = await claim('tanaka');
@@ -175,16 +190,16 @@ test.describe('組織から決まる承認の権限', () => {
 
   test('異動すると担当範囲が変わる: 開発部へ移ったメンバーは営業部の課長では承認できない', async ({ as }) => {
     const org = await buildOrg(as);
-    await (await as('admin')).put(`/api/org/members/${USERS.tanaka.id}`, { data: { org_unit_id: org.dev, position_id: org.positions['メンバー'] } });
+    await putMemberships(await as('admin'), USERS.tanaka.id, [{ unit_id: org.dev, position_id: org.positions['メンバー'] }]);
     const c = await claim('tanaka');
     expect((await review(as('sato'), null, c.id)).status()).toBe(403);
     expect((await review(as('yamada'), null, c.id)).status()).toBe(200);
   });
 
-  test('配下の部署のメンバーも承認の対象（本社の部署長は全部署）', async ({ as }) => {
+  test('配下の部署のメンバーも承認の対象（本社の部長は全部署）', async ({ as }) => {
     const org = await buildOrg(as);
     const admin = await as('admin');
-    await admin.put(`/api/org/units/${org.headquarters}`, { data: { name: '本社', parent_id: null, head_user_id: USERS.yamada.id } });
+    await putMemberships(admin, USERS.yamada.id, [{ unit_id: org.dev, position_id: org.positions['部長'] }, { unit_id: org.headquarters, position_id: org.positions['部長'] }]);
     const c = await claim('tanaka');
     expect((await review(as('yamada'), null, c.id)).status()).toBe(200); // 部長 of 本社 → 営業部 is below it
   });
@@ -236,7 +251,7 @@ test.describe('画面', () => {
       await page.goto('/org');
       await expect(page.getByRole('heading', { level: 1, name: '組織' })).toBeVisible();
       const sales = page.getByRole('region', { name: '営業部' });
-      await expect(sales).toContainText('部署長: 佐藤');
+      await expect(sales).toContainText('佐藤課長');
       await expect(sales).toContainText('田中');
       await expect(page.getByRole('button', { name: '役職と権限' })).toHaveCount(0);
       await page.goto('/threads');
@@ -298,12 +313,12 @@ test.describe('画面', () => {
 
       await page.getByRole('button', { name: 'メンバー配置' }).click();
       const saved = () => page.waitForResponse(r => r.url().includes(`/api/org/members/${USERS.tanaka.id}`) && r.request().method() === 'PUT');
-      await Promise.all([saved(), page.getByLabel('田中の部署').selectOption(unit!.id)]);
-      await expect(page.getByLabel('田中の部署')).toHaveValue(unit!.id); // the screen has reloaded the saved placement
-      await Promise.all([saved(), page.getByLabel('田中の役職').selectOption({ label: '主任' })]);
+      await Promise.all([saved(), page.getByLabel('田中の所属を追加').click()]);
+      await expect(page.getByLabel('田中の部署1', { exact: true })).toHaveValue(unit!.id);   // the only 部署 there is, so it is the one added
+      await Promise.all([saved(), page.getByLabel('田中の部署1での役職').selectOption({ label: '主任' })]);
       await expect(page.getByText('田中 さんを更新しました')).toBeVisible();
-      expect(await db.users.findUnique({ where: { id: USERS.tanaka.id } })).toMatchObject({ org_unit_id: unit!.id });
-      expect((await db.users.findUnique({ where: { id: USERS.tanaka.id }, include: { position: true } }))!.position!.name).toBe('主任');
+      const rows = await db.org_memberships.findMany({ where: { user_id: USERS.tanaka.id }, include: { position: true } });
+      expect(rows.map(r => [r.unit_id, r.position?.name])).toEqual([[unit!.id, '主任']]);
     });
 
     test('配下の部署は、親の候補に出ない（輪にならない）', async ({ page, as }) => {

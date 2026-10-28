@@ -9,7 +9,7 @@ type Target = { kind: 'expenses' | 'trips'; id: string; label: string };
 
 const REVIEW_ERRORS: Record<string, string> = { not_pending: 'すでに処理されています', forbidden: 'この申請を承認する権限がありません', self_approval: '自分の申請は他の人が承認してください', comment_required: '却下の理由を入力してください' };
 
-// 自分が部署長を務める部署のメンバー（管理者は全員）の、承認待ちの経費・出張
+// 自分の役職が承認の権限を持つ部署（と配下）のメンバー（管理者は全員）の、承認待ちの経費・出張
 export default function ApprovalsPage() {
   const [data, setData] = useState<Data | null>(null);
   const [reject, setReject] = useState<(Target & { comment: string }) | null>(null);
@@ -48,7 +48,7 @@ export default function ApprovalsPage() {
         <p className="hidden md:block text-xs text-gray-500 mt-0.5">担当している部署のメンバーの、承認待ちの経費・出張</p>
       </div>
       <Notice msg={msg} />
-      {!data.allowed && <p className="text-sm text-gray-500">承認できるメンバーがいません。部署長に設定され、役職に「部下の経費・出張を承認する」権限があると、ここに表示されます。</p>}
+      {!data.allowed && <p className="text-sm text-gray-500">承認できるメンバーがいません。部署に所属していて、その部署での役職に「部下の経費・出張を承認する」権限があると、ここに表示されます。</p>}
       {data.allowed && empty && <p className="text-sm text-gray-400">承認待ちの申請はありません</p>}
       {data.expenses.length > 0 && (
         <section className="space-y-2"><h2 className="text-sm font-semibold text-gray-700">経費（{data.expenses.length}件）</h2>

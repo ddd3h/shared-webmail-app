@@ -11,12 +11,12 @@ export type Cycle = {
 };
 export type Criterion = { id: string; name: string; description: string | null; weight: number };
 export type Row = {
-  id: string; cycle: { id: string; name: string; status: string }; user: { id: string; name: string }; evaluator: { id: string; name: string } | null;
+  id: string; cycle: { id: string; name: string; status: string }; user: { id: string; name: string }; unit?: { id: string; name: string } | null; evaluator: { id: string; name: string } | null;
   stage: Stage; grade: Grade | null; score: number | null;
 };
 export type Detail = {
   id: string; cycle: { id: string; name: string; status: string; period_start: string; period_end: string };
-  user: { id: string; name: string }; evaluator: { id: string; name: string } | null; stage: Stage;
+  user: { id: string; name: string }; unit?: { id: string; name: string } | null; evaluator: { id: string; name: string } | null; stage: Stage;
   self_submitted_at: string | null; manager_submitted_at: string | null; self_comment: string | null; manager_comment: string | null;
   criteria: (Criterion & { self_score: number | null; self_comment: string | null; manager_score: number | null; manager_comment: string | null })[];
   score: number | null; grade: Grade | null; final_comment: string | null; finalized_at: string | null;

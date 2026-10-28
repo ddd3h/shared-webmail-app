@@ -88,11 +88,13 @@ async function organisation() {
     pos[key] = existing?.id ?? `demo_pos_${key}`;
     if (!existing) await up('org_positions', pos[key], { name, level, permissions });
   }
-  await up('org_units', 'demo_unit_hq', { name: 'デモ株式会社', head_user_id: U.yamada, sort: 0 });
-  await up('org_units', 'demo_unit_sales', { name: '営業部', parent_id: 'demo_unit_hq', head_user_id: U.sato, sort: 1 });
-  await up('org_units', 'demo_unit_admin', { name: '管理部', parent_id: 'demo_unit_hq', head_user_id: U.keiri, sort: 2 });
+  await up('org_units', 'demo_unit_hq', { name: 'デモ株式会社', sort: 0 });
+  await up('org_units', 'demo_unit_sales', { name: '営業部', parent_id: 'demo_unit_hq', sort: 1 });
+  await up('org_units', 'demo_unit_admin', { name: '管理部', parent_id: 'demo_unit_hq', sort: 2 });
   const place = { [U.yamada]: ['demo_unit_hq', pos.head], [U.sato]: ['demo_unit_sales', pos.lead], [U.tanaka]: ['demo_unit_sales', pos.member], [U.suzuki]: ['demo_unit_sales', pos.member], [U.keiri]: ['demo_unit_admin', pos.lead], [U.admin]: ['demo_unit_admin', pos.head] };
-  for (const [id, [org_unit_id, position_id]] of Object.entries(place)) await prisma.users.update({ where: { id }, data: { org_unit_id, position_id } });
+  // 所属は「人 × 部署 × 役職」（複数の部署に、部署ごとの役職で入れられる）
+  await prisma.org_memberships.deleteMany({ where: { user_id: { in: Object.keys(place) } } });
+  await prisma.org_memberships.createMany({ data: Object.entries(place).map(([user_id, [unit_id, position_id]]) => ({ user_id, unit_id, position_id })) });
 }
 
 async function mail() {

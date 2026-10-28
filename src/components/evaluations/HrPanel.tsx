@@ -36,7 +36,7 @@ export default function HrPanel() {
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-3">
-        <p className="flex-1 text-xs text-gray-500">評価期間を作り、開始すると全員分の評価票ができます。評価者は部署長から自動で決まります（個別に変更もできます）。</p>
+        <p className="flex-1 text-xs text-gray-500">評価期間を作り、開始すると全員分の評価票ができます。複数の部署に所属する人には、部署ごとに1枚ずつできます。評価者は、その部署で一つ上の役職の人（評価の権限があるとき）から自動で決まります（個別に変更もできます）。</p>
         <button className={btnPrimary} onClick={() => setEditing(blankCycle())}>＋ 評価期間を作成</button>
       </div>
       <Notice msg={msg} />

@@ -1,11 +1,13 @@
 import type { Capability } from '@/lib/org';
 
-export type OrgUnit = { id: string; name: string; parent_id: string | null; head_user_id: string | null; sort: number };
+export type OrgUnit = { id: string; name: string; parent_id: string | null; sort: number };
 export type OrgPosition = { id: string; name: string; level: number; permissions: Capability[] };
-export type OrgMember = { id: string; name: string; org_unit_id: string | null; extra_unit_ids: string[]; position_id: string | null; can_evaluate: boolean; role?: string; email?: string };
+/** One 所属: a 部署 and the 役職 there. A person has any number of them. */
+export type OrgMembership = { unit_id: string; position_id: string | null };
+export type OrgMember = { id: string; name: string; memberships: OrgMembership[]; can_evaluate: boolean; role?: string; email?: string };
 export type OrgData = {
   units: OrgUnit[]; positions: OrgPosition[]; members: OrgMember[];
-  me: { id: string; is_admin: boolean; capabilities: Capability[]; headed_unit_ids: string[]; can_year_end?: boolean };
+  me: { id: string; is_admin: boolean; capabilities: Capability[]; can_year_end?: boolean };
 };
 
 /** Units as a tree, in display order: [{ unit, depth }] depth-first. */

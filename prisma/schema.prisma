@@ -119,13 +119,8 @@ model users {
   withholding_class      String   @default("ko") // 源泉徴収（所得税）の税額表: 'ko' = 甲欄 (主たる給与), 'otsu' = 乙欄 (従たる給与)
   bank_account               user_bank_accounts?      @relation("bank_owner")
   year_end_declarations      year_end_declarations[]  @relation("year_end_owner")
-  extra_units                org_unit_extra_members[]
+  org_memberships            org_memberships[]
   year_end_confirmed         year_end_declarations[]  @relation("year_end_confirmer")
-  org_unit_id                String?
-  position_id                String?
-  org_unit                   org_units?               @relation("unit_members", fields: [org_unit_id], references: [id], onDelete: SetNull)
-  position                   org_positions?           @relation(fields: [position_id], references: [id], onDelete: SetNull)
-  headed_units               org_units[]              @relation("unit_head")
   evaluations_received       evaluations[]            @relation("eval_subject")
   evaluations_to_do          evaluations[]            @relation("eval_evaluator")
   bank_accounts_verified     user_bank_accounts[]     @relation("bank_verifier")
@@ -1175,21 +1170,19 @@ model transfer_batches {
 
 
 // ---- 組織 ----
-// 部署・チーム。親子でツリーになる。head_user_id が部署長（部下の承認・評価の担当）。
+// 部署・チーム。親子でツリーになる。所属する人と役職は org_memberships（役職の権限は、その部署と配下の部署に効く）。
 model org_units {
   id           String   @id @default(cuid())
   name         String
   parent_id    String?
-  head_user_id String?
   sort         Int      @default(0)
   created_at   DateTime @default(now())
   updated_at   DateTime @updatedAt
 
   parent   org_units?  @relation("unit_tree", fields: [parent_id], references: [id], onDelete: SetNull)
   children org_units[] @relation("unit_tree")
-  head     users?      @relation("unit_head", fields: [head_user_id], references: [id], onDelete: SetNull)
-  members  users[]     @relation("unit_members")
-  extra_members org_unit_extra_members[]
+  members     org_memberships[]
+  evaluations evaluations[]
 
   @@index([parent_id])
 }
@@ -1203,7 +1196,7 @@ model org_positions {
   created_at  DateTime @default(now())
   updated_at  DateTime @updatedAt
 
-  members users[]
+  members org_memberships[]
 }
 
 // ---- 人事評価 ----
@@ -1238,12 +1231,13 @@ model eval_criteria {
   @@index([cycle_id])
 }
 
-// 1人1期間につき1つ。自己評価 → 上長評価 → 人事が確定（確定すると本人に公開）。
+// 1人・1期間・1部署につき1つ（部署が複数なら、評価票も部署ごと）。自己評価 → 上長評価 → 人事が確定（確定すると本人に公開）。
 model evaluations {
   id                   String    @id @default(cuid())
   cycle_id             String
   user_id              String
   evaluator_id         String?
+  unit_id              String? // the 部署 this form is for (one form per 部署 of the person, each with its own evaluator); null = no 部署
   self_comment         String?
   self_submitted_at    DateTime?
   manager_comment      String?
@@ -1259,9 +1253,10 @@ model evaluations {
   cycle     eval_cycles   @relation(fields: [cycle_id], references: [id], onDelete: Cascade)
   user      users         @relation("eval_subject", fields: [user_id], references: [id], onDelete: Cascade)
   evaluator users?        @relation("eval_evaluator", fields: [evaluator_id], references: [id], onDelete: SetNull)
+  unit      org_units?    @relation(fields: [unit_id], references: [id], onDelete: SetNull)
   scores    eval_scores[]
 
-  @@unique([cycle_id, user_id])
+  @@unique([cycle_id, user_id, unit_id])
   @@index([evaluator_id])
 }
 
@@ -1387,16 +1382,19 @@ model year_end_declarations {
   @@index([year, status])
 }
 
-// 兼務: the other 部署 a person belongs to besides their main one (users.org_unit_id = 主所属). A unit head may approve for, and sees,
-// the people of the units they head whether it is the main or an additional one. The evaluator is found from the main 部署 only.
-model org_unit_extra_members {
-  user_id    String
-  unit_id    String
-  created_at DateTime @default(now())
+// Who belongs to which 部署, with which 役職 there (a person may be in several 部署, with a different 役職 in each: 班長 here, 部長 there).
+// The 役職's permissions (承認・評価) apply inside that 部署 and the 部署 below it. position_id null = a member without a 役職.
+model org_memberships {
+  user_id     String
+  unit_id     String
+  position_id String?
+  created_at  DateTime @default(now())
 
-  user users     @relation(fields: [user_id], references: [id], onDelete: Cascade)
-  unit org_units @relation(fields: [unit_id], references: [id], onDelete: Cascade)
+  user     users           @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  unit     org_units       @relation(fields: [unit_id], references: [id], onDelete: Cascade)
+  position org_positions?  @relation(fields: [position_id], references: [id], onDelete: SetNull)
 
   @@id([user_id, unit_id])
   @@index([unit_id])
+  @@index([position_id])
 }

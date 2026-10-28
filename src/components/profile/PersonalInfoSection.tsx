@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react';
 import FoldCard from '@/components/mobile/FoldCard';
 
-type Info = { name: string; email: string; is_admin: boolean; worker_type: string; withholding?: string | null; unit: string | null; extra_units?: string[]; position: string | null; mattermost_linked: boolean };
+type Info = { name: string; email: string; is_admin: boolean; worker_type: string; withholding?: string | null; affiliations?: { unit: string; position: string | null }[]; mattermost_linked: boolean };
 
 // Who the company has on file: name, e-mail, kind of work, unit and position, Mattermost link. Read only here; an administrator changes them.
 export default function PersonalInfoSection() {
@@ -11,7 +11,7 @@ export default function PersonalInfoSection() {
 
   const rows: [string, string][] = info ? [
     ['名前', info.name], ['メールアドレス', info.email], ['区分', info.worker_type], ...(info.withholding ? [['源泉徴収（所得税）', info.withholding] as [string, string]] : []),
-    ['所属', info.unit ? [info.unit, ...(info.extra_units ?? []).map(n => `${n}（兼務）`)].join('、') : '未設定'], ['役職', info.position ?? '未設定'],
+    ['所属・役職', (info.affiliations ?? []).length ? (info.affiliations ?? []).map(a => (a.position ? `${a.unit}（${a.position}）` : a.unit)).join('、') : '未設定'],
     ['システムの権限', info.is_admin ? '管理者' : '一般'], ['Mattermost連携', info.mattermost_linked ? '連携済み（通知のDMが届きます）' : '未連携'],
   ] : [];
   return (

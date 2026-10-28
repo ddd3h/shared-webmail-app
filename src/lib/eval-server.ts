@@ -19,6 +19,7 @@ export const evaluationInclude = {
   cycle: { include: { criteria: { orderBy: { sort: 'asc' as const } } } },
   user: { select: { id: true, name: true } },
   evaluator: { select: { id: true, name: true } },
+  unit: { select: { id: true, name: true } },
   scores: true,
 };
 type Full = NonNullable<Awaited<ReturnType<typeof loadEvaluation>>>;
@@ -51,6 +52,7 @@ export function serializeEvaluation(ev: Full, v: Viewer) {
     id: ev.id,
     cycle: { id: ev.cycle.id, name: ev.cycle.name, status: ev.cycle.status, period_start: ev.cycle.period_start.toISOString().slice(0, 10), period_end: ev.cycle.period_end.toISOString().slice(0, 10) },
     user: ev.user,
+    unit: ev.unit,
     evaluator: ev.evaluator,
     stage: stageOf(ev),
     self_submitted_at: showSelf ? ev.self_submitted_at : null,
@@ -102,16 +104,26 @@ export async function saveSide(ev: Full, side: Side, inputs: ScoreInput[], comme
 }
 
 // ---- opening a cycle ----
-/** One form per person; the evaluator is the head of their unit (or higher up) who may evaluate. Returns counts. */
+/** One form per person and per 部署 they belong to (a person in two 部署 gets two forms, each with the evaluator of that 部署). A person in no
+ *  部署 gets one form without an evaluator (HR chooses). Returns counts. */
 export async function openCycle(cycleId: string): Promise<{ created: number; withoutEvaluator: number }> {
-  const [{ units, capsOf }, users, existing] = await Promise.all([
+  const [{ units, memberships, capsOf }, users, existing] = await Promise.all([
     loadOrg(),
-    prisma.users.findMany({ select: { id: true, org_unit_id: true } }),
-    prisma.evaluations.findMany({ where: { cycle_id: cycleId }, select: { user_id: true } }),
+    prisma.users.findMany({ select: { id: true } }),
+    prisma.evaluations.findMany({ where: { cycle_id: cycleId }, select: { user_id: true, unit_id: true } }),
   ]);
-  const done = new Set(existing.map(e => e.user_id));
+  const key = (userId: string, unitId: string | null) => `${userId}|${unitId ?? ''}`;
+  const done = new Set(existing.map(e => key(e.user_id, e.unit_id)));
   const eligible = (id: string) => capsOf(id).includes('evaluate');
-  const rows = users.filter(u => !done.has(u.id)).map(u => ({ cycle_id: cycleId, user_id: u.id, evaluator_id: evaluatorFor(units, { id: u.id, unit_id: u.org_unit_id }, eligible) }));
+  const rows: { cycle_id: string; user_id: string; unit_id: string | null; evaluator_id: string | null }[] = [];
+  for (const u of users) {
+    const mine = memberships.filter(m => m.user_id === u.id);
+    const forms = mine.length ? mine.map(m => ({ unit_id: m.unit_id as string | null, level: m.level })) : [{ unit_id: null, level: 0 }];
+    for (const f of forms) {
+      if (done.has(key(u.id, f.unit_id))) continue;
+      rows.push({ cycle_id: cycleId, user_id: u.id, unit_id: f.unit_id, evaluator_id: evaluatorFor(units, memberships, { id: u.id, unit_id: f.unit_id, level: f.level }, eligible) });
+    }
+  }
   await prisma.evaluations.createMany({ data: rows });
   return { created: rows.length, withoutEvaluator: rows.filter(r => !r.evaluator_id).length };
 }

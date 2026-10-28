@@ -11,7 +11,7 @@ const fail = (error: string, status: number, message?: string) => NextResponse.j
 /** Nobody finalizes their own evaluation, as long as somebody else could. */
 async function mayFinalize(actorId: string, subjectId: string): Promise<boolean> {
   if (actorId !== subjectId) return true;
-  const others = await prisma.users.count({ where: { id: { not: actorId }, OR: [{ role: 'admin' }, { position: { permissions: { has: 'hr_admin' } } }] } });
+  const others = await prisma.users.count({ where: { id: { not: actorId }, OR: [{ role: 'admin' }, { is_hr: true }, { org_memberships: { some: { position: { permissions: { has: 'hr_admin' } } } } }] } });
   return others === 0;
 }
 

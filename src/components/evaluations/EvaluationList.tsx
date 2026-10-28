@@ -25,7 +25,7 @@ export default function EvaluationList({ scope, cycleId, refreshKey = 0, onChang
           <li key={r.id}>
             <button onClick={() => setOpenId(r.id)} className="flex w-full flex-wrap items-center gap-x-3 gap-y-1 rounded-xl border border-gray-200 bg-white p-3 text-left hover:bg-gray-50">
               <div className="min-w-40 flex-1">
-                <div className="text-sm font-medium text-gray-900">{scope === 'mine' ? r.cycle.name : r.user.name}</div>
+                <div className="text-sm font-medium text-gray-900">{scope === 'mine' ? r.cycle.name : r.user.name}{r.unit && <span className="ml-2 rounded-sm bg-gray-100 px-1.5 py-0.5 text-[11px] font-normal text-gray-600">{r.unit.name}</span>}</div>
                 <div className="text-xs text-gray-500">{scope === 'mine' ? `評価者: ${r.evaluator?.name ?? '未設定'}` : `${r.cycle.name} ・ 評価者: ${r.evaluator?.name ?? '未設定'}`}</div>
               </div>
               {r.grade && <span className="text-lg font-bold text-gray-900" aria-label={`等級 ${r.grade}`}>{r.grade}</span>}

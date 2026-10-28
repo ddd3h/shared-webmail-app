@@ -226,7 +226,7 @@ export function notifyBankAccountVerified(userId: string) {
 
 // ---- 人事評価 (scores and grades are never put in a DM) ----
 async function hrPeopleExcept(userId: string) {
-  return prisma.users.findMany({ where: { id: { not: userId }, OR: [{ role: 'admin' }, { position: { permissions: { has: 'hr_admin' } } }] }, select: { id: true, email: true } });
+  return prisma.users.findMany({ where: { id: { not: userId }, OR: [{ role: 'admin' }, { is_hr: true }, { org_memberships: { some: { position: { permissions: { has: 'hr_admin' } } } } }] }, select: { id: true, email: true } });
 }
 
 export function notifyEvaluationOpened(cycleId: string) {

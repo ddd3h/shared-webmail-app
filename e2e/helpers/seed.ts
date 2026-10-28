@@ -108,8 +108,7 @@ export async function clearNotifications() {
 // 組織と人事評価: periods/forms, 部署, 役職, and everybody's placement
 export async function resetOrg() {
   await db.eval_cycles.deleteMany({}); // forms and scores go with them
-  await db.org_unit_extra_members.deleteMany({});
-  await db.users.updateMany({ data: { org_unit_id: null, position_id: null } });
+  await db.org_memberships.deleteMany({});
   await db.org_units.deleteMany({});
   await db.org_positions.deleteMany({});
   await db.expense_claims.deleteMany({});

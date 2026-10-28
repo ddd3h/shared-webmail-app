@@ -7,7 +7,6 @@ import { loadUnits } from '@/lib/org-server';
 export const unitSchema = z.object({
   name: z.string().trim().min(1).max(60),
   parent_id: z.string().min(1).nullable().default(null),
-  head_user_id: z.string().min(1).nullable().default(null),
   sort: z.number().int().min(0).max(9999).default(0),
 });
 export type UnitInput = z.infer<typeof unitSchema>;
@@ -18,7 +17,6 @@ export async function unitProblem(unitId: string | null, d: UnitInput): Promise<
     if (!(await prisma.org_units.findUnique({ where: { id: d.parent_id }, select: { id: true } }))) return 'parent_not_found';
     if (unitId && wouldCreateCycle(await loadUnits(), unitId, d.parent_id)) return 'parent_loop';
   }
-  if (d.head_user_id && !(await prisma.users.findUnique({ where: { id: d.head_user_id }, select: { id: true } }))) return 'head_not_found';
   return null;
 }
 
@@ -28,10 +26,8 @@ export const positionSchema = z.object({
   permissions: z.array(z.enum(CAPABILITY_KEYS as [string, ...string[]])).max(CAPABILITY_KEYS.length).default([]),
 });
 
-export const MAX_EXTRA_UNITS = 10;
-// org_unit_id = the main 部署 (主所属); extra_unit_ids = 兼務 (kept as they are when not sent; cleared when there is no main 部署)
+export const MAX_MEMBERSHIPS = 20;
+// Where a person belongs: every 部署 with their 役職 there (a different one in each). This list replaces what they had.
 export const memberSchema = z.object({
-  org_unit_id: z.string().min(1).nullable(),
-  position_id: z.string().min(1).nullable(),
-  extra_unit_ids: z.array(z.string().min(1)).max(MAX_EXTRA_UNITS).optional(),
+  memberships: z.array(z.object({ unit_id: z.string().min(1), position_id: z.string().min(1).nullable() })).max(MAX_MEMBERSHIPS),
 });
