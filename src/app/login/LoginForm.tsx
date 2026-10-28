@@ -84,7 +84,7 @@ export default function LoginForm() {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        setError(data.error === 'unauthorized' ? 'メールアドレスまたはパスワードが正しくありません' : data.error === 'too_many_requests' ? '試行回数が多すぎます。しばらくしてからお試しください' : 'ログインに失敗しました');
+        setError(data.error === 'unauthorized' ? 'メールアドレスまたはパスワードが正しくありません' : data.error === 'passkey_required' ? (data.message ?? 'パスキーでログインしてください') : data.error === 'too_many_requests' ? '試行回数が多すぎます。しばらくしてからお試しください' : 'ログインに失敗しました');
         return;
       }
       if (res.ok && !data.mfa_required && !data.mfa_setup_required) await noteResult(res); // only when a session was made

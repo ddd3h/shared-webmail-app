@@ -4,6 +4,7 @@ import { getSession, requireAuth } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { storeChallenge } from '@/lib/passkey-challenge';
 import { getRpConfig } from '@/lib/passkey-rp';
+import { canRegisterPasskey } from '@/lib/passkey-policy';
 
 export async function GET(req: NextRequest) {
   const session = await getSession();
@@ -15,6 +16,9 @@ export async function GET(req: NextRequest) {
     where: { user_id: session.userId },
     select: { credential_id: true, transports: true }
   });
+  if (!canRegisterPasskey(existing.length)) {
+    return NextResponse.json({ error: 'passkey_limit', message: 'パスキーは1人1つまでです。今のパスキーを削除してから登録してください' }, { status: 409 });
+  }
 
   const user = await prisma.users.findUnique({
     where: { id: session.userId },

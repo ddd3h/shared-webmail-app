@@ -4,6 +4,7 @@ import TwoFactorSection from '@/components/security/TwoFactorSection';
 import { useEffect, useState, useCallback } from 'react';
 import { startRegistration } from '@simplewebauthn/browser';
 import FoldCard from '@/components/mobile/FoldCard';
+import { canRegisterPasskey, needsPasskeyCleanup } from '@/lib/passkey-policy';
 import PersonalInfoSection from '@/components/profile/PersonalInfoSection';
 import BankAccountSection from '@/components/profile/BankAccountSection';
 import HomeAddressSection from '@/components/profile/HomeAddressSection';
@@ -198,7 +199,7 @@ function PasskeySection() {
         await fetchPasskeys();
       } else {
         const d = await verRes.json().catch(() => ({}));
-        throw new Error(d.error || '登録に失敗しました');
+        throw new Error(d.message || d.error || '登録に失敗しました');
       }
     } catch (e: any) {
       setMsg({ type: 'error', text: e?.message || 'エラーが発生しました' });
@@ -208,6 +209,7 @@ function PasskeySection() {
   }
 
   async function removePasskey(id: string) {
+    if (passkeys.length === 1 && !confirm('このパスキーを削除すると、パスワードでのログインに戻ります。よろしいですか？')) return;
     const res = await fetch(`/api/passkeys/${id}`, { method: 'DELETE' });
     if (res.ok) {
       setPasskeys(prev => prev.filter(p => p.id !== id));
@@ -228,9 +230,9 @@ function PasskeySection() {
     <FoldCard title="パスキー" className="card p-5" bodyClass="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <p className="text-xs text-gray-500 mt-0.5">パスワード不要の生体認証・デバイス認証でログインできます</p>
+          <p className="text-xs text-gray-500 mt-0.5">パスワード不要の生体認証・デバイス認証でログインできます。登録すると、パスワードではログインできなくなります（パスキーは1人1つまで）</p>
         </div>
-        {!showNameInput && (
+        {!showNameInput && canRegisterPasskey(passkeys.length) && (
           <button onClick={() => setShowNameInput(true)} className="btn btn-secondary btn-sm gap-1">
             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -239,6 +241,12 @@ function PasskeySection() {
           </button>
         )}
       </div>
+
+      {needsPasskeyCleanup(passkeys.length) && (
+        <div className="rounded-lg bg-amber-50 border border-amber-200 px-4 py-3 text-sm text-amber-900" role="alert">
+          パスキーは1人1つまでになりました。いま{passkeys.length}つ登録されています。普段使うもの1つを残して、ほかは削除してください。
+        </div>
+      )}
 
       {msg && (
         <div className={`rounded-lg px-4 py-3 text-sm ${msg.type === 'success' ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' : 'bg-red-50 text-red-800 border border-red-200'}`}>

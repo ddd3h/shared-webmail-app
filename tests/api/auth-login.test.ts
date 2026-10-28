@@ -5,6 +5,7 @@ vi.mock('@/lib/db', () => ({
   prisma: {
     users: { findFirst: vi.fn(), update: vi.fn().mockResolvedValue({}) },
     login_logs: { count: vi.fn().mockResolvedValue(0), create: vi.fn() },
+    passkey_credentials: { count: vi.fn().mockResolvedValue(0) },
   },
 }));
 vi.mock('@/lib/password', () => ({ verifyPassword: vi.fn(), hashPassword: vi.fn(async () => 'dummy-hash') }));
@@ -28,6 +29,7 @@ import { isKnownDeviceFor } from '@/lib/known-device';
 import { blockIp, isIpBlocked } from '@/lib/ip-block';
 import { loadSecurityPolicy } from '@/lib/security-settings';
 import { notifyLoginLockout } from '@/lib/work-notify';
+import { recordSecurityEvent } from '@/lib/security-events';
 
 const db = prisma as any;
 let n = 0;
@@ -41,6 +43,7 @@ const user = (email: string, o: object = {}) => ({ id: 'u1', email, password_has
 beforeEach(() => {
   vi.clearAllMocks();
   db.login_logs.count.mockResolvedValue(0);
+  db.passkey_credentials.count.mockResolvedValue(0);
   (isIpBlocked as any).mockResolvedValue(false);
   (isKnownDeviceFor as any).mockResolvedValue(false);
   (countryAllowed as any).mockResolvedValue(true);
@@ -64,6 +67,41 @@ describe('ログイン: 成功', () => {
     (verifyPassword as any).mockResolvedValue(true);
     await POST(req({ email: `  ${email.toUpperCase()} `, password: 'pw' }, ip));
     expect(db.users.findFirst).toHaveBeenCalledWith({ where: { email: { equals: email, mode: 'insensitive' } } });
+  });
+});
+
+describe('ログイン: パスキーを登録した人', () => {
+  it('パスワードが合っていても、パスキーがあれば403（passkey_required）。ログインは完了しない', async () => {
+    const { ip, email } = fresh();
+    db.users.findFirst.mockResolvedValue(user(email));
+    db.passkey_credentials.count.mockResolvedValue(1);
+    (verifyPassword as any).mockResolvedValue(true);
+    const res = await POST(req({ email, password: 'correct-password' }, ip));
+    expect(res.status).toBe(403);
+    expect(await res.json()).toMatchObject({ error: 'passkey_required' });
+    expect(db.passkey_credentials.count).toHaveBeenCalledWith({ where: { user_id: 'u1' } });
+    expect(finishLogin).not.toHaveBeenCalled();
+    expect(recordSecurityEvent).toHaveBeenCalledWith(expect.objectContaining({ type: 'password_login_refused', userId: 'u1' }));
+  });
+
+  it('パスキーが2つ以上でも同じ（パスワードでは入れない）', async () => {
+    const { ip, email } = fresh();
+    db.users.findFirst.mockResolvedValue(user(email));
+    db.passkey_credentials.count.mockResolvedValue(2);
+    (verifyPassword as any).mockResolvedValue(true);
+    expect((await POST(req({ email, password: 'pw' }, ip))).status).toBe(403);
+    expect(finishLogin).not.toHaveBeenCalled();
+  });
+
+  it('パスワードが違うときは、パスキーの有無を教えず、いつもの401', async () => {
+    const { ip, email } = fresh();
+    db.users.findFirst.mockResolvedValue(user(email));
+    db.passkey_credentials.count.mockResolvedValue(1);
+    (verifyPassword as any).mockResolvedValue(false);
+    const res = await POST(req({ email, password: 'wrong' }, ip));
+    expect(res.status).toBe(401);
+    expect(await res.json()).toEqual({ error: 'unauthorized' });
+    expect(db.passkey_credentials.count).not.toHaveBeenCalled();
   });
 });
 
