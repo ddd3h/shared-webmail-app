@@ -9,6 +9,7 @@ import { continueAfterPassword } from '@/lib/login-second-step';
 import { gateLogin, normalizeEmail, type Verdict } from '@/lib/login-guard';
 import { logLoginAttempt } from '@/lib/login-log';
 import { hashPassword, verifyPassword } from '@/lib/password';
+import { passwordLoginAllowed } from '@/lib/passkey-policy';
 import { getClientIp, resetRateLimit } from '@/lib/rate-limit';
 import { recordSecurityEvent } from '@/lib/security-events';
 import { notifyLoginLockout } from '@/lib/work-notify';
@@ -74,6 +75,11 @@ export async function POST(req: NextRequest) {
   const ipInfo = await raceTimeout(lookup, 500);
 
   if (!user || !passwordOk) return failLogin(attempt, user, !user ? 'user_not_found' : 'wrong_password', ipInfo);
+  // Somebody with a passkey logs in with it; the right password is not enough (an administrator's reset removes the passkey)
+  if (!passwordLoginAllowed(await prisma.passkey_credentials.count({ where: { user_id: user.id } }))) {
+    await recordSecurityEvent({ type: 'password_login_refused', severity: 'info', ip: attempt.ip, userId: user.id, email, detail: { reason: 'has_passkey' } });
+    return NextResponse.json({ error: 'passkey_required', message: 'パスキーを登録しているため、パスワードではログインできません。パスキーでログインしてください' }, { status: 403 });
+  }
   if (user.locked_at) return failLogin(attempt, user, 'account_locked', ipInfo);
   if (!(await countryAllowed(ipInfo))) {
     await recordSecurityEvent({ type: 'login_country_blocked', severity: 'warn', ip: attempt.ip, userId: user.id, email, detail: { country: ipInfo?.country } });

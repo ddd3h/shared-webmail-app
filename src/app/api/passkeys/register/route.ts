@@ -4,12 +4,17 @@ import { getSession, requireAuth, freshLoginRequired } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { consumeChallenge } from '@/lib/passkey-challenge';
 import { getRpConfig } from '@/lib/passkey-rp';
+import { canRegisterPasskey } from '@/lib/passkey-policy';
 
 export async function POST(req: NextRequest) {
   const session = await getSession();
   requireAuth(session);
   const stale = freshLoginRequired(session);
   if (stale) return stale;
+
+  if (!canRegisterPasskey(await prisma.passkey_credentials.count({ where: { user_id: session.userId } }))) {
+    return NextResponse.json({ error: 'passkey_limit', message: 'パスキーは1人1つまでです。今のパスキーを削除してから登録してください' }, { status: 409 });
+  }
 
   const body = await req.json();
   const { name, ...registrationResponse } = body;
