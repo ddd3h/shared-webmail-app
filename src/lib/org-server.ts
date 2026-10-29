@@ -84,6 +84,7 @@ export async function canReviewRequest(actor: OrgUser, request: { user_id: strin
   if (!request.unit_id) return canReviewUser(actor, request.user_id);
   if (actor.role === 'admin') return true;
   if (actor.id === request.user_id) return false;
+  if (await isExecutive(request.user_id)) return isExecutive(actor.id); // a 役員's request is decided by another 役員, whatever the 部署
   return (await unitsInScope(actor, 'approve_requests')).has(request.unit_id);
 }
 
@@ -92,6 +93,7 @@ export async function canReviewRequest(actor: OrgUser, request: { user_id: strin
 export async function canReviewUser(actor: OrgUser, targetUserId: string): Promise<boolean> {
   if (actor.role === 'admin') return true;
   if (actor.id === targetUserId) return false;
+  if (await isExecutive(targetUserId)) return isExecutive(actor.id);
   const [units, mine, theirs] = await Promise.all([
     loadUnits(),
     prisma.org_memberships.findMany({ where: { user_id: actor.id }, select: MEMBERSHIP_SELECT }),
@@ -101,9 +103,16 @@ export async function canReviewUser(actor: OrgUser, targetUserId: string): Promi
   return theirs.some(t => scope.has(t.unit_id));
 }
 
+/** 役員: their requests are approved by other 役員 (and admins), never by the head of a 部署. */
+export async function isExecutive(userId: string): Promise<boolean> {
+  return (await prisma.users.count({ where: { id: userId, worker_type: 'executive' } })) > 0;
+}
+export const executiveIds = async (): Promise<string[]> => (await prisma.users.findMany({ where: { worker_type: 'executive' }, select: { id: true } })).map(u => u.id);
+
 /** Everybody who can approve the requests of `userId` besides admins: people holding the permission in the 部署 the request is for (or, when not
- *  given, in any 部署 of the person), or above it. */
+ *  given, in any 部署 of the person), or above it. For a 役員 it is the other 役員 instead. */
 export async function approversOf(userId: string, unitId: string | null = null): Promise<{ id: string; email: string }[]> {
+  if (await isExecutive(userId)) return prisma.users.findMany({ where: { worker_type: 'executive', id: { not: userId } }, select: { id: true, email: true } });
   const [{ units, memberships }, mine] = await Promise.all([loadOrg(), unitId ? Promise.resolve([{ unit_id: unitId }]) : prisma.org_memberships.findMany({ where: { user_id: userId }, select: { unit_id: true } })]);
   const ids = new Set<string>();
   for (const { unit_id } of mine) for (const id of holdersOver(units, memberships, unit_id, 'approve_requests')) if (id !== userId) ids.add(id);
@@ -116,5 +125,5 @@ export { withDescendants };
 export async function menuAccessOf(actor: OrgUser): Promise<{ can_approve: boolean; is_hr: boolean; is_evaluator: boolean }> {
   if (actor.role === 'admin') return { can_approve: true, is_hr: true, is_evaluator: true };
   const caps = await capabilitiesOf(actor.id);
-  return { can_approve: caps.includes('approve_requests'), is_hr: caps.includes('hr_admin'), is_evaluator: caps.includes('evaluate') };
+  return { can_approve: caps.includes('approve_requests') || (await isExecutive(actor.id)), is_hr: caps.includes('hr_admin'), is_evaluator: caps.includes('evaluate') };
 }
