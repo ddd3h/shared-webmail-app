@@ -7,7 +7,8 @@ export type OrgMembership = { unit_id: string; position_id: string | null };
 export type OrgMember = { id: string; name: string; memberships: OrgMembership[]; can_evaluate: boolean; role?: string; email?: string };
 export type OrgData = {
   units: OrgUnit[]; positions: OrgPosition[]; members: OrgMember[];
-  me: { id: string; is_admin: boolean; capabilities: Capability[]; can_year_end?: boolean };
+  designations?: { unit_id: string; user_id: string; kind: 'expense' | 'evaluation' }[];
+  me: { can_designate?: boolean; id: string; is_admin: boolean; capabilities: Capability[]; can_year_end?: boolean };
 };
 
 /** Units as a tree, in display order: [{ unit, depth }] depth-first. */

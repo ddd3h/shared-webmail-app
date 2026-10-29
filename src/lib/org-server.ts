@@ -85,6 +85,8 @@ export async function canReviewRequest(actor: OrgUser, request: { user_id: strin
   if (actor.role === 'admin') return true;
   if (actor.id === request.user_id) return false;
   if (await isExecutive(request.user_id)) return isExecutive(actor.id); // a 役員's request is decided by another 役員, whatever the 部署
+  const named = await designatedIds(request.unit_id, 'expense'); // a 部署 that named its approvers: only they (and admins) decide
+  if (named.length > 0) return named.includes(actor.id);
   return (await unitsInScope(actor, 'approve_requests')).has(request.unit_id);
 }
 
@@ -103,6 +105,23 @@ export async function canReviewUser(actor: OrgUser, targetUserId: string): Promi
   return theirs.some(t => scope.has(t.unit_id));
 }
 
+// ---- 部署ごとに指定する人（経費の承認者・評価者） ----
+export type DesignationKind = 'expense' | 'evaluation';
+
+/** The people a 部署 named for `kind`, in the order they were named. Empty = nobody named: the 役職 permissions decide. */
+export async function designatedIds(unitId: string, kind: DesignationKind): Promise<string[]> {
+  const rows = await prisma.org_unit_designations.findMany({ where: { unit_id: unitId, kind }, orderBy: [{ created_at: 'asc' }, { user_id: 'asc' }], select: { user_id: true } });
+  return rows.map(r => r.user_id);
+}
+/** The 部署 where `userId` is named for `kind`. */
+export async function designatedUnitsOf(userId: string, kind: DesignationKind): Promise<string[]> {
+  return (await prisma.org_unit_designations.findMany({ where: { user_id: userId, kind }, select: { unit_id: true } })).map(r => r.unit_id);
+}
+/** Every 部署 that named somebody for `kind`. */
+export async function unitsWithDesignees(kind: DesignationKind): Promise<string[]> {
+  return (await prisma.org_unit_designations.findMany({ where: { kind }, select: { unit_id: true }, distinct: ['unit_id'] })).map(r => r.unit_id);
+}
+
 /** 役員: their requests are approved by other 役員 (and admins), never by the head of a 部署. */
 export async function isExecutive(userId: string): Promise<boolean> {
   return (await prisma.users.count({ where: { id: userId, worker_type: 'executive' } })) > 0;
@@ -113,6 +132,13 @@ export const executiveIds = async (): Promise<string[]> => (await prisma.users.f
  *  given, in any 部署 of the person), or above it. For a 役員 it is the other 役員 instead. */
 export async function approversOf(userId: string, unitId: string | null = null): Promise<{ id: string; email: string }[]> {
   if (await isExecutive(userId)) return prisma.users.findMany({ where: { worker_type: 'executive', id: { not: userId } }, select: { id: true, email: true } });
+  if (unitId) {
+    const all = await designatedIds(unitId, 'expense');
+    if (all.length > 0) { // the 部署 named its approvers (and if the only one named is the person themselves, the admins decide)
+      const named = all.filter(id => id !== userId);
+      return named.length === 0 ? [] : prisma.users.findMany({ where: { id: { in: named } }, select: { id: true, email: true } });
+    }
+  }
   const [{ units, memberships }, mine] = await Promise.all([loadOrg(), unitId ? Promise.resolve([{ unit_id: unitId }]) : prisma.org_memberships.findMany({ where: { user_id: userId }, select: { unit_id: true } })]);
   const ids = new Set<string>();
   for (const { unit_id } of mine) for (const id of holdersOver(units, memberships, unit_id, 'approve_requests')) if (id !== userId) ids.add(id);
@@ -125,5 +151,7 @@ export { withDescendants };
 export async function menuAccessOf(actor: OrgUser): Promise<{ can_approve: boolean; is_hr: boolean; is_evaluator: boolean }> {
   if (actor.role === 'admin') return { can_approve: true, is_hr: true, is_evaluator: true };
   const caps = await capabilitiesOf(actor.id);
-  return { can_approve: caps.includes('approve_requests') || (await isExecutive(actor.id)), is_hr: caps.includes('hr_admin'), is_evaluator: caps.includes('evaluate') };
+  const named = await designatedUnitsOf(actor.id, 'expense');
+  const namedEval = await designatedUnitsOf(actor.id, 'evaluation');
+  return { can_approve: caps.includes('approve_requests') || named.length > 0 || (await isExecutive(actor.id)), is_hr: caps.includes('hr_admin'), is_evaluator: caps.includes('evaluate') || namedEval.length > 0 };
 }

@@ -3,7 +3,7 @@ import { prisma } from '@/lib/db';
 import { getSession, requireAuth } from '@/lib/auth';
 import { getActor, type Actor } from '@/lib/work-auth';
 import { evaluatorFor, isValidScore } from '@/lib/org';
-import { hasCapability, loadOrg } from '@/lib/org-server';
+import { designatedUnitsOf, hasCapability, loadOrg } from '@/lib/org-server';
 
 export type EvalContext = { actor: Actor; hr: boolean };
 
@@ -115,13 +115,17 @@ export async function openCycle(cycleId: string): Promise<{ created: number; wit
   const key = (userId: string, unitId: string | null) => `${userId}|${unitId ?? ''}`;
   const done = new Set(existing.map(e => key(e.user_id, e.unit_id)));
   const eligible = (id: string) => capsOf(id).includes('evaluate');
+  const designees = new Map<string, string[]>();
+  for (const d of await prisma.org_unit_designations.findMany({ where: { kind: 'evaluation' }, orderBy: [{ created_at: 'asc' }, { user_id: 'asc' }], select: { unit_id: true, user_id: true } })) designees.set(d.unit_id, [...(designees.get(d.unit_id) ?? []), d.user_id]);
   const rows: { cycle_id: string; user_id: string; unit_id: string | null; evaluator_id: string | null }[] = [];
   for (const u of users) {
     const mine = memberships.filter(m => m.user_id === u.id);
     const forms = mine.length ? mine.map(m => ({ unit_id: m.unit_id as string | null, level: m.level })) : [{ unit_id: null, level: 0 }];
     for (const f of forms) {
       if (done.has(key(u.id, f.unit_id))) continue;
-      rows.push({ cycle_id: cycleId, user_id: u.id, unit_id: f.unit_id, evaluator_id: evaluatorFor(units, memberships, { id: u.id, unit_id: f.unit_id, level: f.level }, eligible) });
+      // a 部署 that named its evaluators: the first one named (not the person themselves); otherwise the 役職 rule
+      const named = f.unit_id ? (designees.get(f.unit_id) ?? []).find(id => id !== u.id) : undefined;
+      rows.push({ cycle_id: cycleId, user_id: u.id, unit_id: f.unit_id, evaluator_id: named ?? evaluatorFor(units, memberships, { id: u.id, unit_id: f.unit_id, level: f.level }, eligible) });
     }
   }
   await prisma.evaluations.createMany({ data: rows });
@@ -131,5 +135,5 @@ export async function openCycle(cycleId: string): Promise<{ created: number; wit
 /** Can this person be the evaluator? (admins, or a 役職 with 部下の人事評価) */
 export async function mayEvaluate(userId: string): Promise<boolean> {
   const u = await prisma.users.findUnique({ where: { id: userId }, select: { id: true, role: true } });
-  return !!u && hasCapability(u, 'evaluate');
+  return !!u && ((await hasCapability(u, 'evaluate')) || (await designatedUnitsOf(userId, 'evaluation')).length > 0);
 }

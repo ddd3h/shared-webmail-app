@@ -4,12 +4,14 @@ import OrgChart from '@/components/org/OrgChart';
 import UnitsPanel from '@/components/org/UnitsPanel';
 import PositionsPanel from '@/components/org/PositionsPanel';
 import MembersPanel from '@/components/org/MembersPanel';
+import DesignationsPanel from '@/components/org/DesignationsPanel';
 import YearEndPanel from '@/components/org/YearEndPanel';
 import type { OrgData } from '@/components/org/types';
 
-type TabKey = 'chart' | 'units' | 'positions' | 'members' | 'yearend';
-const TABS: { k: TabKey; l: string; admin?: boolean; yearEnd?: boolean }[] = [
+type TabKey = 'chart' | 'units' | 'positions' | 'members' | 'designations' | 'yearend';
+const TABS: { k: TabKey; l: string; admin?: boolean; yearEnd?: boolean; designate?: boolean }[] = [
   { k: 'chart', l: '組織図' }, { k: 'units', l: '部署', admin: true }, { k: 'positions', l: '役職と権限', admin: true }, { k: 'members', l: 'メンバー配置', admin: true },
+  { k: 'designations', l: '承認者・評価者', designate: true }, // 管理者・人事
   { k: 'yearend', l: '年末調整', yearEnd: true }, // 経理・人事・管理者
 ];
 
@@ -20,7 +22,7 @@ export default function OrgPage() {
   useEffect(() => { load(); }, [load]);
 
   if (!data) return <p className="text-sm text-gray-400">読み込み中…</p>;
-  const tabs = TABS.filter(t => (!t.admin || data.me.is_admin) && (!t.yearEnd || data.me.can_year_end));
+  const tabs = TABS.filter(t => (!t.admin || data.me.is_admin) && (!t.yearEnd || data.me.can_year_end) && (!t.designate || data.me.can_designate));
   return (
     <div className="space-y-4">
       <div>
@@ -39,6 +41,7 @@ export default function OrgPage() {
         {tab === 'units' && <UnitsPanel data={data} onChanged={load} />}
         {tab === 'positions' && <PositionsPanel data={data} onChanged={load} />}
         {tab === 'members' && <MembersPanel data={data} onChanged={load} />}
+        {tab === 'designations' && <DesignationsPanel data={data} onChanged={load} />}
         {tab === 'yearend' && <YearEndPanel />}
       </div>
     </div>

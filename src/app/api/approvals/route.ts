@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { getSession, requireAuth } from '@/lib/auth';
 import { getActor, isAdmin } from '@/lib/work-auth';
-import { executiveIds, unitsInScope, usersInScope } from '@/lib/org-server';
+import { designatedUnitsOf, executiveIds, unitsInScope, unitsWithDesignees, usersInScope } from '@/lib/org-server';
 
 const ymd = (d: Date) => d.toISOString().slice(0, 10);
 
@@ -21,11 +21,21 @@ export async function GET() {
   // the heads of a 部署 never decide a 役員's request: take the 役員 out of what the 部署 covers, and add the other 役員 for a 役員
   const unitUsers = admin ? [] : (await usersInScope(actor, 'approve_requests')).filter(id => !execs.includes(id));
   const userIds = admin ? null : [...unitUsers, ...(iAmExec ? otherExecs : [])];
-  if (userIds && userIds.length === 0) return NextResponse.json({ expenses: [], trips: [], allowed: false });
+  // a 部署 may name the approvers of its expense claims: those people decide them (instead of the 役職 rule), and nobody else (but admins)
+  const [namedMe, namedAny] = admin ? [[], []] : await Promise.all([designatedUnitsOf(actor.id, 'expense'), unitsWithDesignees('expense')]);
+  if (userIds && userIds.length === 0 && namedMe.length === 0) return NextResponse.json({ expenses: [], trips: [], allowed: false });
   const who = userIds ? { user_id: { in: userIds } } : {};
   // an expense claim is decided by the 部署 it was made for; one with no 部署 chosen (older) by anybody who covers the person
   const scope = userIds ? [...(await unitsInScope(actor, 'approve_requests'))] : null;
-  const expenseWho = scope ? { OR: [{ unit_id: { in: scope }, user_id: { notIn: execs } }, { unit_id: null, ...who }, ...(iAmExec ? [{ user_id: { in: otherExecs } }] : [])] } : {};
+  const expenseWho = scope ? {
+    user_id: { not: actor.id },
+    OR: [
+      { unit_id: { in: scope.filter(id => !namedAny.includes(id)) }, user_id: { notIn: execs } },
+      { unit_id: { in: namedMe }, user_id: { notIn: execs } },
+      { unit_id: null, ...who },
+      ...(iAmExec ? [{ user_id: { in: otherExecs } }] : []),
+    ],
+  } : {};
 
   const [expenses, trips] = await Promise.all([
     prisma.expense_claims.findMany({ where: { status: 'pending', ...expenseWho }, orderBy: { created_at: 'asc' }, take: 200, include: { user: { select: { id: true, name: true } }, unit: { select: { id: true, name: true } }, receipts: { select: { id: true, filename: true }, orderBy: { created_at: 'asc' } } } }),

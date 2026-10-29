@@ -123,6 +123,7 @@ model users {
   bank_account               user_bank_accounts?      @relation("bank_owner")
   year_end_declarations      year_end_declarations[]  @relation("year_end_owner")
   org_memberships            org_memberships[]
+  unit_designations          org_unit_designations[]
   year_end_confirmed         year_end_declarations[]  @relation("year_end_confirmer")
   evaluations_received       evaluations[]            @relation("eval_subject")
   evaluations_to_do          evaluations[]            @relation("eval_evaluator")
@@ -1200,6 +1201,7 @@ model org_units {
   members     org_memberships[]
   evaluations evaluations[]
   expense_claims expense_claims[]
+  designations org_unit_designations[]
 
   @@index([parent_id])
 }
@@ -1397,6 +1399,21 @@ model year_end_declarations {
 
   @@unique([user_id, year])
   @@index([year, status])
+}
+
+// 部署ごとに指定する人。kind='expense' は経費の承認者（指定がある部署の経費は、この人たちと管理者だけが承認する）、
+// kind='evaluation' は人事評価の評価者（評価の開始時に、指定順の先頭の人が評価者になる）。指定がなければ、役職の権限で決まる。
+model org_unit_designations {
+  unit_id    String
+  user_id    String
+  kind       String   // 'expense' | 'evaluation'
+  created_at DateTime @default(now())
+
+  unit org_units @relation(fields: [unit_id], references: [id], onDelete: Cascade)
+  user users     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@id([unit_id, user_id, kind])
+  @@index([user_id])
 }
 
 // Who belongs to which 部署, with which 役職 there (a person may be in several 部署, with a different 役職 in each: 班長 here, 部長 there).
