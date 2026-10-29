@@ -5,7 +5,7 @@ vi.mock('@/lib/freee', () => ({ createDeal: vi.fn(), freeeReady: vi.fn(), loadFr
 import { accountFor, dealDetails, type Movement } from '@/lib/freee-sync';
 
 const MAP = { salary: { account_item_id: 1, tax_code: 0 }, expense: { account_item_id: 2, tax_code: 136 }, 'expense:交通費': { account_item_id: 3, tax_code: 0 } };
-const move = (parts: Movement['parts']): Movement => ({ source_type: 'payslip', source_id: 'p', date: '2026-10-25', amount: parts.reduce((s, p) => s + p.amount, 0), description: 'd', parts });
+const move = (parts: Movement['parts']): Movement => ({ source_type: 'payslip', source_id: 'p', date: '2026-10-25', amount: parts.reduce((s, p) => s + p.amount, 0), description: 'd', parts, documents: [] });
 
 describe('freeeに送る取引の組み立て', () => {
   it('経費は科目の指定があればそれ、なければ「経費の立替金」の科目', () => {

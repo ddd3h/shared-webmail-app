@@ -1138,6 +1138,7 @@ model freee_exports {
   paid_date     DateTime  @db.Date
   description   String
   freee_deal_id Int?
+  receipt_map   Json?     // 証憑 already uploaded to freee for this movement: { "receipt:<id>" | "doc:<id>": freee receipt id } (a retry does not upload them twice)
   error         String?
   attempts      Int       @default(0)
   sent_at       DateTime?

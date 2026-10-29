@@ -23,9 +23,9 @@ export async function GET() {
   }
   const count = (s: string) => groups.find(g => g.status === s)?._count._all ?? 0;
   return NextResponse.json({
-    connected: c.connected, ready, auto_sync: c.autoSync, sync_from: c.syncFrom, company: c.companyName,
+    connected: c.connected, ready, auto_sync: c.autoSync, send_receipts: c.sendReceipts, sync_from: c.syncFrom, company: c.companyName,
     counts: { sent: count('sent'), failed: count('failed'), skipped: count('skipped'), waiting: waiting.length + count('pending') },
     waiting: waiting.sort((a, b) => b.date.localeCompare(a.date)).slice(0, 100),
-    items: rows.map(r => ({ id: r.id, source_type: r.source_type, source_id: r.source_id, status: r.status, amount: r.amount, paid_date: day(r.paid_date), description: r.description, freee_deal_id: r.freee_deal_id, error: r.error, attempts: r.attempts, sent_at: r.sent_at })),
+    items: rows.map(r => ({ id: r.id, source_type: r.source_type, source_id: r.source_id, status: r.status, amount: r.amount, paid_date: day(r.paid_date), description: r.description, freee_deal_id: r.freee_deal_id, receipts: Object.keys((r.receipt_map ?? {}) as object).length, error: r.error, attempts: r.attempts, sent_at: r.sent_at })),
   });
 }

@@ -12,6 +12,7 @@ export const freeeApiUrl = () => (process.env.FREEE_API_URL?.trim() || 'https://
 export const freeeRedirectUri = () => `${(process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000').replace(/\/+$/, '')}/api/freee/callback`;
 
 const TIMEOUT_MS = 15_000;
+const UPLOAD_TIMEOUT_MS = 60_000; // a receipt is a file of up to 10 MB
 
 // ---- what money is booked as ----
 
@@ -36,20 +37,22 @@ export type FreeeConfig = {
   clientId: string | null; hasSecret: boolean; connected: boolean;
   companyId: number | null; companyName: string | null; walletable: Walletable | null; map: AccountMap;
   autoSync: boolean; syncFrom: string | null;
+  /** Send the 証憑 (receipts, invoices) with each deal. On unless the administrator turned it off. */
+  sendReceipts: boolean;
 };
 
 const num = (s: string | null) => { const n = Number(s); return s && Number.isInteger(n) && n > 0 ? n : null; };
 const parse = <T,>(s: string | null, fallback: T): T => { try { return s ? JSON.parse(s) as T : fallback; } catch { return fallback; } };
 
 export async function loadFreeeConfig(): Promise<FreeeConfig> {
-  const [clientId, secret, refresh, companyId, companyName, walletable, map, auto, from] = await Promise.all(
-    (['FREEE_CLIENT_ID', 'FREEE_CLIENT_SECRET', 'FREEE_REFRESH_TOKEN', 'FREEE_COMPANY_ID', 'FREEE_COMPANY_NAME', 'FREEE_WALLETABLE', 'FREEE_ACCOUNT_MAP', 'FREEE_AUTO_SYNC', 'FREEE_SYNC_FROM'] as AppSettingKey[]).map(k => getSetting(k)),
+  const [clientId, secret, refresh, companyId, companyName, walletable, map, auto, from, sendReceipts] = await Promise.all(
+    (['FREEE_CLIENT_ID', 'FREEE_CLIENT_SECRET', 'FREEE_REFRESH_TOKEN', 'FREEE_COMPANY_ID', 'FREEE_COMPANY_NAME', 'FREEE_WALLETABLE', 'FREEE_ACCOUNT_MAP', 'FREEE_AUTO_SYNC', 'FREEE_SYNC_FROM', 'FREEE_SEND_RECEIPTS'] as AppSettingKey[]).map(k => getSetting(k)),
   );
   const parsedMap = accountMapSchema.safeParse(parse(map, {}));
   return {
     clientId: clientId?.trim() || null, hasSecret: !!secret, connected: !!refresh,
     companyId: num(companyId), companyName: companyName || null, walletable: parse<Walletable | null>(walletable, null),
-    map: parsedMap.success ? parsedMap.data : {}, autoSync: auto === 'on', syncFrom: from && /^\d{4}-\d{2}-\d{2}$/.test(from) ? from : null,
+    map: parsedMap.success ? parsedMap.data : {}, sendReceipts: sendReceipts !== 'off', autoSync: auto === 'on', syncFrom: from && /^\d{4}-\d{2}-\d{2}$/.test(from) ? from : null,
   };
 }
 
@@ -120,11 +123,13 @@ async function accessToken(): Promise<string | null> {
 export type FreeeResult<T> = { ok: true; data: T } | { ok: false; status: number; message: string };
 
 async function call<T>(method: 'GET' | 'POST', path: string, body?: unknown, retried = false): Promise<FreeeResult<T>> {
+  const form = body instanceof FormData;
   const token = await accessToken();
   if (!token) return { ok: false, status: 401, message: 'freeeに接続されていません（接続し直してください）' };
   const res = await fetch(`${freeeApiUrl()}${path}`, {
-    method, headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'X-Api-Version': '2020-06-15' },
-    ...(body === undefined ? {} : { body: JSON.stringify(body) }), signal: AbortSignal.timeout(TIMEOUT_MS),
+    // a file upload is multipart: fetch sets the Content-Type (with the boundary) itself
+    method, headers: { Authorization: `Bearer ${token}`, ...(form ? {} : { 'Content-Type': 'application/json' }), 'X-Api-Version': '2020-06-15' },
+    ...(body === undefined ? {} : { body: form ? body : JSON.stringify(body) }), signal: AbortSignal.timeout(form ? UPLOAD_TIMEOUT_MS : TIMEOUT_MS),
   }).catch(() => null);
   if (!res) return { ok: false, status: 0, message: 'freeeに接続できませんでした' };
   if (res.status === 401 && !retried) { // the token was revoked or expired early: get a new one once
@@ -144,7 +149,7 @@ export const listWalletables = (companyId: number) => call<{ walletables: { id: 
 export const listAccountItems = (companyId: number) => call<{ account_items: { id: number; name: string; shortcut?: string }[] }>('GET', `/api/1/account_items?company_id=${companyId}`);
 
 export type DealInput = {
-  companyId: number; date: string; walletable: Walletable;
+  companyId: number; date: string; walletable: Walletable; receiptIds?: number[];
   details: { account_item_id: number; tax_code: number; amount: number; description: string }[];
 };
 /** An expense deal that was paid from the bank account on `date`: the freee way of recording "this money left the account". */
@@ -152,6 +157,17 @@ export function createDeal(d: DealInput) {
   const total = d.details.reduce((s, x) => s + x.amount, 0);
   return call<{ deal: { id: number } }>('POST', '/api/1/deals', {
     company_id: d.companyId, issue_date: d.date, type: 'expense', details: d.details,
+    ...(d.receiptIds?.length ? { receipt_ids: d.receiptIds } : {}),   // 証憑 uploaded before: they are attached to the deal
     payments: [{ date: d.date, from_walletable_type: d.walletable.type, from_walletable_id: d.walletable.id, amount: total }],
   });
+}
+
+/** A 証憑 (receipt, invoice) put into freee's ファイルボックス. It is attached to a deal by its id (see DealInput.receiptIds). */
+export function uploadReceipt(r: { companyId: number; filename: string; contentType: string; bytes: Buffer; description: string; date: string }) {
+  const fd = new FormData();
+  fd.append('company_id', String(r.companyId));
+  fd.append('receipt', new Blob([new Uint8Array(r.bytes)], { type: r.contentType }), r.filename);
+  fd.append('description', r.description.slice(0, 250));
+  fd.append('issue_date', r.date);
+  return call<{ receipt: { id: number } }>('POST', '/api/1/receipts', fd);
 }
