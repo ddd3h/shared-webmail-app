@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Modal, Notice, api, btn, btnPrimary, inp, yen } from '@/components/work/ui';
 
-type Expense = { id: string; user: { name: string }; title: string; category: string; amount: number; payment_method: string; expense_date: string };
+type Expense = { id: string; user: { name: string }; unit?: { name: string } | null; title: string; category: string; amount: number; payment_method: string; expense_date: string };
 type Trip = { id: string; user: { name: string }; destination: string; purpose: string; start_date: string; end_date: string };
 type Data = { allowed: boolean; expenses: Expense[]; trips: Trip[] };
 type Target = { kind: 'expenses' | 'trips'; id: string; label: string };
@@ -52,7 +52,7 @@ export default function ApprovalsPage() {
       {data.allowed && empty && <p className="text-sm text-gray-400">承認待ちの申請はありません</p>}
       {data.expenses.length > 0 && (
         <section className="space-y-2"><h2 className="text-sm font-semibold text-gray-700">経費（{data.expenses.length}件）</h2>
-          <ul className="space-y-2">{data.expenses.map(c => row({ kind: 'expenses', id: c.id, label: `${c.user.name}さんの経費` }, c.title, c.user.name, `${c.expense_date} ・ ${c.category}・${c.payment_method === 'personal' ? '立替' : '会社負担'}`, c.amount))}</ul></section>
+          <ul className="space-y-2">{data.expenses.map(c => row({ kind: 'expenses', id: c.id, label: `${c.user.name}さんの経費` }, c.title, c.unit ? `${c.user.name} ・ ${c.unit.name}` : c.user.name, `${c.expense_date} ・ ${c.category}・${c.payment_method === 'personal' ? '立替' : '会社負担'}`, c.amount))}</ul></section>
       )}
       {data.trips.length > 0 && (
         <section className="space-y-2"><h2 className="text-sm font-semibold text-gray-700">出張（{data.trips.length}件）</h2>

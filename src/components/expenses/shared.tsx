@@ -9,6 +9,7 @@ export type Claim = {
   reviewer: string | null; review_comment: string | null; reimbursed_at: string | null; reimburse_note: string | null; receipts: Receipt[];
   payslip: { id: string; pay_month: string; title: string; status: string } | null;
   trip: { id: string; destination: string; start_date: string; end_date: string } | null;
+  unit?: { id: string; name: string } | null;   // the 部署 the claim is for
   transit: { from: string | null; to: string | null; summary: string | null; yahoo_url: string | null; google_url: string | null } | null;
   in_batch?: boolean;
   pay_plan: Plan | null;
@@ -52,6 +53,7 @@ export function ReceiptLinks({ receipts }: { receipts: Receipt[] }) {
 export function ClaimDetail({ c }: { c: Claim }) {
   return (
     <div className="space-y-2 text-sm">
+      {c.unit && <p className="text-xs text-violet-700">部門: {c.unit.name}（この部門の承認者が承認します）</p>}
       {c.trip && <p className="text-xs text-sky-700">出張: {c.trip.destination}（{c.trip.start_date.slice(5).replace('-', '/')}〜{c.trip.end_date.slice(5).replace('-', '/')}）</p>}
       {c.transit && (
         <div className="rounded-lg bg-emerald-50 px-3 py-2 text-xs text-emerald-900 space-y-0.5">
@@ -96,6 +98,7 @@ export function ClaimHeader({ c, showUser }: { c: Claim; showUser?: boolean }) {
         <div className="flex flex-wrap items-center gap-1.5 text-xs text-gray-500">
           <span>{dateLabel(c.expense_date)}</span><span>{c.category}</span>{showUser && <span className="rounded-sm bg-gray-100 px-1.5 py-0.5 text-gray-700">{c.user.name}</span>}
           <PaymentBadge m={c.payment_method} />
+          {c.unit && <span className="rounded-sm bg-violet-50 px-1.5 py-0.5 text-[11px] text-violet-700" title="申請した部門">{c.unit.name}</span>}
           {c.trip && <span className="rounded-sm bg-sky-50 px-1.5 py-0.5 text-[11px] text-sky-700">✈ {c.trip.destination}</span>}
         </div>
         <div className="mt-0.5 text-sm font-medium text-gray-900 wrap-break-word">{c.title}</div>

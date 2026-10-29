@@ -57,6 +57,36 @@ export async function usersInScope(actor: OrgUser, cap: Capability): Promise<str
   return rows.map(r => r.user_id);
 }
 
+/** The 部署 (with everything below them) where the actor's 役職 grants `cap`. Admins are not special-cased: ask isAdmin first. */
+export async function unitsInScope(actor: OrgUser, cap: Capability): Promise<Set<string>> {
+  const [units, mine] = await Promise.all([loadUnits(), prisma.org_memberships.findMany({ where: { user_id: actor.id }, select: MEMBERSHIP_SELECT })]);
+  return scopeFor(units, mine.map(toMembership), actor.id, cap);
+}
+
+/** The 部署 a person may claim for: the ones they belong to. */
+export async function unitsOf(userId: string): Promise<{ id: string; name: string; position: string | null }[]> {
+  const rows = await prisma.org_memberships.findMany({ where: { user_id: userId }, select: { unit: { select: { id: true, name: true, sort: true } }, position: { select: { name: true } } } });
+  return rows.sort((a, b) => a.unit.sort - b.unit.sort || a.unit.name.localeCompare(b.unit.name)).map(r => ({ id: r.unit.id, name: r.unit.name, position: r.position?.name ?? null }));
+}
+
+/** Which 部署 a request is for: the one named (it must be one of the person's), the only one they have, or "not chosen" when they have none.
+ *  A person in several 部署 has to say which. */
+export async function resolveUnit(userId: string, requested: string | null | undefined): Promise<{ ok: true; unit_id: string | null } | { ok: false; error: 'unit_required' | 'invalid_unit' }> {
+  const mine = await unitsOf(userId);
+  if (requested) return mine.some(u => u.id === requested) ? { ok: true, unit_id: requested } : { ok: false, error: 'invalid_unit' };
+  if (mine.length === 0) return { ok: true, unit_id: null };
+  return mine.length === 1 ? { ok: true, unit_id: mine[0].id } : { ok: false, error: 'unit_required' };
+}
+
+/** May `actor` approve/reject a request of `request.user_id` made for the 部署 `request.unit_id`? That 部署 decides: the actor's 役職 has to allow approving
+ *  in it (or above it). A request with no 部署 chosen (an older one) follows the rule for the person: any of their 部署 will do. */
+export async function canReviewRequest(actor: OrgUser, request: { user_id: string; unit_id: string | null }): Promise<boolean> {
+  if (!request.unit_id) return canReviewUser(actor, request.user_id);
+  if (actor.role === 'admin') return true;
+  if (actor.id === request.user_id) return false;
+  return (await unitsInScope(actor, 'approve_requests')).has(request.unit_id);
+}
+
 /** May `actor` approve/reject the request of `targetUserId`? Admins always (self-approval is checked by the route). The person is in
  *  a 部署 where the actor's 役職 allows approving, or below it. */
 export async function canReviewUser(actor: OrgUser, targetUserId: string): Promise<boolean> {
@@ -71,9 +101,10 @@ export async function canReviewUser(actor: OrgUser, targetUserId: string): Promi
   return theirs.some(t => scope.has(t.unit_id));
 }
 
-/** Everybody who can approve the requests of `userId` besides admins: people holding the permission in any 部署 of theirs, or above it. */
-export async function approversOf(userId: string): Promise<{ id: string; email: string }[]> {
-  const [{ units, memberships }, mine] = await Promise.all([loadOrg(), prisma.org_memberships.findMany({ where: { user_id: userId }, select: { unit_id: true } })]);
+/** Everybody who can approve the requests of `userId` besides admins: people holding the permission in the 部署 the request is for (or, when not
+ *  given, in any 部署 of the person), or above it. */
+export async function approversOf(userId: string, unitId: string | null = null): Promise<{ id: string; email: string }[]> {
+  const [{ units, memberships }, mine] = await Promise.all([loadOrg(), unitId ? Promise.resolve([{ unit_id: unitId }]) : prisma.org_memberships.findMany({ where: { user_id: userId }, select: { unit_id: true } })]);
   const ids = new Set<string>();
   for (const { unit_id } of mine) for (const id of holdersOver(units, memberships, unit_id, 'approve_requests')) if (id !== userId) ids.add(id);
   return ids.size === 0 ? [] : prisma.users.findMany({ where: { id: { in: [...ids] } }, select: { id: true, email: true } });

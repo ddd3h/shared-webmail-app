@@ -17,8 +17,8 @@ async function adminsExcept(userId: string) {
 }
 
 // Admins plus the unit heads who may approve this person's requests, without the person themselves
-async function reviewersOf(userId: string) {
-  const [admins, heads] = await Promise.all([adminsExcept(userId), approversOf(userId)]);
+async function reviewersOf(userId: string, unitId: string | null = null) {
+  const [admins, heads] = await Promise.all([adminsExcept(userId), approversOf(userId, unitId)]);
   return [...new Map([...admins, ...heads].map(u => [u.id, u])).values()];
 }
 
@@ -29,14 +29,15 @@ async function dmAll(users: { id: string; email: string }[], message: string, ty
 // A new (or resubmitted) claim -> admins and the claimant's unit heads (never the claimant)
 export function notifyExpenseSubmitted(claimId: string, resubmitted = false) {
   return safely('expense_submitted', async () => {
-    const c = await prisma.expense_claims.findUnique({ where: { id: claimId }, include: { user: { select: { id: true, name: true } } } });
+    const c = await prisma.expense_claims.findUnique({ where: { id: claimId }, include: { user: { select: { id: true, name: true } }, unit: { select: { name: true } } } });
     if (!c) return;
     const msg =
       `🧾 **経費申請が${resubmitted ? '再申請されました' : '届きました'}**\n\n` +
       `**${mmText(c.user.name, 40)}** さん ・ **${yen(c.amount)}** ・ ${mmText(c.category, 20)}（${PAYMENT_LABEL[c.payment_method as PaymentMethod]}）\n` +
-      `件名: ${mmText(c.title, 100)}\n\n` +
+      `件名: ${mmText(c.title, 100)}\n` +
+      (c.unit ? `部門: ${mmText(c.unit.name, 40)}\n` : '') + '\n' +
       `承認・却下: ${appUrl()}/approvals`;
-    await dmAll(await reviewersOf(c.user_id), msg, 'expense_submitted');
+    await dmAll(await reviewersOf(c.user_id, c.unit_id), msg, 'expense_submitted');
   });
 }
 

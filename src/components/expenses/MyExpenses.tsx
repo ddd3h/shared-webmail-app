@@ -7,7 +7,7 @@ import { MILEAGE_CATEGORY } from '@/lib/expense';
 import { googleTransitLink, yahooTransitLink, type TransitRoute } from '@/lib/transit';
 
 type Trip = { id: string; destination: string; start_date: string; end_date: string };
-type Form = { id?: string; trip_id: string; expense_date: string; category: string; title: string; amount: string; payment_method: 'personal' | 'company'; description: string; destination: string; origin: string; manual_km: string; transit_from: string; transit_to: string; transit_time: string; transit_summary: string };
+type Form = { id?: string; trip_id: string; unit_id: string; expense_date: string; category: string; title: string; amount: string; payment_method: 'personal' | 'company'; description: string; destination: string; origin: string; manual_km: string; transit_from: string; transit_to: string; transit_time: string; transit_summary: string };
 type MileageInfo = { rate_per_km: number; route_service: boolean; home_address: string | null };
 type Estimate = { destination: string; round_trip_km: number; rate_per_km: number; amount: number; source: 'google' | 'osm' | 'manual'; map_url: string };
 const MILEAGE_ERRORS: Record<string, string> = {
@@ -17,6 +17,8 @@ const MILEAGE_ERRORS: Record<string, string> = {
   distance_required: '片道の距離（km）を入力してください',
   manual_not_allowed: 'ルートは自動で調べます。行き先だけ入力してください',
   too_many_requests: '計算の回数が多すぎます。少し待ってからもう一度お試しください',
+  unit_required: '部門を選んでください',
+  invalid_unit: '選んだ部門に所属していません。部門を選び直してください',
 };
 const FILTERS = [{ k: '', l: 'すべて' }, { k: 'pending', l: '承認待ち' }, { k: 'owed', l: '返金待ち' }, { k: 'paid', l: '返金済' }, { k: 'rejected', l: '却下' }];
 const MAX_FILES = 5;
@@ -31,6 +33,7 @@ export default function MyExpenses({ initialTripId }: { initialTripId?: string }
   const [files, setFiles] = useState<File[]>([]);
   const [saving, setSaving] = useState(false);
   const [trips, setTrips] = useState<Trip[] | null>(null);
+  const [units, setUnits] = useState<{ id: string; name: string; position: string | null }[] | null>(null);   // my 部署: the claim is made for one of them
   const [mi, setMi] = useState<MileageInfo | null>(null);   // own-car claims: the rate, whether routes are searched, whether a home address is on file
   const [est, setEst] = useState<Estimate | null>(null);
   const [estimating, setEstimating] = useState(false);
@@ -55,6 +58,9 @@ export default function MyExpenses({ initialTripId }: { initialTripId?: string }
   useEffect(() => { fetch('/api/expenses/mileage').then(r => r.json()).then(setMi).catch(() => {}); fetch('/api/expenses/transit').then(r => r.json()).then(d => setTransitInApp(!!d.in_app)).catch(() => {}); }, []);
   // the form was opened before the home address arrived: it starts from home as soon as it is known (a start typed meanwhile is kept)
   useEffect(() => { if (mi?.home_address) setForm(f => (f && !f.id && f.origin === '' ? { ...f, origin: mi.home_address! } : f)); }, [mi]);
+  useEffect(() => { fetch('/api/profile/units').then(r => (r.ok ? r.json() : { units: [] })).then(d => setUnits(d.units ?? [])).catch(() => setUnits([])); }, []);
+  // the form was opened before my 部署 arrived: it starts with the first one
+  useEffect(() => { if (units?.length) setForm(f => (f && !f.id && !f.unit_id ? { ...f, unit_id: units[0].id } : f)); }, [units]);
   useEffect(() => {
     fetch('/api/trips?status=approved').then(r => r.json()).then(d => setTrips((d.items || []).map((t: any) => ({ id: t.id, destination: t.destination, start_date: t.start_date, end_date: t.end_date })))).catch(() => setTrips([]));
   }, []);
@@ -68,7 +74,7 @@ export default function MyExpenses({ initialTripId }: { initialTripId?: string }
   function flash(type: 'success' | 'error', text: string) { setMsg({ type, text }); setTimeout(() => setMsg(null), 5000); }
 
   const today = () => new Date(Date.now() + 9 * 3600_000).toISOString().slice(0, 10);
-  const blank = (): Form => ({ trip_id: '', expense_date: today(), category: CATEGORIES[0], title: '', amount: '', payment_method: 'personal', description: '', destination: '', origin: mi?.home_address ?? '', manual_km: '', transit_from: '', transit_to: '', transit_time: '', transit_summary: '' });
+  const blank = (): Form => ({ trip_id: '', unit_id: units?.[0]?.id ?? '', expense_date: today(), category: CATEGORIES[0], title: '', amount: '', payment_method: 'personal', description: '', destination: '', origin: mi?.home_address ?? '', manual_km: '', transit_from: '', transit_to: '', transit_time: '', transit_summary: '' });
   const editing = form?.id ? items.find(i => i.id === form.id) : undefined;
 
   const isMileage = form?.category === MILEAGE_CATEGORY;
@@ -117,7 +123,7 @@ export default function MyExpenses({ initialTripId }: { initialTripId?: string }
       if (id) {
         const res = await api(`/api/expenses/${id}`, 'PATCH', {
           expense_date: form.expense_date, category: form.category, title: form.title,
-          payment_method: form.payment_method, description: form.description || null, trip_id: form.trip_id || null,
+          payment_method: form.payment_method, description: form.description || null, trip_id: form.trip_id || null, ...(form.unit_id ? { unit_id: form.unit_id } : {}),
           ...(form.category === '交通費' ? { transit_from: form.transit_from.trim() || null, transit_to: form.transit_to.trim() || null, transit_summary: form.transit_summary.trim() || null } : {}),
           ...(isMileage ? { destination: form.destination.trim(), origin: form.origin.trim(), ...(est?.source === 'manual' && form.manual_km ? { manual_one_way_km: Number(form.manual_km) } : {}) } : { amount: Number(form.amount) }),
         });
@@ -133,6 +139,7 @@ export default function MyExpenses({ initialTripId }: { initialTripId?: string }
         if (form.category === '交通費') { for (const k of ['transit_from', 'transit_to', 'transit_summary'] as const) if (form[k].trim()) fd.append(k, form[k].trim()); }
         if (isMileage) { fd.append('destination', form.destination.trim()); fd.append('origin', form.origin.trim()); if (est?.source === 'manual' && form.manual_km) fd.append('manual_one_way_km', form.manual_km); } else fd.append('amount', form.amount);
         if (form.trip_id) fd.append('trip_id', form.trip_id);
+        if (form.unit_id) fd.append('unit_id', form.unit_id);
         files.forEach(f => fd.append('file', f));
         const res = await fetch('/api/expenses', { method: 'POST', body: fd });
         if (!res.ok) {
@@ -179,7 +186,7 @@ export default function MyExpenses({ initialTripId }: { initialTripId?: string }
                 <ClaimDetail c={c} />
                 {(c.status === 'pending' || c.status === 'rejected') && (
                   <div className="flex gap-3 text-xs">
-                    <button className="text-blue-600 hover:underline" onClick={() => openForm({ id: c.id, trip_id: c.trip?.id ?? '', expense_date: c.expense_date, category: c.category, title: c.title, amount: String(c.amount), payment_method: c.payment_method, description: c.description || '', destination: c.mileage?.destination ?? '', origin: c.mileage?.origin ?? '', manual_km: '', transit_from: c.transit?.from ?? '', transit_to: c.transit?.to ?? '', transit_time: '', transit_summary: c.transit?.summary ?? '' }, c)}>
+                    <button className="text-blue-600 hover:underline" onClick={() => openForm({ id: c.id, trip_id: c.trip?.id ?? '', unit_id: c.unit?.id ?? units?.[0]?.id ?? '', expense_date: c.expense_date, category: c.category, title: c.title, amount: String(c.amount), payment_method: c.payment_method, description: c.description || '', destination: c.mileage?.destination ?? '', origin: c.mileage?.origin ?? '', manual_km: '', transit_from: c.transit?.from ?? '', transit_to: c.transit?.to ?? '', transit_time: '', transit_summary: c.transit?.summary ?? '' }, c)}>
                       {c.status === 'rejected' ? '修正して再申請' : '編集'}
                     </button>
                     <button className="text-red-600 hover:underline" onClick={() => withdraw(c.id)}>取り下げ</button>
@@ -199,6 +206,14 @@ export default function MyExpenses({ initialTripId }: { initialTripId?: string }
               <div><label className="text-xs text-gray-600">勘定科目</label>
                 <select className={inp} value={form.category} onChange={e => editForm({ ...form, category: e.target.value })}>{CATEGORIES.map(c => <option key={c}>{c}</option>)}</select></div>
             </div>
+            {units && units.length > 0 && (
+              <div><label className="text-xs text-gray-600" htmlFor="expense-unit">部門</label>
+                <select id="expense-unit" className={inp} value={form.unit_id} onChange={e => setForm({ ...form, unit_id: e.target.value })}>
+                  {units.map(u => <option key={u.id} value={u.id}>{u.name}{u.position ? `（${u.position}）` : ''}</option>)}
+                </select>
+                <p className="mt-0.5 text-xs text-gray-400">{units.length > 1 ? 'どの部門の経費かを選びます。選んだ部門の承認者が承認します。' : '所属している部門です。この部門の承認者が承認します。'}</p>
+              </div>
+            )}
             {(() => {
               // a cancelled trip the claim is already linked to must stay visible as an option
               const options = [...(trips ?? [])];

@@ -16,11 +16,15 @@ vi.mock('@/lib/attachment-storage', () => ({ saveUploadedFiles: vi.fn(async () =
 vi.mock('@/lib/trip-server', () => ({ checkTripLink: vi.fn() }));
 vi.mock('@/lib/pay-schedule-server', () => ({ loadSchedules: vi.fn(async () => ({ schedules: {}, custom: new Set() })), planOf: vi.fn(() => ({ period: '2026-10', closing_date: '2026-10-31', deadline: '2026-11-05', pay_date: '2026-11-25', late: false })) }));
 vi.mock('@/lib/work-auth', () => ({ getActor: vi.fn(), isAdmin: (a: any) => a.role === 'admin', isFinance: (a: any) => a.role === 'admin' || !!a.is_accounting }));
-vi.mock('@/lib/org-server', () => ({ canReviewUser: vi.fn(async (a: any) => a.role === 'admin') }));
+vi.mock('@/lib/org-server', () => ({
+  canReviewRequest: vi.fn(async (a: any) => a.role === 'admin'),
+  // the 部署 of a claim: the one named, else none (these tests are not about 部署)
+  resolveUnit: vi.fn(async (_userId: string, requested?: string | null) => ({ ok: true, unit_id: requested ?? null })),
+}));
 
 import { prisma } from '@/lib/db';
 import { getActor } from '@/lib/work-auth';
-import { canReviewUser } from '@/lib/org-server';
+import { canReviewRequest } from '@/lib/org-server';
 import { checkTripLink } from '@/lib/trip-server';
 import { GET as list } from '@/app/api/expenses/route';
 import { PATCH as edit } from '@/app/api/expenses/[id]/route';
@@ -96,7 +100,7 @@ describe('承認', () => {
   it('管理者でも、申請者の部署長でもない人は承認できない', async () => {
     (getActor as any).mockResolvedValue(actor());
     (prisma.expense_claims.findUnique as any).mockResolvedValue({ id: 'c1', user_id: 'u2', status: 'pending', amount: 1000 });
-    (canReviewUser as any).mockResolvedValue(false);
+    (canReviewRequest as any).mockResolvedValue(false);
     expect((await review(json({ action: 'approve' }), ctx)).status).toBe(403);
     expect(prisma.expense_claims.updateMany).not.toHaveBeenCalled();
     expect(notifyExpenseReviewed).not.toHaveBeenCalled();
@@ -105,9 +109,9 @@ describe('承認', () => {
     (getActor as any).mockResolvedValue(actor());
     (prisma.expense_claims.findUnique as any).mockResolvedValue({ id: 'c1', user_id: 'u2', status: 'pending', amount: 1000 });
     (prisma.expense_claims.updateMany as any).mockResolvedValue({ count: 1 });
-    (canReviewUser as any).mockResolvedValue(true);
+    (canReviewRequest as any).mockResolvedValue(true);
     expect((await review(json({ action: 'approve' }), ctx)).status).toBe(200);
-    expect(canReviewUser).toHaveBeenCalledWith(expect.objectContaining({ id: 'u1' }), 'u2');
+    expect(canReviewRequest).toHaveBeenCalledWith(expect.objectContaining({ id: 'u1' }), expect.objectContaining({ user_id: 'u2' }));
     expect(notifyExpenseReviewed).toHaveBeenCalledWith('c1', 'approve');
   });
   it('却下にはコメントが必要', async () => {
