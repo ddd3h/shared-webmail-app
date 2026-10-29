@@ -53,17 +53,17 @@ describe('署名の確認', () => {
 describe('チャレンジ', () => {
   it('1回だけ使える', async () => {
     const c = await issueChallenge('203.0.113.5');
-    expect(await consumeChallenge(c, '203.0.113.5')).toBe(true);
-    expect(await consumeChallenge(c, '203.0.113.5')).toBe(false);
+    expect(await consumeChallenge(c)).toBe(true);
+    expect(await consumeChallenge(c)).toBe(false);
   });
-  it('頼んだのと別のアドレスからは使えない', async () => {
+  it('頼んだのと別のアドレスからでも使える（アプリは端末の鍵で判断する。VPNなどで回線が変わっても入り直せる）', async () => {
     const c = await issueChallenge('203.0.113.5');
-    expect(await consumeChallenge(c, '198.51.100.9')).toBe(false);
+    expect(await consumeChallenge(c)).toBe(true);
   });
   it('偽物・壊れたものは使えない。毎回違う', async () => {
-    expect(await consumeChallenge('x', '1.1.1.1')).toBe(false);
-    expect(await consumeChallenge(undefined, '1.1.1.1')).toBe(false);
-    expect(await consumeChallenge({}, '1.1.1.1')).toBe(false);
+    expect(await consumeChallenge('x')).toBe(false);
+    expect(await consumeChallenge(undefined)).toBe(false);
+    expect(await consumeChallenge({})).toBe(false);
     expect(await issueChallenge('1.1.1.1')).not.toBe(await issueChallenge('1.1.1.1'));
   });
 });

@@ -105,7 +105,8 @@ export async function proxy(req: NextRequest) {
   }
 
   // A session only works from the address it began on; from anywhere else it is ended on the spot.
-  if (session.ip && !sameNetwork(ip, session.ip)) {
+  // (not for the installed app that stays logged in with its device key: that key vouches for it, wherever it is)
+  if (!session.pwa && session.ip && !sameNetwork(ip, session.ip)) {
     await revokeSuspicious(session.sessionId, session.userId, 'session_ip_mismatch', { expected: session.ip, got: ip, path: pathname });
     const res = pathname.startsWith('/api/') ? NextResponse.json({ error: 'unauthorized' }, { status: 401 }) : NextResponse.redirect(new URL('/login', req.url));
     res.cookies.delete('sid');

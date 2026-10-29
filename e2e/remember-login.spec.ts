@@ -94,17 +94,49 @@ test.describe('アプリ（PWA）のログイン維持', () => {
     await ctx.close();
   });
 
-  test('別のネットワークに移って、セッションがアドレス違いで終わっても、入り直せる。新しいセッションは今のアドレスに結び付く', async ({ browser }) => {
+  test('アプリは端末の鍵だけで判断する: 別のネットワークに移っても、セッションは終わらない（通常のブラウザと違い、アドレスは見ない）', async ({ browser }) => {
     const acct = await newAccount('rem');
     const ctx = await installedApp(browser);
     const page = await loginInApp(ctx, acct);
+    const before = (await sessionsOf(acct.id))[0].id;
     await db.sessions.updateMany({ where: { user_id: acct.id }, data: { ip_address: '203.0.113.99' } }); // as if it had begun on another network
     await page.goto('/threads');
-    // the first request from the page finds the session on the wrong address (and ends it); the page then logs in again with its key
-    await expect.poll(async () => { const rows = await sessionsOf(acct.id); return rows.length === 1 && rows[0].ip_address !== '203.0.113.99'; }, { timeout: 15_000 }).toBe(true);
     await expect(page.getByRole('link', { name: 'カレンダー' }).first()).toBeVisible();
-    expect(await db.security_events.count({ where: { type: 'session_ip_mismatch', user_id: acct.id } })).toBeGreaterThanOrEqual(1); // several requests of the page may notice at once
+    const rows = await sessionsOf(acct.id);
+    expect(rows.map(r => r.id)).toEqual([before]); // the same session, not ended and not replaced
+    expect(await db.security_events.count({ where: { type: 'session_ip_mismatch', user_id: acct.id } })).toBe(0);
     await ctx.close();
+  });
+
+  test('アプリは、設定した無操作の時間がたっても、ログアウトされない（サーバーも、画面も）', async ({ browser }) => {
+    const acct = await newAccount('rem');
+    const ctx = await installedApp(browser);
+    const page = await loginInApp(ctx, acct);
+    const set = (m: number) => db.app_settings.upsert({ where: { key: 'SECURITY_IDLE_MINUTES' }, create: { key: 'SECURITY_IDLE_MINUTES', value: String(m) }, update: { value: String(m) } });
+    try {
+      await set(10);
+      await new Promise(r => setTimeout(r, 500)); // the server remembers the settings for a moment
+      await db.sessions.updateMany({ where: { user_id: acct.id }, data: { last_input_at: new Date(Date.now() - 120 * 60_000) } });
+      const res = await page.request.get('/api/auth/session');
+      expect(await res.json()).toMatchObject({ authenticated: true, idle_minutes: 0 }); // the page is told: no idle limit for this app
+      await page.goto('/threads');
+      await expect(page.getByRole('link', { name: 'カレンダー' }).first()).toBeVisible();
+      expect(await sessionsOf(acct.id)).toHaveLength(1);
+    } finally { await set(0); await new Promise(r => setTimeout(r, 500)); }
+    await ctx.close();
+  });
+
+  test('アプリが別のネットワークから入り直しても通る（チャレンジをもらったアドレスと、答えるアドレスが違っても）。新しいセッションも、アドレスで縛られない', async ({ browser }) => {
+    const acct = await newAccount('rem');
+    const ctx = await installedApp(browser);
+    const page = await loginInApp(ctx, acct);
+    const asked = await apiAs(await uaOf(page), await didCookie(ctx));
+    const challenge = await challengeOf(asked);
+    const { signature } = await signInPage(page, challenge);
+    const answered = await pwRequest.newContext({ baseURL: BASE_URL, extraHTTPHeaders: { 'user-agent': await uaOf(page), cookie: `did=${await didCookie(ctx)}`, 'x-forwarded-for': '198.51.100.77' } });
+    expect((await answered.post('/api/auth/resume', { data: { challenge, signature } })).status()).toBe(200);
+    expect(await db.security_events.count({ where: { type: 'device_login_refused', user_id: acct.id } })).toBe(0);
+    await answered.dispose(); await asked.dispose(); await ctx.close();
   });
 
   test('開きっぱなしのアプリが前面に戻ったとき、セッション切れを自動で直して再読み込みする', async ({ browser }) => {
@@ -199,16 +231,16 @@ test.describe('盗まれたとき・なりすまし', () => {
     await ctx.close();
   });
 
-  test('正しい署名でも、別の種類のブラウザ（端末）からは入れない', async ({ browser }) => {
+  test('端末の鍵が正しければ、ブラウザの種類・バージョンが変わっても入れる（OSの更新で入れなくならない）', async ({ browser }) => {
     const acct = await newAccount('rem');
     const ctx = await installedApp(browser);
     const page = await loginInApp(ctx, acct);
     await db.security_events.deleteMany({ where: { type: 'device_login_refused' } });
     const other = await apiAs(SAFARI_MAC, await didCookie(ctx));
     const challenge = await challengeOf(other);
-    const { signature } = await signInPage(page, challenge); // even with a valid signature (key copied by some means)
-    expect((await other.post('/api/auth/resume', { data: { challenge, signature } })).status()).toBe(401);
-    expect(JSON.parse((await db.security_events.findFirstOrThrow({ where: { type: 'device_login_refused', user_id: acct.id } })).detail!)).toMatchObject({ reason: 'fingerprint' });
+    const { signature } = await signInPage(page, challenge);
+    expect((await other.post('/api/auth/resume', { data: { challenge, signature } })).status()).toBe(200);
+    expect(await db.security_events.count({ where: { type: 'device_login_refused', user_id: acct.id } })).toBe(0);
     await ctx.close();
   });
 

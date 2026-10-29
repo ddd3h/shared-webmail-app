@@ -33,9 +33,10 @@ export async function finishLogin(req: NextRequest, user: Who, o: { method: Meth
   const res = NextResponse.json({ ok: true, ...o.extra });
 
   const device = await rememberDevice(res, user.id, req.cookies.get(DEVICE_COOKIE)?.value, { ip, userAgent, country: ipInfo?.country, city: ipInfo?.city }, o.trustMfaDays ? new Date(Date.now() + o.trustMfaDays * 86400_000) : undefined);
-  await setSessionCookie(res, { userId: user.id, email: user.email, role: user.role }, { ip, userAgent, networkType, country: ipInfo?.country, city: ipInfo?.city, deviceId: device.deviceId });
-  // the installed app sends its device key along: from now on it can log in again without a password (see lib/remember-login.ts)
+  // the installed app sends its device key along: from now on it can log in again without a password (see lib/remember-login.ts),
+  // and its session is judged by that key alone (no address / idle checks)
   const remembered = await enableRemember(device.deviceId, req.headers.get(KEY_HEADER), userAgent);
+  await setSessionCookie(res, { userId: user.id, email: user.email, role: user.role }, { ip, userAgent, networkType, country: ipInfo?.country, city: ipInfo?.city, deviceId: device.deviceId, pwa: !!remembered });
   if (remembered) res.headers.set('x-remember-days', String(remembered.days));
   prisma.users.update({ where: { id: user.id }, data: { last_login_at: new Date() } }).catch(() => {});
 

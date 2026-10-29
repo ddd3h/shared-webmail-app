@@ -70,6 +70,7 @@ type SealedPayload = {
   fp?: string;       // browser + OS of the login (no versions): a cookie replayed from another kind of device is refused
   ip?: string;       // the address of the login: a session is only good from the address it began on
   resumed?: boolean; // made by the installed app's key (no password was typed): sensitive changes ask for a real login first
+  pwa?: boolean;     // the installed app that stays logged in with its device key: the key alone vouches for it (no address / idle / browser-kind checks)
 };
 
 // Public type exposed to callers
@@ -84,6 +85,7 @@ export type Session = {
   fp?: string;
   ip?: string;
   resumed?: boolean;
+  pwa?: boolean;
 };
 
 async function sealSession(payload: SealedPayload): Promise<string> {
@@ -139,7 +141,8 @@ export async function getSession(): Promise<Session | null> {
   // A login belongs to the address it began on. From any other address the session is ended, not just refused,
   // so a stolen cookie is dead for good (and the real person simply logs in again).
   const ip = clientIpFrom(name => hdrs.get(name));
-  if (!sameNetwork(ip, dbSession.ip_address)) return revokeSuspicious(payload.sessionId, payload.userId, 'session_ip_mismatch', { expected: dbSession.ip_address, got: ip });
+  // (the installed app is the exception: its device key is what vouches for it, so it may move between networks)
+  if (!payload.pwa && !sameNetwork(ip, dbSession.ip_address)) return revokeSuspicious(payload.sessionId, payload.userId, 'session_ip_mismatch', { expected: dbSession.ip_address, got: ip });
 
   const policy = await loadSecurityPolicy();
   const issuedAt = payload.issuedAt ?? dbSession.created_at.getTime();
@@ -147,12 +150,12 @@ export async function getSession(): Promise<Session | null> {
 
   // No input for too long: the session ends, quietly (nothing suspicious happened). The page sends a sign of life while the person works;
   // background requests (polling) do not count. A minute of grace covers the page's own throttling.
-  if (policy.idleMinutes > 0 && Date.now() - dbSession.last_input_at.getTime() > (policy.idleMinutes + IDLE_GRACE_MINUTES) * 60_000) {
+  if (!payload.pwa && policy.idleMinutes > 0 && Date.now() - dbSession.last_input_at.getTime() > (policy.idleMinutes + IDLE_GRACE_MINUTES) * 60_000) {
     await prisma.sessions.delete({ where: { id: payload.sessionId } }).catch(() => {});
     return null;
   }
 
-  if (payload.fp && policy.deviceBinding) {
+  if (!payload.pwa && payload.fp && policy.deviceBinding) {
     const now = deviceFingerprint(hdrs.get('user-agent'));
     if (now !== payload.fp) return revokeSuspicious(payload.sessionId, payload.userId, 'session_device_mismatch', { expected: payload.fp, got: now });
   }
@@ -168,6 +171,7 @@ export async function getSession(): Promise<Session | null> {
     fp: payload.fp,
     ip: dbSession.ip_address,
     resumed: payload.resumed,
+    pwa: payload.pwa,
   };
 }
 
@@ -193,6 +197,7 @@ export async function getSessionFromRequest(req: NextRequest): Promise<{ session
       fp: payload.fp,
       ip: payload.ip,
       resumed: payload.resumed,
+      pwa: payload.pwa,
     },
     token,
   };
@@ -227,7 +232,7 @@ async function trimOldSessions(userId: string): Promise<void> {
 export async function setSessionCookie(
   res: NextResponse,
   data: { userId: string; email: string; role: string },
-  context: { ip: string; userAgent: string; networkType: string; country?: string | null; city?: string | null; deviceId?: string | null; resumed?: boolean }
+  context: { ip: string; userAgent: string; networkType: string; country?: string | null; city?: string | null; deviceId?: string | null; resumed?: boolean; pwa?: boolean }
 ): Promise<void> {
   const sessionId = crypto.randomUUID();
   const expiresAt = Date.now() + getTimeoutMs(context.networkType);
@@ -259,6 +264,7 @@ export async function setSessionCookie(
     fp: deviceFingerprint(context.userAgent),
     ip: context.ip,
     ...(context.resumed ? { resumed: true } : {}),
+    ...(context.pwa || context.resumed ? { pwa: true } : {}),
   };
 
   const token = await sealSession(payload);
