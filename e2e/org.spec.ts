@@ -4,12 +4,12 @@ import { db } from './helpers/db';
 import { buildOrg, putMemberships, type OrgIds } from './helpers/org';
 import { makeClaim, makeTrip } from './helpers/factories';
 import { mm } from './helpers/mattermost-mock';
-import { clearNotifications, resetOrg } from './helpers/seed';
+import { clearNotifications, resetOrg, setWorkerType } from './helpers/seed';
 import { openWorkMenu } from './helpers/ui';
 
 test.describe.configure({ mode: 'serial' });
-test.afterAll(async () => { await resetOrg(); }); // leave no organisation behind for the other specs
-test.beforeEach(async () => { await resetOrg(); await clearNotifications(); await mm.reset(); });
+test.afterAll(async () => { await resetOrg(); await setWorkerType(USERS.yamada.id, 'executive'); }); // leave no organisation behind for the other specs
+test.beforeEach(async () => { await setWorkerType(USERS.yamada.id, 'employee'); /* a 役員's requests are decided by other 役員, not by the 部署 */ await resetOrg(); await clearNotifications(); await mm.reset(); });
 
 test.describe('組織の登録（システム管理者だけ）', () => {
   test('一般ユーザー・経理担当は部署・役職・配置を変えられない', async ({ as }) => {

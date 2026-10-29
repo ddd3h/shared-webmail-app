@@ -4,11 +4,11 @@ import { db } from './helpers/db';
 import { buildOrg, openCycle, putMemberships } from './helpers/org';
 import { makeClaim } from './helpers/factories';
 import { mm } from './helpers/mattermost-mock';
-import { clearNotifications, resetOrg } from './helpers/seed';
+import { clearNotifications, resetOrg, setWorkerType } from './helpers/seed';
 
 test.describe.configure({ mode: 'serial' });
-test.afterAll(async () => { await resetOrg(); });
-test.beforeEach(async () => { await resetOrg(); await clearNotifications(); await mm.reset(); });
+test.afterAll(async () => { await resetOrg(); await setWorkerType(USERS.yamada.id, 'executive'); });
+test.beforeEach(async () => { await setWorkerType(USERS.yamada.id, 'employee'); /* a 役員's requests are decided by other 役員, not by the 部署 */ await resetOrg(); await clearNotifications(); await mm.reset(); });
 
 const rows = (userId: string) => db.org_memberships.findMany({ where: { user_id: userId }, orderBy: { unit_id: 'asc' } });
 

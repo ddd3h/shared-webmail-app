@@ -8,7 +8,7 @@ import { resetOrg } from './helpers/seed';
 // 役員の申請は、部署の長ではなく、ほかの役員（と管理者）が承認する。
 // 営業部: 佐藤(課長) ・ 田中(メンバー) ・ 鈴木(メンバー)。田中と鈴木を役員にする。
 test.describe.configure({ mode: 'serial' });
-const reset = async () => { await resetOrg(); await db.users.updateMany({ where: { id: { in: [USERS.tanaka.id, USERS.suzuki.id, USERS.sato.id, USERS.yamada.id] } }, data: { worker_type: 'employee' } }); };
+const reset = async () => { await resetOrg(); await db.users.updateMany({ where: { id: { in: [USERS.tanaka.id, USERS.suzuki.id, USERS.sato.id, USERS.yamada.id] } }, data: { worker_type: 'employee' } }); await db.users.update({ where: { id: USERS.yamada.id }, data: { worker_type: 'executive' } }); };
 test.beforeEach(reset);
 test.afterAll(reset);
 
