@@ -76,7 +76,7 @@ export function DocLinks({ docs }: { docs: Doc[] }) {
   return (
     <div className="flex flex-wrap gap-2">
       {docs.map(d => (
-        <a key={d.id} href={`/api/payments/documents/${d.id}`} download className="rounded-lg border border-gray-200 px-2 py-1 text-xs text-blue-600 hover:bg-blue-50">📎 {d.filename.length > 24 ? `${d.filename.slice(0, 21)}…` : d.filename}</a>
+        <a key={d.id} href={`/api/payments/documents/${d.id}`} target="_blank" rel="noopener noreferrer" title="新しいタブで開きます" className="rounded-lg border border-gray-200 px-2 py-1 text-xs text-blue-600 hover:bg-blue-50">📎 {d.filename.length > 24 ? `${d.filename.slice(0, 21)}…` : d.filename}</a>
       ))}
     </div>
   );

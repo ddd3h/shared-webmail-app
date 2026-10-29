@@ -42,7 +42,7 @@ export function ReceiptLinks({ receipts }: { receipts: Receipt[] }) {
   return (
     <div className="flex flex-wrap gap-2">
       {receipts.map(r => (
-        <a key={r.id} href={`/api/expenses/receipts/${r.id}`} className="rounded-lg border border-gray-200 px-2 py-1 text-xs text-blue-600 hover:bg-blue-50" download>
+        <a key={r.id} href={`/api/expenses/receipts/${r.id}`} className="rounded-lg border border-gray-200 px-2 py-1 text-xs text-blue-600 hover:bg-blue-50" target="_blank" rel="noopener noreferrer" title="新しいタブで開きます">
           📎 {r.filename.length > 24 ? `${r.filename.slice(0, 21)}…` : r.filename}
         </a>
       ))}

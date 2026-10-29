@@ -22,12 +22,12 @@ export async function GET() {
   const expenseWho = scope ? { OR: [{ unit_id: { in: scope } }, { unit_id: null, ...who }] } : {};
 
   const [expenses, trips] = await Promise.all([
-    prisma.expense_claims.findMany({ where: { status: 'pending', ...expenseWho }, orderBy: { created_at: 'asc' }, take: 200, include: { user: { select: { id: true, name: true } }, unit: { select: { id: true, name: true } } } }),
+    prisma.expense_claims.findMany({ where: { status: 'pending', ...expenseWho }, orderBy: { created_at: 'asc' }, take: 200, include: { user: { select: { id: true, name: true } }, unit: { select: { id: true, name: true } }, receipts: { select: { id: true, filename: true }, orderBy: { created_at: 'asc' } } } }),
     prisma.business_trips.findMany({ where: { status: 'pending', ...who }, orderBy: { created_at: 'asc' }, take: 200, include: { user: { select: { id: true, name: true } } } }),
   ]);
   return NextResponse.json({
     allowed: true,
-    expenses: expenses.map(c => ({ id: c.id, user: c.user, unit: c.unit, title: c.title, category: c.category, amount: c.amount, payment_method: c.payment_method, expense_date: ymd(c.expense_date) })),
+    expenses: expenses.map(c => ({ id: c.id, user: c.user, unit: c.unit, receipts: c.receipts, title: c.title, category: c.category, amount: c.amount, payment_method: c.payment_method, expense_date: ymd(c.expense_date) })),
     trips: trips.map(t => ({ id: t.id, user: t.user, destination: t.destination, purpose: t.purpose, start_date: ymd(t.start_date), end_date: ymd(t.end_date) })),
   });
 }

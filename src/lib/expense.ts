@@ -19,7 +19,7 @@ export const PAYMENT_LABEL: Record<PaymentMethod, string> = { personal: '立替'
 export const MAX_RECEIPTS = 5;
 export const MAX_AMOUNT = 100_000_000;
 
-// Receipts are images or PDFs only; they are always served as downloads.
+// Receipts are images or PDFs only; they are shown in the browser (src/lib/file-response.ts).
 export const RECEIPT_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/heic', 'application/pdf'];
 
 export function isReceiptType(t: string) {
