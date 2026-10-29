@@ -11,11 +11,13 @@ export type Vendor = {
 export type Doc = { id: string; filename: string; content_type: string; size: number };
 export type Request = {
   id: string; user: { id: string; name: string }; vendor: Vendor; title: string; amount: number; deduction_amount: number; fee: number;
-  fee_bearer: FeeBearer; transfer_amount: number; invoice_number: string | null; invoice_date: string | null; due_date: string;
+  fee_bearer: FeeBearer; transfer_amount: number; invoice_number: string | null; invoice_date: string | null; due_date: string; transfer_date: string | null; transfer_day: 15 | 25 | null; transfer_late: boolean;
   description: string | null; status: PaymentStatus; reviewer: string | null; review_comment: string | null; paid_at: string | null; paid_note: string | null; documents: Doc[];
 };
 export type Summary = { pending: { count: number; amount: number }; approved: { count: number; amount: number }; paid: { count: number; amount: number }; overdue: number };
 
+/** "11/15 15日振込" */
+export const transferSlotText = (date: string, day: number) => `${Number(date.slice(5, 7))}/${Number(date.slice(8))} ${day}日振込`;
 export const todayJst = () => new Date(Date.now() + 9 * 3600_000).toISOString().slice(0, 10);
 
 const STYLE: Record<PaymentStatus, string> = { pending: 'bg-amber-100 text-amber-700', approved: 'bg-blue-100 text-blue-700', rejected: 'bg-red-100 text-red-600', paid: 'bg-emerald-100 text-emerald-700' };
@@ -33,7 +35,8 @@ export function RequestHeader({ r, showUser }: { r: Request; showUser?: boolean 
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-1.5 text-xs text-gray-500">
           <span>期日 {dateLabel(r.due_date)}</span>
-          {overdue && <span className="rounded-sm bg-red-50 px-1.5 py-0.5 text-red-600">期日超過</span>}
+          {r.transfer_date && r.transfer_day && <span className="rounded-sm bg-blue-50 px-1.5 py-0.5 text-blue-700" data-testid="transfer-slot">{transferSlotText(r.transfer_date, r.transfer_day)}</span>}
+          {(overdue || (r.transfer_late && r.transfer_date)) && <span className="rounded-sm bg-red-50 px-1.5 py-0.5 text-red-600">{overdue ? '期日超過' : '期日に間に合いません'}</span>}
           {showUser && <span className="rounded-sm bg-gray-100 px-1.5 py-0.5 text-gray-700">{r.user.name}</span>}
         </div>
         <div className="mt-0.5 text-sm font-medium text-gray-900 wrap-break-word">{r.vendor.name} <span className="text-gray-400 font-normal">宛</span> {r.title}</div>

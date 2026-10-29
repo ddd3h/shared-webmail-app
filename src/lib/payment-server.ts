@@ -2,6 +2,8 @@
 import { prisma } from '@/lib/db';
 import { decrypt } from '@/lib/crypto';
 import { maskAccount, transferAmount, type AccountType } from '@/lib/payment';
+import { transferSlotFor } from '@/lib/transfer-days';
+import { jstDateString } from '@/lib/work';
 
 const ymd = (d: Date | null) => (d ? d.toISOString().slice(0, 10) : null);
 
@@ -26,6 +28,8 @@ export const requestInclude = {
 };
 
 export async function serializeRequest(r: any, admin: boolean) {
+  // paid / rejected ones have no planned transfer day; the others get the 15日 or 25日 that fits their due date
+  const slot = r.status === 'pending' || r.status === 'approved' ? transferSlotFor(ymd(r.due_date)!, jstDateString(new Date())) : null;
   return {
     id: r.id,
     user: r.user,
@@ -39,6 +43,7 @@ export async function serializeRequest(r: any, admin: boolean) {
     invoice_number: r.invoice_number,
     invoice_date: ymd(r.invoice_date),
     due_date: ymd(r.due_date),
+    transfer_date: slot?.date ?? null, transfer_day: slot?.day ?? null, transfer_late: slot?.late ?? false,
     description: r.description,
     batch_id: r.batch_id ?? null,
     status: r.status,

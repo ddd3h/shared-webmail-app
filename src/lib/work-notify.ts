@@ -1,6 +1,7 @@
 // Mattermost DMs for the expense / work-report / payslip / attendance features.
 // Every function swallows its own errors so callers can fire and forget.
 import { prisma } from '@/lib/db';
+import { transferSlotFor, transferSlotLabel } from '@/lib/transfer-days';
 import { mmText, sendDirectMessage } from '@/lib/mattermost-dm';
 import { PAYMENT_LABEL, type PaymentMethod } from '@/lib/expense';
 import { approversOf } from '@/lib/org-server';
@@ -162,7 +163,7 @@ export function notifyPaymentSubmitted(requestId: string, resubmitted = false) {
     const msg =
       `🏦 **振込申請が${resubmitted ? '再申請されました' : '届きました'}**\n\n` +
       `**${mmText(r.user.name, 40)}** さん ・ ${mmText(r.vendor.name, 60)} 宛 ・ **${yen(r.amount)}**\n` +
-      `件名: ${mmText(r.title, 100)} ・ 支払期日 ${r.due_date.toISOString().slice(0, 10)}\n\n承認・却下: ${appUrl()}/payments`;
+      `件名: ${mmText(r.title, 100)} ・ 支払期日 ${r.due_date.toISOString().slice(0, 10)} ・ 振込予定 ${transferSlotLabel(transferSlotFor(r.due_date.toISOString().slice(0, 10), new Date(Date.now() + 9 * 3600_000).toISOString().slice(0, 10)))}\n\n承認・却下: ${appUrl()}/payments`;
     await dmAll(await adminsExcept(r.user_id), msg, 'payment_submitted');
   });
 }

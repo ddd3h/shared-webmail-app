@@ -3,7 +3,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Modal, Notice, Stat, api, btn, btnPrimary, inp, yen, PanelSkeleton } from '@/components/work/ui';
 import { transferAmount } from '@/lib/payment';
 import VendorForm, { blankVendor } from './VendorForm';
-import { RequestDetail, RequestHeader, todayJst, type Request, type Summary, type Vendor } from './shared';
+import { transferSlotFor } from '@/lib/transfer-days';
+import { RequestDetail, RequestHeader, todayJst, transferSlotText, type Request, type Summary, type Vendor } from './shared';
 import FilterBar from '@/components/mobile/FilterBar';
 
 type Form = {
@@ -84,6 +85,7 @@ export default function MyPayments({ vendors, onVendorsChanged }: { vendors: Ven
     if (res.ok) load(); else flash('error', '削除できませんでした');
   }
 
+  const slotPreview = form?.due_date && /^\d{4}-\d{2}-\d{2}$/.test(form.due_date) ? transferSlotFor(form.due_date, todayJst()) : null;
   const selectedVendor = vendors.find(v => v.id === form?.vendor_id);
   return (
     <div className="space-y-4">
@@ -136,7 +138,8 @@ export default function MyPayments({ vendors, onVendorsChanged }: { vendors: Ven
             <div><label className="text-xs text-gray-600">件名・内容</label><input className={inp} placeholder="例: 10月分 開発業務委託費" value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} /></div>
             <div className="grid grid-cols-2 gap-2">
               <div><label className="text-xs text-gray-600">請求金額（円・税込）</label><input type="number" min={1} className={`${inp} text-right`} value={form.amount} onChange={e => setForm({ ...form, amount: e.target.value })} /></div>
-              <div><label className="text-xs text-gray-600">支払期日</label><input type="date" className={inp} value={form.due_date} onChange={e => setForm({ ...form, due_date: e.target.value })} /></div>
+              <div><label className="text-xs text-gray-600">支払期日</label><input type="date" className={inp} value={form.due_date} onChange={e => setForm({ ...form, due_date: e.target.value })} />
+                {slotPreview && <p className={`mt-1 text-xs ${slotPreview.late ? 'text-red-600' : 'text-blue-700'}`} data-testid="transfer-slot-preview">{slotPreview.late ? `期日には間に合いません。次の振込日は ${transferSlotText(slotPreview.date, slotPreview.day)} です` : `${transferSlotText(slotPreview.date, slotPreview.day)} に振り込みます（毎月15日・25日。土日は前の平日）`}</p>}</div>
               <div><label className="text-xs text-gray-600">請求書番号（任意）</label><input className={inp} value={form.invoice_number} onChange={e => setForm({ ...form, invoice_number: e.target.value })} /></div>
               <div><label className="text-xs text-gray-600">請求書の日付（任意）</label><input type="date" className={inp} value={form.invoice_date} onChange={e => setForm({ ...form, invoice_date: e.target.value })} /></div>
               <div><label className="text-xs text-gray-600">控除（源泉所得税など・円）</label><input type="number" min={0} className={`${inp} text-right`} value={form.deduction_amount} onChange={e => setForm({ ...form, deduction_amount: e.target.value })} /></div>
