@@ -19,6 +19,8 @@ export const WORKER_TYPE_LABEL: Record<WorkerType, string> = {
 // (a dispatched worker is paid by the agency, so what this company pays is a fee).
 export const usesAttendance = (t: WorkerType) => t === 'employee' || t === 'regular' || t === 'part' || t === 'dispatch';
 export const usesReports = (t: WorkerType) => t === 'contractor' || t === 'quasi_contractor';
+/** A pay statement is a 賞与 (bonus) when its title says so: it is not the regular monthly pay, and it is paid in its own 全銀 category. */
+export const isBonusTitle = (title: string) => title.includes('賞与');
 /** Paid a 業務委託費 (a fee) under a contract rather than a salary: 業務委託 and 準業務委託. */
 export const isContractorLike = (t: WorkerType) => t === 'contractor' || t === 'quasi_contractor';
 export const paysSalary = (t: WorkerType) => t === 'employee' || t === 'regular' || t === 'part';

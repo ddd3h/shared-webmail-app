@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import Dropdown from './Dropdown';
 import Icon from './Icon';
-import { ACCOUNT_ITEMS, ADMIN_ITEM, APPROVALS_ITEM, MAIN_ITEMS, NOTIFICATIONS_ITEM, ORG_GROUP_LABEL, ORG_ITEMS, TRANSFERS_ITEM, WORK_GROUP_LABEL, WORK_ITEMS, isActivePath, iconPath, type NavItem } from './items';
+import { ACCOUNT_ITEMS, ADMIN_ITEM, APPROVALS_ITEM, MAIN_ITEMS, NOTIFICATIONS_ITEM, ORG_GROUP_LABEL, ORG_ITEMS, TRANSFERS_ITEM, AUTOFLOW_ITEM, WORK_GROUP_LABEL, WORK_ITEMS, isActivePath, iconPath, type NavItem } from './items';
 import { logout, type NavUser } from './useNavUser';
 import CountBadge from './CountBadge';
 import { useNotificationCount } from '@/hooks/useNotificationCount';
@@ -46,7 +46,7 @@ function MenuLink({ item, pathname }: { item: NavItem; pathname: string }) {
 export default function DesktopNav({ user }: { user: NavUser }) {
   const pathname = usePathname();
   const unreadNotifications = useNotificationCount();
-  const workItems = [...WORK_ITEMS, ...(user.canApprove ? [APPROVALS_ITEM] : []), ...(user.isFinance ? [TRANSFERS_ITEM] : [])];
+  const workItems = [...WORK_ITEMS, ...(user.canApprove ? [APPROVALS_ITEM] : []), ...(user.isFinance ? [TRANSFERS_ITEM, AUTOFLOW_ITEM] : [])];
   const accountItems = user.isAdmin ? [...ACCOUNT_ITEMS, ADMIN_ITEM] : ACCOUNT_ITEMS;
 
   return (

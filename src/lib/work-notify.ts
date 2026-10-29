@@ -81,7 +81,8 @@ export function notifyWorkReportSubmitted(reportId: string) {
     const r = await prisma.work_reports.findUnique({ where: { id: reportId }, include: { user: { select: { id: true, name: true } } } });
     if (!r) return;
     const hours = r.hours === null ? '' : ` ・ ${Number(r.hours)}h`;
-    const msg = `📝 **業務報告書が提出されました**\n\n**${mmText(r.user.name, 40)}** さん ・ ${mmText(r.title, 100)}${hours}\n\n確認: ${appUrl()}/work`;
+    const warn = r.activity_flag ? '\n⚠️ **ログインの記録が少ない期間の報告です。**警告を読んだうえで、本人が提出しました。内容を確認してください。' : '';
+    const msg = `📝 **業務報告書が提出されました**\n\n**${mmText(r.user.name, 40)}** さん ・ ${mmText(r.title, 100)}${hours}${warn}\n\n確認: ${appUrl()}/work`;
     await dmAll(await adminsExcept(r.user_id), msg, 'work_report');
   });
 }
@@ -189,6 +190,32 @@ export function notifyPaymentPaid(requestIds: string[], paidDate: string) {
     });
     await Promise.all(rows.map(r => sendDirectMessage(r.user.id, r.user.email,
       `💴 **振込が完了しました**\n\n${mmText(r.vendor.name, 60)} 宛「${mmText(r.title, 80)}」 ${yen(r.amount)}（振込日 ${paidDate}）\n\n${appUrl()}/payments`, 'payment_paid')));
+  });
+}
+
+// 全銀データができた（経理が「承認して確定」した） -> 振り込まれる人ごとに1通。金額と口座は載せない
+export function notifyBatchConfirmed(batchId: string) {
+  return safely('batch_confirmed', async () => {
+    const [batch, slips, claims, pays] = await Promise.all([
+      prisma.transfer_batches.findUnique({ where: { id: batchId }, select: { transfer_date: true } }),
+      prisma.payslips.findMany({ where: { batch_id: batchId }, select: { pay_month: true, title: true, user: { select: { id: true, email: true } } } }),
+      prisma.expense_claims.findMany({ where: { batch_id: batchId }, select: { user: { select: { id: true, email: true } } } }),
+      prisma.payment_requests.findMany({ where: { batch_id: batchId }, select: { title: true, user: { select: { id: true, email: true } }, vendor: { select: { name: true } } } }),
+    ]);
+    if (!batch) return;
+    const people = new Map<string, { email: string; lines: string[]; claims: number }>();
+    const of = (u: { id: string; email: string }) => { const p = people.get(u.id) ?? { email: u.email, lines: [], claims: 0 }; people.set(u.id, p); return p; };
+    for (const s of slips) of(s.user).lines.push(`${s.pay_month}分 ${mmText(s.title, 40)}`);
+    for (const c of claims) of(c.user).claims++;
+    for (const r of pays) of(r.user).lines.push(`振込申請「${mmText(r.title, 40)}」（${mmText(r.vendor.name, 30)} 宛）`);
+    const date = fmtDate(batch.transfer_date);
+    // 1通ずつ順に送る（Mattermost に一斉に投げない）
+    for (const [userId, p] of people) {
+      const lines = [...p.lines, ...(p.claims > 0 ? [`経費の立替金（${p.claims}件）`] : [])];
+      await sendDirectMessage(userId, p.email,
+        `🏦 **お振込が確定しました**\n\n振込予定日: ${date}\n${lines.map(l => `・${l}`).join('\n')}\n\n経理の承認が済み、銀行へ渡す振込データができました。振込予定日以降に、口座への入金をご確認ください。\n\n${appUrl()}/notifications`,
+        'payment_confirmed');
+    }
   });
 }
 

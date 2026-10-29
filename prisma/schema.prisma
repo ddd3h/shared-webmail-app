@@ -109,6 +109,9 @@ model users {
   work_reports               work_reports[]
   payslips                   payslips[]               @relation("payslip_user")
   payslips_created           payslips[]               @relation("payslip_creator")
+  fixed_pay_plans            fixed_pay_plans[]        @relation("fixed_pay_user")
+  pay_extras                 pay_extras[]             @relation("pay_extra_user")
+  payroll_profile            payroll_profiles?        @relation("payroll_profile_user")
   expense_claims             expense_claims[]         @relation("expense_claimant")
   expense_reviewed           expense_claims[]         @relation("expense_reviewer")
   expense_reimbursed         expense_claims[]         @relation("expense_reimburser")
@@ -676,6 +679,7 @@ model login_logs {
   @@index([created_at])
   @@index([ip_address])
   @@index([success, created_at]) // the 24-hour failure counts of the security overview
+  @@index([user_id, created_at]) // when did this person last log in (準業務委託の報告書の活動確認)
 }
 
 // Emails scheduled to be sent at a future time. Kept separate from `messages`
@@ -829,6 +833,10 @@ model work_reports {
   title       String
   content     String
   hours       Decimal? @db.Decimal(5, 2)
+  // 準業務委託: ログインの少ない期間の報告を、警告を読んだうえで本人が提出した印（経理が気づけるようにする）
+  activity_flag   Boolean   @default(false)
+  activity_note   String?
+  activity_ack_at DateTime?
   created_at  DateTime @default(now())
   updated_at  DateTime @updatedAt
 
@@ -848,6 +856,8 @@ model payslips {
   note          String?
   created_by_id String?
   batch_id      String?   // the 全銀 transfer file this statement was put into
+  auto_key      String?   @unique // オートフローが自動で作った明細の印（'fixed:<user>:<YYYY-MM>' 'bonus:<extra>'）。二重に作らないための鍵
+  auto_edited   Boolean   @default(false) // 自動で作った明細を、経理が明細の画面で直した。直したあとは、加算の追加などで行を作り直さない
   created_at    DateTime  @default(now())
   updated_at    DateTime  @updatedAt
 
@@ -1404,4 +1414,83 @@ model org_memberships {
   @@id([user_id, unit_id])
   @@index([unit_id])
   @@index([position_id])
+}
+
+// オートフロー: 期限に合わせて自動で送るDM。送る前にこの表に1行作って「送った」ことにする（同じ宛先・同じ段階を二度送らない）。
+model autoflow_notices {
+  id          String   @id @default(cuid())
+  rule        String   // 'report' | 'expense' | 'payment'
+  stage       String   // report: eve | closing | final / expense, payment: before | on
+  subject_key String   // 何についての通知か。例 'report:2026-10' 'expense:2026-10' 'payday:2026-11-25'
+  user_id     String   // 受け取る人
+  title       String   // 送った文面の1行目（履歴で見せる）
+  delivered   Boolean  @default(false) // Mattermost に届いたか（false でもアプリ内通知は残っている）
+  created_at  DateTime @default(now())
+
+  @@unique([rule, stage, subject_key, user_id])
+  @@index([created_at])
+}
+
+// オートフローを動かした日の記録。run_date（日本時間の日付）が unique なので、1日1回だけ動く。
+model autoflow_runs {
+  id          String    @id @default(cuid())
+  run_date    String    @unique // 'YYYY-MM-DD'
+  started_at  DateTime  @default(now())
+  finished_at DateTime?
+  summary     String?   // 実行結果の要約（JSON）
+}
+
+// 役員報酬・準業務委託の固定の月額。オートフローが、毎月の締め日に給与明細（支払予定）の下書きを自動で作る。
+model fixed_pay_plans {
+  id            String   @id @default(cuid())
+  user_id       String
+  label         String   // 明細の題名と行の名前（役員報酬／業務委託報酬 など）
+  amount        Int      // 月額（円）
+  commute_amount Int     @default(0) // 通勤手当（円）。非課税（月15万円まで）の行として、月額の下に別の行で入る
+  starts_month  String   // 'YYYY-MM' 最初の支払月（期間の月）
+  ends_month    String?  // 'YYYY-MM' 最後の支払月。空なら続く
+  active        Boolean  @default(true)
+  note          String?
+  created_by_id String?
+  created_at    DateTime @default(now())
+  updated_at    DateTime @updatedAt
+
+  user users @relation("fixed_pay_user", fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@index([user_id])
+}
+
+// その月だけの加算（addon: 月の下書きに足す）と賞与（bonus: 別の明細になる）。
+model pay_extras {
+  id            String   @id @default(cuid())
+  user_id       String
+  pay_month     String   // 'YYYY-MM'
+  kind          String   // 'addon' | 'bonus'
+  label         String
+  amount        Int
+  created_by_id String?
+  created_at    DateTime @default(now())
+
+  user users @relation("pay_extra_user", fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@index([user_id, pay_month])
+}
+
+// 給与から引く控除（社会保険料・雇用保険料・源泉所得税・住民税）を自動で計算するための、一人ひとりの登録。
+// 生年月日は介護保険（40〜64歳）と年金・健康保険の年齢の範囲を決めるのに使う。経理・管理者だけが見られる。
+model payroll_profiles {
+  id                 String    @id @default(cuid())
+  user_id            String    @unique
+  birth_date         DateTime? @db.Date
+  health_insured     Boolean   @default(true)  // 健康保険・厚生年金に入っている
+  employment_insured Boolean   @default(true)  // 雇用保険に入っている
+  standard_monthly   Int?      // 標準報酬月額。空なら、その月の支給から等級を引く
+  dependents         Int       @default(0)     // 扶養親族等の数（源泉所得税の甲欄。乙欄では「従たる給与」の扶養親族等の数）
+  resident_tax       Int       @default(0)     // 住民税（月額・特別徴収）
+  resident_tax_first Int?      // 6月に支給する給与の住民税（通知書の初回分）。空なら月額と同じ
+  updated_by_id      String?
+  created_at         DateTime  @default(now())
+  updated_at         DateTime  @updatedAt
+
+  user users @relation("payroll_profile_user", fields: [user_id], references: [id], onDelete: Cascade)
 }

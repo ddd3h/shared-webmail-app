@@ -133,6 +133,30 @@ if (!g.__sessionCleanupStarted) {
   }, 24 * 60 * 60 * 1000);
 }
 
+// オートフロー（申請・給与の自動通知）: 日本時間の 9 時を過ぎた最初の 1 回だけ、その日の分を送る。
+// 「9 時台だけ」ではなく「9 時以降」なので、デプロイや再起動で 9 時台を逃しても、その日のうちに動く。
+// 1 日 1 回は DB の autoflow_runs が保証する。何も ON になっていなければ何もしない。
+if (!g.__autoflowStarted) {
+  g.__autoflowStarted = true;
+  let busy = false;
+  const tick = async () => {
+    if (busy || new Date(Date.now() + 9 * 3600_000).getUTCHours() < 9) return;
+    busy = true;
+    try {
+      const { runDaily } = await import('@/lib/autoflow/run');
+      const r = await runDaily();
+      if (r) console.log(`[autoflow] ${r.today}: planned=${r.planned} sent=${r.sent} skipped=${r.skipped} delivered=${r.delivered}`);
+    } catch (e) {
+      console.error('[autoflow] daily run failed:', e);
+    } finally {
+      busy = false;
+    }
+  };
+  setTimeout(tick, 60_000);
+  setInterval(tick, 60_000);
+  console.log('[autoflow] daily job started (after 09:00 JST, once a day)');
+}
+
 // Run the collaborative-editing (y-websocket) server IN-PROCESS, so a single
 // `pm2 start shared-webmail-app` brings up everything. It listens on COLLAB_PORT
 // (default 1234); nginx proxies wss://<host>/collab → it.

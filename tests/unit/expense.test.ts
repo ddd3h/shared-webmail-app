@@ -53,10 +53,14 @@ describe('summarize', () => {
 });
 
 describe('pickPayslip', () => {
-  it('支払予定の「給与」を優先し、なければ最初の支払予定', () => {
-    const bonus = { title: '賞与', status: 'planned' }, pay = { title: '給与', status: 'planned' }, done = { title: '給与', status: 'paid' };
+  it('支払予定の「給与」を優先し、なければ賞与でない最初の支払予定', () => {
+    const bonus = { title: '賞与', status: 'planned' }, pay = { title: '給与', status: 'planned' }, fee = { title: '役員報酬', status: 'planned' };
     expect(pickPayslip([bonus, pay])).toBe(pay);
-    expect(pickPayslip([bonus])).toBe(bonus);
+    expect(pickPayslip([bonus, fee])).toBe(fee);
+  });
+  it('賞与の明細には、立替金を合算しない（賞与として払われてしまう）', () => {
+    expect(pickPayslip([{ title: '賞与', status: 'planned' }])).toBeUndefined();
+    expect(pickPayslip([{ title: '賞与（夏季）', status: 'planned' }])).toBeUndefined();
   });
   it('支払済の明細は選ばない', () => {
     expect(pickPayslip([{ title: '給与', status: 'paid' }])).toBeUndefined();

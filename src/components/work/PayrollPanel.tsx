@@ -10,6 +10,7 @@ type LinkedClaim = { id: string; title: string; amount: number; expense_date: st
 type Slip = {
   id: string; user: { id: string; name: string; worker_type: WorkerType }; pay_month: string; title: string; status: 'planned' | 'paid';
   pay_date: string | null; note: string | null; items: Item[]; claims: LinkedClaim[]; earnings: number; deductions: number; net: number;
+  auto_draft?: { edited: boolean } | null; // オートフローが固定報酬から作った下書き（支払予定・全銀ファイル前）
 };
 type Summary = { month: string; planned_total: number; paid_total: number; count: number };
 type Draft = { id?: string; userId: string; pay_month: string; title: string; status: 'planned' | 'paid'; pay_date: string; note: string; items: { kind: 'earning' | 'deduction'; label: string; amount: string }[]; system: { label: string; amount: number } | null ; date_touched?: boolean; hint?: string };
@@ -78,6 +79,18 @@ export default function PayrollPanel({ manage = false, members = [], noun = '給
     const res = draft.id ? await api(`/api/work/payslips/${draft.id}`, 'PUT', body) : await api('/api/work/payslips', 'POST', { ...body, userId: draft.userId });
     if (res.ok) { setDraft(null); flash('success', '明細を保存しました'); load(); } else flash('error', '保存に失敗しました。項目と金額（0以上の整数）を確認してください');
   }
+  // 控除の自動計算（オートフロー）で入れた控除の行を、いまの支給の行からもう一度計算する
+  async function recalc(id: string) {
+    const res = await api('/api/autoflow/deductions/recalc', 'POST', { payslip_id: id });
+    if (!res.ok) {
+      const e = (await res.json().catch(() => ({})))?.error;
+      flash('error', e === 'disabled' ? '「オートフロー → 流れの設定」で、控除の自動計算をONにしてください' : e === 'locked' ? '全銀データに含まれているか支払済みのため、再計算できません' : '再計算できませんでした');
+      return;
+    }
+    const d = await res.json();
+    flash('success', d.warnings?.length ? `控除を再計算しました（警告 ${d.warnings.length}件。メモを確認してください）` : '控除を再計算しました');
+    load();
+  }
   async function remove(id: string) {
     if (!confirm('この明細を削除しますか？')) return;
     const res = await api(`/api/work/payslips/${id}`, 'DELETE');
@@ -139,8 +152,8 @@ export default function PayrollPanel({ manage = false, members = [], noun = '給
                   </div>
                 )}
                 <div className="flex justify-between rounded-lg bg-gray-50 px-3 py-2 font-bold"><span>差引支給額（手取り）</span><span className="tabular-nums">{yen(p.net)}</span></div>
-                <div className="text-xs text-gray-500">{p.pay_date ? `支払日: ${p.pay_date}` : '支払日: 未定'}{p.note ? ` ・ ${p.note}` : ''}</div>
-                {manage && <div className="flex gap-3 text-xs"><button className="text-blue-600 hover:underline" onClick={() => setDraft(editDraft(p))}>編集</button><button className="text-red-600 hover:underline" onClick={() => remove(p.id)}>削除</button></div>}
+                <div className="text-xs text-gray-500 whitespace-pre-line">{p.pay_date ? `支払日: ${p.pay_date}` : '支払日: 未定'}{p.note ? `\n${p.note}` : ''}</div>
+                {manage && <div className="flex gap-3 text-xs"><button className="text-blue-600 hover:underline" onClick={() => setDraft(editDraft(p))}>編集</button>{p.auto_draft && <button className="text-blue-600 hover:underline" onClick={() => recalc(p.id)} title="自動で入れた控除の行（健康保険料・所得税など）を、いまの支給の行から計算し直します。自分で足した控除の行は残ります">控除を再計算</button>}<button className="text-red-600 hover:underline" onClick={() => remove(p.id)}>削除</button></div>}
               </div>
             )}
           </div>

@@ -3,7 +3,9 @@ import { useCallback, useEffect, useState } from 'react';
 import { shortDate, type Plan } from '@/lib/pay-schedule';
 import { MonthNav, Modal, Notice, Stat, btn, btnPrimary, currentMonth, dateLabel, inp, api, PanelSkeleton } from './ui';
 
-type Report = { id: string; report_date: string; title: string; content: string; hours: number | null; user?: { id: string; name: string }; pay_plan: Plan };
+type Report = { id: string; report_date: string; title: string; content: string; hours: number | null; activity_flag?: boolean; activity_note?: string | null; user?: { id: string; name: string }; pay_plan: Plan };
+// 準業務委託: ログインの記録がない日の報告をしようとしたときの警告
+type Warning = { days: number; last_login: string | null; report_date: string };
 type Sched = { summary: string; today: string; period: { month: string; closing_date: string; report_deadline: string; pay_date: string } };
 type Draft = { id?: string; report_date: string; title: string; content: string; hours: string };
 
@@ -17,6 +19,7 @@ export default function ReportsPanel({ admin = false, userId }: { admin?: boolea
   const [open, setOpen] = useState<string | null>(null);
   const [msg, setMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [sched, setSched] = useState<Sched | null>(null);
+  const [warning, setWarning] = useState<Warning | null>(null);
 
   useEffect(() => { setMonth(currentMonth()); }, []);
   // my own 締め日・提出期限 (a contractor's view; the administrators' list is of everyone, each with their own)
@@ -33,11 +36,16 @@ export default function ReportsPanel({ admin = false, userId }: { admin?: boolea
   function flash(type: 'success' | 'error', text: string) { setMsg({ type, text }); setTimeout(() => setMsg(null), 4000); }
   const today = () => new Date(Date.now() + 9 * 3600_000).toISOString().slice(0, 10);
 
-  async function save() {
+  // `ack`: 「ログインの記録がない」という警告を読んで、それでも提出する、と本人が選んだ
+  async function save(ack = false) {
     if (!draft) return;
-    const body = { report_date: draft.report_date, title: draft.title, content: draft.content, hours: draft.hours === '' ? null : Number(draft.hours) };
+    const body = { report_date: draft.report_date, title: draft.title, content: draft.content, hours: draft.hours === '' ? null : Number(draft.hours), ...(ack ? { activity_ack: true } : {}) };
     const res = draft.id ? await api(`/api/work/reports/${draft.id}`, 'PATCH', body) : await api('/api/work/reports', 'POST', body);
-    if (res.ok) { setDraft(null); flash('success', '報告書を提出しました'); load(); } else flash('error', '保存に失敗しました。件名と内容を入力してください');
+    if (res.ok) { setWarning(null); setDraft(null); flash('success', '報告書を提出しました'); load(); return; }
+    const d = await res.json().catch(() => ({}));
+    if (res.status === 409 && d.error === 'activity_warning') { setWarning({ days: d.days, last_login: d.last_login, report_date: draft.report_date }); return; }
+    setWarning(null);
+    flash('error', '保存に失敗しました。件名と内容を入力してください');
   }
   async function remove(id: string) {
     if (!confirm('この報告書を削除しますか？')) return;
@@ -72,6 +80,7 @@ export default function ReportsPanel({ admin = false, userId }: { admin?: boolea
               <div className="flex items-center gap-2 text-xs text-gray-500">
                 <span>{dateLabel(r.report_date)}</span>{admin && r.user && <span className="rounded-sm bg-gray-100 px-1.5 py-0.5">{r.user.name}</span>}
                 {r.hours !== null && <span>{r.hours}h</span>}
+                {r.activity_flag && <span className="rounded-sm bg-red-50 px-1.5 py-0.5 text-[11px] font-semibold text-red-700" title={r.activity_note ?? undefined} data-testid="activity-flag">⚠ ログインの記録なし</span>}
                 {r.pay_plan.late
                   ? <span className="rounded-sm bg-amber-50 px-1.5 py-0.5 text-[11px] text-amber-800">期限後の提出 → {Number(r.pay_plan.period.slice(5))}月分（支払 {shortDate(r.pay_plan.pay_date)}）</span>
                   : <span className="text-[11px] text-gray-400">支払 {shortDate(r.pay_plan.pay_date)}</span>}
@@ -80,6 +89,7 @@ export default function ReportsPanel({ admin = false, userId }: { admin?: boolea
             </button>
             {open === r.id && (
               <div className="mt-2 border-t border-gray-100 pt-2">
+                {r.activity_flag && <p className="mb-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">⚠ {r.activity_note || 'ログインの記録がない期間の報告です。'}</p>}
                 <p className="whitespace-pre-wrap wrap-break-word text-sm text-gray-700">{r.content}</p>
                 <div className="mt-2 flex gap-3 text-xs">
                   {!admin && <button className="text-blue-600 hover:underline" onClick={() => setDraft({ id: r.id, report_date: r.report_date, title: r.title, content: r.content, hours: r.hours === null ? '' : String(r.hours) })}>編集</button>}
@@ -101,7 +111,24 @@ export default function ReportsPanel({ admin = false, userId }: { admin?: boolea
             <div><label className="text-xs text-gray-600">件名</label><input className={inp} placeholder="例: 10月第3週の作業報告" value={draft.title} onChange={e => setDraft({ ...draft, title: e.target.value })} /></div>
             <div><label className="text-xs text-gray-600">報告内容</label><textarea className={inp} rows={8} placeholder="実施した業務、成果、課題、次回の予定など" value={draft.content} onChange={e => setDraft({ ...draft, content: e.target.value })} /></div>
           </div>
-          <div className="flex justify-end gap-2 pt-4"><button className={btn} onClick={() => setDraft(null)}>閉じる</button><button className={btnPrimary} onClick={save}>{draft.id ? '更新' : '提出'}</button></div>
+          <div className="flex justify-end gap-2 pt-4"><button className={btn} onClick={() => setDraft(null)}>閉じる</button><button className={btnPrimary} onClick={() => save()}>{draft.id ? '更新' : '提出'}</button></div>
+        </Modal>
+      )}
+      {draft && warning && (
+        <Modal title="⚠ 虚偽の報告になっていないか、確認してください" onClose={() => setWarning(null)}>
+          <div className="space-y-3 text-sm text-gray-800" data-testid="activity-warning">
+            <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 font-semibold text-red-800">
+              {warning.report_date} までの{warning.days}日間、あなたのログインの記録がありません
+              {warning.last_login ? `（最後のログイン: ${warning.last_login}）` : '（ログインの記録そのものがありません）'}。
+            </p>
+            <p>実際には業務を行っていないのに、行ったと報告することは<b>虚偽の報告</b>です。契約違反にあたり、報酬の返還や契約の解除を求められることがあります。内容によっては、詐欺などの<b>犯罪</b>として責任を問われる場合もあります。</p>
+            <p>この報告書は、「ログインの記録がない期間の報告」として、<b>警告つきで経理担当と管理者に届きます</b>。</p>
+            <p className="text-xs text-gray-500">オフラインで作業をしていた場合など、事実に間違いがなければ、そのまま提出できます。</p>
+          </div>
+          <div className="flex flex-wrap justify-end gap-2 pt-4">
+            <button className={btnPrimary} onClick={() => setWarning(null)}>提出しない</button>
+            <button className="rounded-lg border border-red-300 px-4 py-2 text-sm font-medium text-red-700 hover:bg-red-50" onClick={() => save(true)}>問題ありません。提出する</button>
+          </div>
         </Modal>
       )}
     </div>

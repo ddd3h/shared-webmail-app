@@ -33,19 +33,20 @@ test.describe('PCのナビゲーション', () => {
         await expect(header(page).getByRole('button', { name: /申請・給与/ })).toBeVisible();
         await expect(header(page).getByRole('button', { name: 'アカウントメニュー' })).toBeVisible();
         // closed by default: nothing from the groups is in the bar
-        for (const label of [...WORK_MENU, ...ACCOUNT_MENU, '管理', '振込データ']) await expect(header(page).getByRole('link', { name: label, exact: true })).toHaveCount(0);
+        for (const label of [...WORK_MENU, ...ACCOUNT_MENU, '管理', '振込データ', 'オートフロー']) await expect(header(page).getByRole('link', { name: label, exact: true })).toHaveCount(0);
         await expect(header(page).getByRole('button', { name: /組織・人事/ })).toBeVisible();
         for (const label of ['組織', '人事評価']) await expect(header(page).getByRole('link', { name: label, exact: true })).toHaveCount(0);
         // top bar = 4 links (mail, calendar, ToDo, contacts) + the two group buttons (the bell and the account button sit outside the nav)
         await expect(bar(page).locator('a, button')).toHaveCount(6);
       });
 
-      test('「申請・給与」を開くと勤怠・経費・出張・振込申請が並ぶ。「振込データ」は管理者と経理担当だけ', async ({ page }) => {
+      test('「申請・給与」を開くと勤怠・経費・出張・振込申請が並ぶ。「振込データ」「オートフロー」は管理者と経理担当だけ', async ({ page }) => {
         await page.goto('/threads');
         await openWorkMenu(page);
         for (const label of WORK_MENU) await expect(header(page).getByRole('link', { name: new RegExp(`^${label}`) })).toBeVisible();
         const transfers = header(page).getByRole('link', { name: /^振込データ/ });
-        if (USERS[role].role === 'admin' || USERS[role].is_accounting) await expect(transfers).toBeVisible(); else await expect(transfers).toHaveCount(0);
+        const autoflow = header(page).getByRole('link', { name: /^オートフロー/ });
+        if (USERS[role].role === 'admin' || USERS[role].is_accounting) { await expect(transfers).toBeVisible(); await expect(autoflow).toBeVisible(); } else { await expect(transfers).toHaveCount(0); await expect(autoflow).toHaveCount(0); }
       });
 
       test('「組織・人事」を開くと組織・人事評価がある。承認のメニューは権限のある人だけ', async ({ page }) => {

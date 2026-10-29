@@ -30,8 +30,9 @@ export default function CreateBatchModal({ kind, ids, items, total, hasBatched, 
   }
 
   return (
-    <Modal title="全銀データを作成" onClose={onClose}>
+    <Modal title={kind === 'monthly' ? '振込を承認して確定' : '全銀データを作成'} onClose={onClose}>
       <p className="text-sm text-gray-700 mb-3">{ids.length}件・合計 <b className="tabular-nums">{yen(total)}</b>{kind === 'monthly' ? ' を、1つの総合振込データにまとめます。' : ` の${kind === 'payroll' ? '給与' : '総合'}振込データを作ります。`}</p>
+      {kind === 'monthly' && <p className="text-xs text-gray-500 mb-3">「承認して確定」を押すと、全銀データができて、ダウンロードできるようになります。確定のあとは、同じ明細をもう一度ファイルにするのに「作成済みも含める」が要ります。（「振込の確定の通知」をオートフローでONにしていると、振り込まれる人にMattermostで知らせます）</p>}
       <div className="space-y-3">
         <div><label className="text-xs text-gray-600">振込指定日（銀行が振り込む日）</label><input type="date" className={inp} value={date} min={todayJst()} onChange={e => setDate(e.target.value)} /></div>
         {kind === 'payroll' && (
@@ -52,7 +53,7 @@ export default function CreateBatchModal({ kind, ids, items, total, hasBatched, 
           </div>
         )}
       </div>
-      <div className="flex justify-end gap-2 pt-4"><button className={btn} onClick={onClose}>閉じる</button><button className={btnPrimary} disabled={busy || !date} onClick={create}>{busy ? '作成中…' : '作成する'}</button></div>
+      <div className="flex justify-end gap-2 pt-4"><button className={btn} onClick={onClose}>閉じる</button><button className={btnPrimary} disabled={busy || !date} onClick={create}>{busy ? (kind === 'monthly' ? '確定中…' : '作成中…') : (kind === 'monthly' ? '承認して確定' : '作成する')}</button></div>
     </Modal>
   );
 }
