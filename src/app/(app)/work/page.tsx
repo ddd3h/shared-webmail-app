@@ -49,7 +49,7 @@ export default function WorkPage() {
       </div>
       <div key={tab} className="tab-fade">
         {tab === 'attendance' && <AttendancePanel />}
-        {tab === 'reports' && <ReportsPanel />}
+        {tab === 'reports' && <ReportsPanel monthly={me.worker_type === 'quasi_contractor'} />}
         {tab === 'payroll' && <PayrollPanel noun={paysSalary(me.worker_type) ? '給与' : '報酬'} />}
         {tab === 'admin' && <AdminPanel isAdmin={me.role === 'admin'} />}
       </div>

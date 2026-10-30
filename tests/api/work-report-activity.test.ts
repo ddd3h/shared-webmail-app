@@ -11,6 +11,7 @@ vi.mock('@/lib/auth', () => ({ getSession: vi.fn(), requireAuth: vi.fn() }));
 vi.mock('@/lib/work-auth', () => ({ getActor: vi.fn(), isFinance: vi.fn(() => false) }));
 vi.mock('@/lib/work-notify', () => ({ notifyWorkReportSubmitted: vi.fn() }));
 vi.mock('@/lib/pay-schedule-server', () => ({ loadSchedules: vi.fn(), planOf: vi.fn() }));
+vi.mock('@/lib/work-reports-server', () => ({ reportInPeriod: vi.fn(async () => null) })); // the one-report-a-month rule is covered by e2e/quasi-reports.spec.ts
 vi.mock('@/lib/autoflow/config-server', () => ({ loadConfig: vi.fn() }));
 
 import { POST } from '@/app/api/work/reports/route';

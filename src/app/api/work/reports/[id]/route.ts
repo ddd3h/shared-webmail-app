@@ -5,6 +5,8 @@ import { getActor, isFinance } from '@/lib/work-auth';
 import { toDbDate, usesReports } from '@/lib/work';
 import { z } from 'zod';
 import { isValidDateString } from '@/lib/work';
+import { oneReportPerPeriod } from '@/lib/work-reports';
+import { reportInPeriod } from '@/lib/work-reports-server';
 import { activityNote, checkReportActivity } from '@/lib/activity-check';
 
 const schema = z.object({
@@ -34,6 +36,11 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const parsed = schema.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) return NextResponse.json({ error: 'invalid_body' }, { status: 400 });
   const d = parsed.data;
+  // 準業務委託は1期間に1通: 日付を変えて、すでに別の報告書がある期間に移すことはできない
+  if (oneReportPerPeriod(actor.worker_type)) {
+    const other = await reportInPeriod(actor.id, actor.worker_type, d.report_date, id);
+    if (other) return NextResponse.json({ error: 'period_already_reported', id: other.id, report_date: other.report_date }, { status: 409 });
+  }
   // 日付を変えたときだけ、ログインの記録を調べ直す（本文だけ直すときは、前の印をそのまま残す）
   const dateChanged = toDbDate(d.report_date).getTime() !== report.report_date.getTime();
   const verdict = dateChanged ? await checkReportActivity(actor, d.report_date) : null;
