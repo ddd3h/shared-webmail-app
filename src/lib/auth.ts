@@ -111,6 +111,69 @@ export async function revokeSuspicious(sessionId: string, userId: string, type: 
   return null;
 }
 
+/** Why a session that still looks valid in the cookie is over on the server: `idle` (nobody was there for too long) or `ended` (logged out elsewhere,
+ *  revoked, password changed, account locked, moved to another address, too old ...). The login page says which. */
+export type SessionEnd = 'idle' | 'ended';
+
+/**
+ * The DB side of a session, checked on every request that matters: the session must still exist (revoked, user deleted), the account must still be
+ * allowed in, and the request must come from where the session began. The role comes from the DB, not the cookie, so a demotion or lock takes effect
+ * at once. `get` reads a header of the request (works for both route handlers and the proxy).
+ */
+export async function checkLive(payload: SealedPayload, get: (name: string) => string | null | undefined): Promise<{ session: Session } | { ended: SessionEnd }> {
+  const ended = (why: SessionEnd = 'ended') => ({ ended: why });
+  // one query: the session and its user (role, lock) together
+  const dbSession = await prisma.sessions.findUnique({
+    where: { id: payload.sessionId },
+    relationLoadStrategy: 'join',
+    select: { id: true, expires_at: true, created_at: true, ip_address: true, last_input_at: true, user: { select: { role: true, locked_at: true } } },
+  });
+  if (!dbSession) return ended();
+  if (dbSession.expires_at < new Date()) {
+    prisma.sessions.delete({ where: { id: payload.sessionId } }).catch(() => {});
+    return ended();
+  }
+  if (dbSession.user.locked_at) { await revokeSuspicious(payload.sessionId, payload.userId, 'session_locked_account', {}); return ended(); }
+
+  // A login belongs to the address it began on. From any other address the session is ended, not just refused,
+  // so a stolen cookie is dead for good (and the real person simply logs in again).
+  const ip = clientIpFrom(get);
+  // (the installed app is the exception: its device key is what vouches for it, so it may move between networks)
+  if (!payload.pwa && !sameNetwork(ip, dbSession.ip_address)) { await revokeSuspicious(payload.sessionId, payload.userId, 'session_ip_mismatch', { expected: dbSession.ip_address, got: ip }); return ended(); }
+
+  const policy = await loadSecurityPolicy();
+  const issuedAt = payload.issuedAt ?? dbSession.created_at.getTime();
+  if (Date.now() - issuedAt > policy.sessionMaxDays * DAY_MS) { await revokeSuspicious(payload.sessionId, payload.userId, 'session_max_age', { days: policy.sessionMaxDays }); return ended(); }
+
+  // No input for too long: the session ends, quietly (nothing suspicious happened). The page sends a sign of life while the person works;
+  // background requests (polling) do not count. A minute of grace covers the page's own throttling.
+  if (!payload.pwa && policy.idleMinutes > 0 && Date.now() - dbSession.last_input_at.getTime() > (policy.idleMinutes + IDLE_GRACE_MINUTES) * 60_000) {
+    await prisma.sessions.delete({ where: { id: payload.sessionId } }).catch(() => {});
+    return ended('idle');
+  }
+
+  if (!payload.pwa && payload.fp && policy.deviceBinding) {
+    const now = deviceFingerprint(get('user-agent'));
+    if (now !== payload.fp) { await revokeSuspicious(payload.sessionId, payload.userId, 'session_device_mismatch', { expected: payload.fp, got: now }); return ended(); }
+  }
+
+  return {
+    session: {
+      sessionId: payload.sessionId,
+      userId: payload.userId,
+      email: payload.email,
+      role: dbSession.user.role,
+      networkType: payload.networkType,
+      expiresAt: payload.expiresAt,
+      issuedAt,
+      fp: payload.fp,
+      ip: dbSession.ip_address,
+      resumed: payload.resumed,
+      pwa: payload.pwa,
+    },
+  };
+}
+
 // For Route Handlers and Server Components (uses next/headers cookies)
 export async function getSession(): Promise<Session | null> {
   const store = await cookies();
@@ -122,57 +185,22 @@ export async function getSession(): Promise<Session | null> {
   if (!payload.sessionId || !payload.userId) return null; // old-format token guard
   if (Date.now() > payload.expiresAt) return null;
 
-  // DB check: the session must still exist (revoked, user deleted) and the account must still be allowed in.
-  // The role comes from the DB, not the cookie, so a demotion or lock takes effect at once.
-  // one query: the session and its user (role, lock) together
-  const dbSession = await prisma.sessions.findUnique({
-    where: { id: payload.sessionId },
-    relationLoadStrategy: 'join',
-    select: { id: true, expires_at: true, created_at: true, ip_address: true, last_input_at: true, user: { select: { role: true, locked_at: true } } },
-  });
-  if (!dbSession) return null;
   const hdrs = await headers();
-  if (dbSession.expires_at < new Date()) {
-    prisma.sessions.delete({ where: { id: payload.sessionId } }).catch(() => {});
-    return null;
-  }
-  if (dbSession.user.locked_at) return revokeSuspicious(payload.sessionId, payload.userId, 'session_locked_account', {});
+  const live = await checkLive(payload, name => hdrs.get(name));
+  return 'session' in live ? live.session : null;
+}
 
-  // A login belongs to the address it began on. From any other address the session is ended, not just refused,
-  // so a stolen cookie is dead for good (and the real person simply logs in again).
-  const ip = clientIpFrom(name => hdrs.get(name));
-  // (the installed app is the exception: its device key is what vouches for it, so it may move between networks)
-  if (!payload.pwa && !sameNetwork(ip, dbSession.ip_address)) return revokeSuspicious(payload.sessionId, payload.userId, 'session_ip_mismatch', { expected: dbSession.ip_address, got: ip });
-
-  const policy = await loadSecurityPolicy();
-  const issuedAt = payload.issuedAt ?? dbSession.created_at.getTime();
-  if (Date.now() - issuedAt > policy.sessionMaxDays * DAY_MS) return revokeSuspicious(payload.sessionId, payload.userId, 'session_max_age', { days: policy.sessionMaxDays });
-
-  // No input for too long: the session ends, quietly (nothing suspicious happened). The page sends a sign of life while the person works;
-  // background requests (polling) do not count. A minute of grace covers the page's own throttling.
-  if (!payload.pwa && policy.idleMinutes > 0 && Date.now() - dbSession.last_input_at.getTime() > (policy.idleMinutes + IDLE_GRACE_MINUTES) * 60_000) {
-    await prisma.sessions.delete({ where: { id: payload.sessionId } }).catch(() => {});
-    return null;
-  }
-
-  if (!payload.pwa && payload.fp && policy.deviceBinding) {
-    const now = deviceFingerprint(hdrs.get('user-agent'));
-    if (now !== payload.fp) return revokeSuspicious(payload.sessionId, payload.userId, 'session_device_mismatch', { expected: payload.fp, got: now });
-  }
-
-  return {
-    sessionId: payload.sessionId,
-    userId: payload.userId,
-    email: payload.email,
-    role: dbSession.user.role,
-    networkType: payload.networkType,
-    expiresAt: payload.expiresAt,
-    issuedAt,
-    fp: payload.fp,
-    ip: dbSession.ip_address,
-    resumed: payload.resumed,
-    pwa: payload.pwa,
-  };
+/**
+ * For the proxy: is the session of this request still alive on the server? `null` when there is no (valid) cookie at all;
+ * otherwise the session, or the reason it is over. This is what makes a page of an ended session open the login page
+ * instead of a screen that can no longer load anything.
+ */
+export async function verifyRequestSession(req: NextRequest): Promise<{ session: Session } | { ended: SessionEnd } | null> {
+  const token = req.cookies.get(SESSION_COOKIE)?.value;
+  if (!token) return null;
+  const payload = await unsealToken(token);
+  if (!payload || !payload.sessionId || !payload.userId || Date.now() > payload.expiresAt) return null;
+  return checkLive(payload, name => req.headers.get(name));
 }
 
 // For middleware (Edge-compatible — no DB)

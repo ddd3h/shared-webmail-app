@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSessionFromRequest, refreshSessionCookie, revokeSuspicious } from '@/lib/auth';
+import { getSessionFromRequest, refreshSessionCookie, revokeSuspicious, verifyRequestSession } from '@/lib/auth';
 import { matchesAny } from '@/lib/cidr';
 import { clientIpFrom, sameNetwork } from '@/lib/client-ip';
 import { blockIp, isIpBlocked } from '@/lib/ip-block';
@@ -19,6 +19,16 @@ const isStatic = (p: string) =>
 const isPublic = (p: string) => PUBLIC_PATHS.some(x => p.startsWith(x));
 
 const AUTO_BLOCK_MINUTES = 60;
+
+/** To the login page, remembering where the person was (the page and its query, without Next's own `_rsc` marker), and saying why when a session ended. */
+function toLogin(req: NextRequest, reason?: 'idle' | 'expired'): NextResponse {
+  const url = new URL('/login', req.url);
+  const here = new URL(req.url);
+  here.searchParams.delete('_rsc');
+  url.searchParams.set('from', here.pathname + here.search);
+  if (reason) url.searchParams.set('reason', reason);
+  return NextResponse.redirect(url);
+}
 
 function denied(req: NextRequest, status: 403 | 429, error: string, retryAfterSec?: number): NextResponse {
   const headers = retryAfterSec ? { 'Retry-After': String(retryAfterSec) } : undefined;
@@ -95,11 +105,8 @@ export async function proxy(req: NextRequest) {
   if (!session) {
     const verdict = judgeUnauthenticated(ip, pathname);
     if (!verdict.ok) return sweepResponse(req, ip, verdict);
-    const loginUrl = new URL('/login', req.url);
-    if (!pathname.startsWith('/api/')) {
-      loginUrl.searchParams.set('from', pathname);
-    }
-    const res = NextResponse.redirect(loginUrl);
+    // an API caller is told 401 (a redirect would be followed to the login page's HTML and read as an answer); a page goes to the login screen
+    const res = pathname.startsWith('/api/') ? NextResponse.json({ error: 'unauthorized' }, { status: 401 }) : toLogin(req, req.cookies.has('sid') ? 'expired' : undefined);
     res.cookies.delete('sid'); // clear stale/expired cookie
     return res;
   }
@@ -108,13 +115,25 @@ export async function proxy(req: NextRequest) {
   // (not for the installed app that stays logged in with its device key: that key vouches for it, wherever it is)
   if (!session.pwa && session.ip && !sameNetwork(ip, session.ip)) {
     await revokeSuspicious(session.sessionId, session.userId, 'session_ip_mismatch', { expected: session.ip, got: ip, path: pathname });
-    const res = pathname.startsWith('/api/') ? NextResponse.json({ error: 'unauthorized' }, { status: 401 }) : NextResponse.redirect(new URL('/login', req.url));
+    const res = pathname.startsWith('/api/') ? NextResponse.json({ error: 'unauthorized' }, { status: 401 }) : toLogin(req, 'expired');
     res.cookies.delete('sid');
     return res;
   }
 
   const verdict = judgeAuthenticated(session.userId, pathname);
   if (!verdict.ok) return sweepResponse(req, ip, verdict, session.userId);
+
+  // A session that is over on the server (idle, logged out elsewhere, password changed, account locked ...) while its cookie is still well-formed: only the
+  // DB knows. A page of it must not open (it could no longer load anything), and an API call must be answered 401 (a thrown error in a route would be a 500
+  // that no screen understands). So both are checked here, for every request, before anything runs.
+  const live = await verifyRequestSession(req);
+  if (!live || 'ended' in live) {
+    const res = pathname.startsWith('/api/')
+      ? NextResponse.json({ error: 'unauthorized', reason: live && 'ended' in live ? live.ended : 'ended' }, { status: 401 })
+      : toLogin(req, live && 'ended' in live && live.ended === 'idle' ? 'idle' : 'expired');
+    res.cookies.delete('sid');
+    return res;
+  }
 
   // Admin-only paths
   if (pathname.startsWith('/admin') || pathname.startsWith('/api/admin')) {

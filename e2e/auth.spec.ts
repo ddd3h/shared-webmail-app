@@ -16,10 +16,11 @@ test.describe('未ログインのアクセス', () => {
   }
 
   for (const path of ['/api/expenses', '/api/trips', '/api/payments', '/api/payments/vendors', '/api/work/me', '/api/work/payslips', '/api/calendar/events?mailboxId=mb_team&from=2026-01-01&to=2026-02-01']) {
-    test(`未ログインの ${path} はログイン画面へ転送され、データは返らない`, async ({ anon }) => {
+    test(`未ログインの ${path} は401（JSON）で、データは返らない`, async ({ anon }) => {
+      // (a redirect to the login page would be followed by the browser and read as an answer: an API says 401)
       const res = await anon.get(path, { maxRedirects: 0 });
-      expect(res.status()).toBe(307);
-      expect(res.headers()['location']).toContain('/login');
+      expect(res.status()).toBe(401);
+      expect(await res.json()).toMatchObject({ error: 'unauthorized' });
     });
   }
 
@@ -116,7 +117,7 @@ test.describe('セッションとログアウト', () => {
     expect(me.user.email).toBe(USERS.sato.email);
     expect(me.user.role).toBe('user');
     const res = await anon.get('/api/auth/session', { maxRedirects: 0 });
-    expect([200, 307]).toContain(res.status());
+    expect([200, 401]).toContain(res.status());
   });
 
   test('ログアウトするとセッションが無効になり、保護されたAPIに入れない', async ({ browser }) => {
@@ -127,7 +128,7 @@ test.describe('セッションとログアウト', () => {
     const res = await ctx.request.post('/api/auth/logout');
     expect(res.ok()).toBe(true);
     const after = await ctx.request.get('/api/work/me', { maxRedirects: 0 });
-    expect(after.status()).toBe(307);
+    expect(after.status()).toBe(401);
     await page.goto('/work');
     await expect(page).toHaveURL(/\/login/);
     await ctx.close();
@@ -154,8 +155,8 @@ test.describe('セッションとログアウト', () => {
     const newest = await db.sessions.findFirst({ where: { user_id: USERS.tanaka.id }, orderBy: { created_at: 'desc' } });
     await db.sessions.delete({ where: { id: newest!.id } });
     const res = await ctx.request.get('/api/work/me', { maxRedirects: 0 });
-    // The app currently answers 500 here instead of 401 (requireAuth throws); what matters is that nothing is returned.
-    expect(res.status()).toBeGreaterThanOrEqual(400);
+    expect(res.status()).toBe(401); // the session is gone on the server, though its cookie is still well-formed
+    expect(await res.json()).toMatchObject({ error: 'unauthorized' });
     expect(await res.text()).not.toContain(USERS.tanaka.email);
     await ctx.close();
   });

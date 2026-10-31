@@ -2,6 +2,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { startAuthentication } from '@simplewebauthn/browser';
+import { safeFrom } from '@/lib/safe-redirect';
 import { CodeStep, RecoveryCodesView, SetupStep } from '@/components/security/TwoFactorParts';
 import { createDeviceKey, deviceKeySupported, forgetDeviceLogin, isStandalone, rememberFlag, resumeWithDeviceKey, setRememberFlag } from '@/lib/device-key';
 
@@ -43,7 +44,7 @@ export default function LoginForm() {
     if (app && rememberFlag()) {
       setResuming(true);
       resumeWithDeviceKey().then(async r => {
-        if (r === 'ok') { const from = searchParams.get('from') || '/'; router.replace(from); router.refresh(); return; }
+        if (r === 'ok') { const from = safeFrom(searchParams.get('from')); router.replace(from); router.refresh(); return; }
         if (r === 'refused') await forgetDeviceLogin(); // expired, logged out elsewhere, or not this device: the password is needed
         setResuming(false);
       });
@@ -67,7 +68,7 @@ export default function LoginForm() {
   }
 
   const redirect = () => {
-    const from = searchParams.get('from') || '/';
+    const from = safeFrom(searchParams.get('from')); // only a page of this app (never another site)
     router.push(from);
     router.refresh();
   };
@@ -198,6 +199,11 @@ export default function LoginForm() {
       )}
       {step === 'codes' && <RecoveryCodesView codes={codes} onDone={redirect} doneLabel="ログインを続ける" />}
 
+      {step === 'credentials' && !error && searchParams.get('reason') === 'expired' && (
+        <div role="status" data-testid="session-expired" className="mb-4 rounded-lg bg-blue-50 border border-blue-200 p-3 text-sm text-blue-800">
+          ログインの有効期限が切れたため、ログアウトしました。もう一度ログインしてください（ログインすると、元の画面に戻ります。入力の途中だった内容は、保存されていないことがあります）。
+        </div>
+      )}
       {step === 'credentials' && !error && searchParams.get('reason') === 'idle' && (
         <div role="status" className="mb-4 rounded-lg bg-blue-50 border border-blue-200 p-3 text-sm text-blue-800">
           しばらく操作がなかったため、自動的にログアウトしました。もう一度ログインしてください。

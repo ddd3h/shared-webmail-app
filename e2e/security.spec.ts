@@ -132,7 +132,7 @@ test.describe('総当たり・スイーピングへの対策', () => {
     const paths = ['/wp-admin', '/.env', '/admin/login', '/phpmyadmin', '/api/users', '/api/admin/users', '/api/threads', '/.git/config', '/backup.zip', '/api/work/payslips', '/api/bank-accounts', '/api/transfers/batches', '/config.json', '/server-status', '/api/expenses', '/api/trips'];
     const statuses: number[] = [];
     for (const p of paths) statuses.push((await c.get(p, { maxRedirects: 0 })).status());
-    expect(statuses.slice(0, 15).every(s => s === 307)).toBe(true); // just sent to the login page
+    expect(statuses.slice(0, 15).every(s => s === 307 || s === 401)).toBe(true); // just sent to the login page (an API: told 401)
     expect(statuses[15]).toBe(429);
     expect(await db.ip_blocks.findUnique({ where: { ip } })).toMatchObject({ source: 'auto' });
     expect((await db.security_events.findMany({ where: { type: 'sweep_detected' } })).length).toBeGreaterThan(0);

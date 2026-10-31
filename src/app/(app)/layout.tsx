@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 import Nav from '@/components/Nav';
 import SessionKeeper from '@/components/SessionKeeper';
 import IdleLogout from '@/components/IdleLogout';
+import SessionGuard from '@/components/SessionGuard';
 
 // The menu reads the current address (usePathname), which is only known when a request comes in. It is wrapped in
 // Suspense so everything else on the page can be prepared in advance; the empty bar keeps the layout from jumping.
@@ -11,6 +12,7 @@ const NavPlaceholder = () => <div aria-hidden className="hidden md:block h-14 bo
 export default function AppLayout({ children }: { children: ReactNode }) {
   return (
     <>
+      <SessionGuard />
       <SessionKeeper />
       <IdleLogout />
       <Suspense fallback={<NavPlaceholder />}><Nav /></Suspense>
