@@ -524,7 +524,7 @@ test.describe('Google OAuth の開始と戻り', () => {
   });
 
   test('未ログインで開始すると、ログイン画面へ', async ({ anon }) => {
-    const res = await anon.get('/api/calendar/google/auth', { maxRedirects: 0 });
+    const res = await anon.get('/api/calendar/google/auth', { maxRedirects: 0, headers: { 'sec-fetch-mode': 'navigate' } }); // the link a person follows
     expect(res.status()).toBe(307);
     expect(res.headers()['location']).toContain('/login');
   });
@@ -546,7 +546,7 @@ test.describe('Google OAuth の開始と戻り', () => {
   });
 
   test('未ログインで戻りのURLを開くとログイン画面へ', async ({ anon }) => {
-    const res = await anon.get('/api/calendar/google/callback?code=x&state=y', { maxRedirects: 0 });
+    const res = await anon.get('/api/calendar/google/callback?code=x&state=y', { maxRedirects: 0, headers: { 'sec-fetch-mode': 'navigate' } });
     expect(res.status()).toBe(307);
     expect(res.headers()['location']).toContain('/login');
   });

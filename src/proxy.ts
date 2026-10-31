@@ -20,6 +20,10 @@ const isPublic = (p: string) => PUBLIC_PATHS.some(x => p.startsWith(x));
 
 const AUTO_BLOCK_MINUTES = 60;
 
+/** A person following a link or typing an address (a browser "navigation": downloads, a file opened in a new tab, the start and return of a Google login),
+ *  as against a script or the page's own data requests (fetch). The first is sent to the login page; the second is told 401. */
+const isNavigation = (req: NextRequest) => !req.nextUrl.pathname.startsWith('/api/') || req.headers.get('sec-fetch-mode') === 'navigate';
+
 /** To the login page, remembering where the person was (the page and its query, without Next's own `_rsc` marker), and saying why when a session ended. */
 function toLogin(req: NextRequest, reason?: 'idle' | 'expired'): NextResponse {
   const url = new URL('/login', req.url);
@@ -106,7 +110,7 @@ export async function proxy(req: NextRequest) {
     const verdict = judgeUnauthenticated(ip, pathname);
     if (!verdict.ok) return sweepResponse(req, ip, verdict);
     // an API caller is told 401 (a redirect would be followed to the login page's HTML and read as an answer); a page goes to the login screen
-    const res = pathname.startsWith('/api/') ? NextResponse.json({ error: 'unauthorized' }, { status: 401 }) : toLogin(req, req.cookies.has('sid') ? 'expired' : undefined);
+    const res = !isNavigation(req) ? NextResponse.json({ error: 'unauthorized' }, { status: 401 }) : toLogin(req, req.cookies.has('sid') ? 'expired' : undefined);
     res.cookies.delete('sid'); // clear stale/expired cookie
     return res;
   }
@@ -128,7 +132,7 @@ export async function proxy(req: NextRequest) {
   // that no screen understands). So both are checked here, for every request, before anything runs.
   const live = await verifyRequestSession(req);
   if (!live || 'ended' in live) {
-    const res = pathname.startsWith('/api/')
+    const res = !isNavigation(req)
       ? NextResponse.json({ error: 'unauthorized', reason: live && 'ended' in live ? live.ended : 'ended' }, { status: 401 })
       : toLogin(req, live && 'ended' in live && live.ended === 'idle' ? 'idle' : 'expired');
     res.cookies.delete('sid');

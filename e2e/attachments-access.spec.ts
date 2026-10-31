@@ -50,7 +50,8 @@ test.describe('領収書: ブラウザで開く・見られる人', () => {
     const status = async (who: Parameters<typeof as>[0]) => (await (await as(who)).get(`/api/expenses/receipts/${rid}`)).status();
     for (const who of ['tanaka', 'keiri', 'admin', 'sato'] as const) expect(await status(who), who).toBe(200);   // 佐藤 = 営業部の課長（承認者）
     for (const who of ['yamada', 'suzuki', 'guest'] as const) expect(await status(who), who).toBe(403);          // 山田 = 開発部の部長（別の部門）
-    expect((await anon.get(`/api/expenses/receipts/${rid}`, { maxRedirects: 0 })).status()).toBe(307);
+    expect((await anon.get(`/api/expenses/receipts/${rid}`, { maxRedirects: 0 })).status()).toBe(401); // a script: told 401
+    expect((await anon.get(`/api/expenses/receipts/${rid}`, { maxRedirects: 0, headers: { 'sec-fetch-mode': 'navigate' } })).status()).toBe(307); // a browser opening the link: the login page
     expect((await (await as('admin')).get('/api/expenses/receipts/nope')).status()).toBe(404);
   });
 
@@ -116,7 +117,8 @@ test.describe('振込申請の請求書: ブラウザで開く・見られる人
       expect(res.headers()['cache-control']).toBe('private, no-store');
     }
     for (const who of ['tanaka', 'yamada', 'suzuki'] as const) expect((await get(who)).status(), who).toBe(403);
-    expect((await anon.get(`/api/payments/documents/${did}`, { maxRedirects: 0 })).status()).toBe(307);
+    expect((await anon.get(`/api/payments/documents/${did}`, { maxRedirects: 0 })).status()).toBe(401);
+    expect((await anon.get(`/api/payments/documents/${did}`, { maxRedirects: 0, headers: { 'sec-fetch-mode': 'navigate' } })).status()).toBe(307); // the link opened in a browser: the login page
     expect((await (await as('admin')).get('/api/payments/documents/nope')).status()).toBe(404);
   });
 

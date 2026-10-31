@@ -9,13 +9,16 @@ import { freshContext, loginViaUi } from './helpers/ui';
 const PAGES = ['/threads', '/calendar', '/todos', '/expenses', '/work', '/profile', '/org', '/contacts'];
 
 async function signedIn(browser: import('@playwright/test').Browser, role: 'sato' | 'admin' = 'sato') {
+  loginAt = new Date(Date.now() - 1000);
   const ctx = await freshContext(browser);
   const page = await ctx.newPage();
   await loginViaUi(page, USERS[role].email, PASSWORD);
   await expect(page).toHaveURL(/\/threads/);
   return { ctx, page };
 }
-const endSession = (userId: string) => db.sessions.deleteMany({ where: { user_id: userId } });
+// only the session this test made (the saved logins other specs use belong to the same people and must stay)
+let loginAt = new Date();
+const endSession = (userId: string) => db.sessions.deleteMany({ where: { user_id: userId, created_at: { gte: loginAt } } });
 
 test.describe('セッションが終わったあとに、ページを開く', () => {
   for (const path of PAGES) {
@@ -36,7 +39,8 @@ test.describe('開いたままの画面で、セッションが終わる', () =>
     await page.goto('/calendar');
     await expect(page.getByRole('heading', { level: 1, name: 'カレンダー' })).toBeVisible();
     await endSession(USERS.sato.id);
-    await page.getByRole('button', { name: '次の月' }).click();
+    // (the open page may already have noticed through one of its own data requests and left: that is the same place)
+    await page.getByRole('button', { name: '次の月' }).click({ timeout: 3000 }).catch(() => {});
     await expect(page).toHaveURL(/\/login/, { timeout: 10_000 });
     expect(new URL(page.url()).searchParams.get('from')!.startsWith('/calendar')).toBe(true);
     await ctx.close();
