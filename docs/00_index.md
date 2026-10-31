@@ -26,7 +26,7 @@
 | [14_change_guide.md](./14_change_guide.md) | 変更ガイド | 画面追加・API追加・DB変更時の手順 |
 | [15_draft_saving.md](./15_draft_saving.md) | 下書き保存機能 | デバウンス保存の仕組み・コラボ連携・既知バグ一覧 |
 | [16_spam_detection.md](./16_spam_detection.md) | 迷惑メール検出システム | 検出パイプライン・MLモデル・ブロックリスト・既知の制限 |
-| [25_todos.md](./25_todos.md) | 共有ToDo | チーム共有のやること・カレンダー表示・権限・通知 |
+| [25_todos.md](./25_todos.md) | ToDo（個人） | 個人のやること・共有メールでメンバーのToDoを見る・カレンダー表示・権限・通知 |
 | [27_mobile.md](./27_mobile.md) | スマホ表示の方針 | 隠して必要なときに出す・シート・丸い「＋」・画面ごとの見え方 |
 | [28_profile.md](./28_profile.md) | プロフィール | 個人情報・受取口座・セキュリティ・メール署名を1か所に |
 | [29_demo_data.md](./29_demo_data.md) | デモデータ | テストサーバー用のサンプルデータの入れ方・消し方 |

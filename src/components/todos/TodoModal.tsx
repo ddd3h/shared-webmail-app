@@ -1,29 +1,29 @@
 'use client';
 import { useState } from 'react';
 import Modal from '@/components/Modal';
-import { TEAM, type Person, type Todo } from './types';
+import { type Person, type Todo } from './types';
 
 const inp = 'w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-hidden focus:ring-2 focus:ring-blue-500';
 
 // Add a to-do, or edit / delete one. Used by the ToDo page and by the calendar.
-export default function TodoModal({ mailboxId, people, me, todo, defaultDue, canEdit, onClose, onChanged }: {
-  mailboxId: string; people: Person[]; me: string; todo?: Todo; defaultDue?: string; canEdit: boolean;
+export default function TodoModal({ people, me, todo, defaultDue, canEdit, onClose, onChanged }: {
+  people: Person[]; me: string; todo?: Todo; defaultDue?: string; canEdit: boolean;
   onClose: () => void; onChanged: (message: string) => void;
 }) {
   const [title, setTitle] = useState(todo?.title ?? '');
   const [description, setDescription] = useState(todo?.description ?? '');
   const [due, setDue] = useState(todo?.due_date ?? defaultDue ?? '');
-  const [assignee, setAssignee] = useState(todo ? todo.assignee?.id ?? TEAM : TEAM);
+  const [assignee, setAssignee] = useState(todo ? todo.assignee.id : me);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
   async function save() {
     if (!title.trim()) { setError('内容を入力してください'); return; }
     setBusy(true); setError('');
-    const body = { title, description, due_date: due || null, assignee_id: assignee === TEAM ? null : assignee };
+    const body = { title, description, due_date: due || null, assignee_id: assignee || undefined }; // nothing chosen (the list had not loaded yet): the server puts it on my own list
     const res = todo
       ? await fetch(`/api/todos/${todo.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
-      : await fetch('/api/todos', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...body, mailboxId }) });
+      : await fetch('/api/todos', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
     setBusy(false);
     if (res.ok) onChanged('保存しました'); else setError('保存に失敗しました。入力内容を確認してください');
   }
@@ -41,9 +41,8 @@ export default function TodoModal({ mailboxId, people, me, todo, defaultDue, can
         <div className="grid grid-cols-2 gap-2">
           <div><label className="text-xs text-gray-600" htmlFor="todo-due">期限（カレンダーに表示）</label>
             <input id="todo-due" className={inp} type="date" value={due} disabled={!canEdit} onChange={e => setDue(e.target.value)} /></div>
-          <div><label className="text-xs text-gray-600" htmlFor="todo-assignee">担当</label>
+          <div><label className="text-xs text-gray-600" htmlFor="todo-assignee">誰のToDo</label>
             <select id="todo-assignee" className={inp} value={assignee} disabled={!canEdit} onChange={e => setAssignee(e.target.value)}>
-              <option value={TEAM}>チーム全体</option>
               {people.map(p => <option key={p.id} value={p.id}>{p.name}{p.id === me ? '（自分）' : ''}</option>)}
             </select></div>
         </div>

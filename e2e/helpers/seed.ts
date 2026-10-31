@@ -50,22 +50,25 @@ export async function seedBase() {
 export async function seedCalendar() {
   await db.calendar_events.deleteMany({});
   await db.calendar_google_links.deleteMany({});
+  await db.todos.deleteMany({});
   const now = new Date();
-  // Two Google links: sato's in 予定ありのみ mode, admin2's showing details. `last_synced_at` is fresh so no sync is attempted.
+  // Everybody has one calendar. Two Google calendars: sato's (予定ありのみ) and admin2's (詳細も表示). `last_synced_at` is fresh so no sync is attempted.
   await db.calendar_google_links.create({
-    data: { id: 'l_busy', mailbox_id: MAILBOX_ID, linked_by_user_id: USERS.sato.id, encrypted_token: 'x', google_calendar_id: 'primary', name: '佐藤さんのGoogleカレンダー', color: '#10b981', display_mode: 'busy_only', busy_label: '予定あり', last_synced_at: now },
+    data: { id: 'l_busy', linked_by_user_id: USERS.sato.id, encrypted_token: 'x', google_calendar_id: 'primary', name: '佐藤さんのGoogleカレンダー', color: '#10b981', display_mode: 'busy_only', busy_label: '予定あり', last_synced_at: now },
   });
   await db.calendar_google_links.create({
-    data: { id: 'l_full', mailbox_id: MAILBOX_ID, linked_by_user_id: USERS.admin2.id, encrypted_token: 'x', google_calendar_id: 'team', name: '副管理者Google', color: '#f59e0b', display_mode: 'full', busy_label: '予定あり', last_synced_at: now },
+    data: { id: 'l_full', linked_by_user_id: USERS.admin2.id, encrypted_token: 'x', google_calendar_id: 'team', name: '副管理者Google', color: '#f59e0b', display_mode: 'full', busy_label: '予定あり', last_synced_at: now },
   });
   await db.calendar_events.createMany({
     data: [
-      { id: 'ev_local', mailbox_id: MAILBOX_ID, source: 'local', title: '週次ミーティング', location: '会議室A', start_at: todayAt('10:00'), end_at: todayAt('11:00'), created_by_id: USERS.admin.id },
-      { id: 'ev_busy', mailbox_id: MAILBOX_ID, source: 'google', link_id: 'l_busy', google_event_id: 'g1', title: null, owner_user_id: USERS.sato.id, start_at: todayAt('14:00'), end_at: todayAt('15:00') },
-      { id: 'ev_renamed', mailbox_id: MAILBOX_ID, source: 'google', link_id: 'l_busy', google_event_id: 'g2', title: null, title_override: '社内MTG', owner_user_id: USERS.sato.id, start_at: todayAt('16:00'), end_at: todayAt('17:00') },
-      { id: 'ev_full', mailbox_id: MAILBOX_ID, source: 'google', link_id: 'l_full', google_event_id: 'g3', title: '全体会議', location: '大会議室', description: '四半期レビュー', owner_user_id: USERS.admin2.id, start_at: todayAt('13:00'), end_at: todayAt('14:00') },
+      // admin's own event; sato and tanaka take part, so it is in their calendars too
+      { id: 'ev_local', source: 'local', title: '週次ミーティング', location: '会議室A', start_at: todayAt('10:00'), end_at: todayAt('11:00'), created_by_id: USERS.admin.id, owner_user_id: USERS.admin.id },
+      { id: 'ev_busy', source: 'google', link_id: 'l_busy', google_event_id: 'g1', title: null, owner_user_id: USERS.sato.id, start_at: todayAt('14:00'), end_at: todayAt('15:00') },
+      { id: 'ev_renamed', source: 'google', link_id: 'l_busy', google_event_id: 'g2', title: null, title_override: '社内MTG', owner_user_id: USERS.sato.id, start_at: todayAt('16:00'), end_at: todayAt('17:00') },
+      { id: 'ev_full', source: 'google', link_id: 'l_full', google_event_id: 'g3', title: '全体会議', location: '大会議室', description: '四半期レビュー', owner_user_id: USERS.admin2.id, start_at: todayAt('13:00'), end_at: todayAt('14:00') },
     ],
   });
+  await db.calendar_event_attendees.createMany({ data: [{ event_id: 'ev_local', user_id: USERS.sato.id }, { event_id: 'ev_local', user_id: USERS.tanaka.id }] });
 }
 
 // ---- per-feature cleanups (specs call these in beforeAll so they never depend on each other) ----

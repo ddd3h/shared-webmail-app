@@ -137,6 +137,7 @@ model users {
   scheduled_sends            scheduled_sends[]
   calendar_events_created    calendar_events[]        @relation("calendar_event_creator")
   calendar_events_owned      calendar_events[]        @relation("calendar_event_owner")
+  calendar_event_attendances calendar_event_attendees[]
   todos_created              todos[]                  @relation("todo_creator")
   todos_assigned             todos[]                  @relation("todo_assignee")
   todos_done                 todos[]                  @relation("todo_done_by")
@@ -169,9 +170,6 @@ model mailboxes {
   sync_state  mailbox_sync_states?
   drafts      drafts[]
   scheduled_sends scheduled_sends[]
-  calendar_events calendar_events[]
-  calendar_google_links calendar_google_links[]
-  todos todos[]
 }
 
 model mailbox_credentials {
@@ -727,13 +725,12 @@ model scheduled_send_attachments {
   scheduled_send scheduled_sends @relation(fields: [scheduled_send_id], references: [id], onDelete: Cascade)
 }
 
-// Google Calendar linked to a mailbox's shared calendar (read-only import).
+// A person's Google Calendar, linked to their own calendar here (read-only import).
 // display_mode 'busy_only' hides titles/details: only `busy_label` is shown
 // and the real summary is never stored.
 model calendar_google_links {
   id                 String    @id @default(cuid())
-  mailbox_id         String
-  linked_by_user_id  String
+  linked_by_user_id  String    // whose calendar the imported events go into
   encrypted_token    String
   google_calendar_id String?
   name               String    @default("Googleカレンダー")
@@ -745,19 +742,18 @@ model calendar_google_links {
   created_at         DateTime  @default(now())
   updated_at         DateTime  @updatedAt
 
-  mailbox   mailboxes         @relation(fields: [mailbox_id], references: [id], onDelete: Cascade)
   linked_by users             @relation(fields: [linked_by_user_id], references: [id], onDelete: Cascade)
   events    calendar_events[]
 
-  @@index([mailbox_id])
+  @@index([linked_by_user_id])
 }
 
-// Events of a mailbox's shared calendar. source 'local' = created in this app,
-// 'google' = imported copy of a Google event (title_override is the team's own
-// name for it and survives re-syncs).
+// A calendar event. Every person has one calendar: the events they own and the ones they attend.
+// The owner (who made it) and the attendees (other people of the company) each see it in their own calendar.
+// source 'local' = created in this app, 'google' = imported copy of a Google event of the owner
+// (title_override is the owner's own name for it and survives re-syncs).
 model calendar_events {
   id              String    @id @default(cuid())
-  mailbox_id      String
   source          String    @default("local") // 'local' | 'google'
   link_id         String?
   google_event_id String?
@@ -769,42 +765,51 @@ model calendar_events {
   start_at        DateTime
   end_at          DateTime
   created_by_id   String?
-  owner_user_id   String?   // whose schedule this is; null = whole team
+  owner_user_id   String    // whose calendar it is
   created_at      DateTime  @default(now())
   updated_at      DateTime  @updatedAt
 
-  mailbox mailboxes              @relation(fields: [mailbox_id], references: [id], onDelete: Cascade)
-  link    calendar_google_links? @relation(fields: [link_id], references: [id], onDelete: Cascade)
-  creator users?                 @relation("calendar_event_creator", fields: [created_by_id], references: [id], onDelete: SetNull)
-  owner   users?                 @relation("calendar_event_owner", fields: [owner_user_id], references: [id], onDelete: SetNull)
+  link      calendar_google_links?    @relation(fields: [link_id], references: [id], onDelete: Cascade)
+  creator   users?                    @relation("calendar_event_creator", fields: [created_by_id], references: [id], onDelete: SetNull)
+  owner     users                     @relation("calendar_event_owner", fields: [owner_user_id], references: [id], onDelete: Cascade)
+  attendees calendar_event_attendees[]
 
   @@unique([link_id, google_event_id])
-  @@index([mailbox_id, start_at])
-  @@index([owner_user_id])
+  @@index([owner_user_id, start_at])
 }
 
-// A to-do shared by the people of a mailbox's team. They see it with the calendar (it shows on its due date);
-// the same permissions apply: view = can_view, edit = can_reply. assignee null = the whole team.
+// The people (besides the owner) who take part in an event: it shows in their calendar too.
+model calendar_event_attendees {
+  event_id   String
+  user_id    String
+  created_at DateTime @default(now())
+
+  event calendar_events @relation(fields: [event_id], references: [id], onDelete: Cascade)
+  user  users           @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@id([event_id, user_id])
+  @@index([user_id])
+}
+
+// A to-do on a person's own list (assignee = whose list it is). Somebody may add one to another person's list: creator says who.
+// It shows on the person's calendar on its due date. People who share a mailbox can see each other's lists through it.
 model todos {
   id            String    @id @default(cuid())
-  mailbox_id    String
   title         String
   description   String?
   due_date      DateTime? @db.Date // Japan-local date, no time
-  assignee_id   String?
+  assignee_id   String
   done_at       DateTime?
   done_by_id    String?
   created_by_id String?
   created_at    DateTime  @default(now())
   updated_at    DateTime  @updatedAt
 
-  mailbox  mailboxes @relation(fields: [mailbox_id], references: [id], onDelete: Cascade)
-  assignee users?    @relation("todo_assignee", fields: [assignee_id], references: [id], onDelete: SetNull)
-  done_by  users?    @relation("todo_done_by", fields: [done_by_id], references: [id], onDelete: SetNull)
-  creator  users?    @relation("todo_creator", fields: [created_by_id], references: [id], onDelete: SetNull)
+  assignee users  @relation("todo_assignee", fields: [assignee_id], references: [id], onDelete: Cascade)
+  done_by  users? @relation("todo_done_by", fields: [done_by_id], references: [id], onDelete: SetNull)
+  creator  users? @relation("todo_creator", fields: [created_by_id], references: [id], onDelete: SetNull)
 
-  @@index([mailbox_id, due_date])
-  @@index([assignee_id])
+  @@index([assignee_id, due_date])
 }
 
 // One row per employee per day (work_date is the Japan-local date). Times are UTC instants.

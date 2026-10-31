@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/db';
 import { getSession, requireAuth } from '@/lib/auth';
-import { canManageCalendarLink } from '@/lib/rbac';
 import { logAudit } from '@/lib/audit';
 import { syncLink } from '@/lib/google-calendar';
 
@@ -21,7 +20,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   requireAuth(session);
   const link = await prisma.calendar_google_links.findUnique({ where: { id } });
   if (!link) return NextResponse.json({ error: 'not_found' }, { status: 404 });
-  if (!(await canManageCalendarLink(session.userId, link))) {
+  if (link.linked_by_user_id !== session.userId) { // a Google calendar is its owner's own
     return NextResponse.json({ error: 'forbidden' }, { status: 403 });
   }
   const parsed = schema.safeParse(await req.json().catch(() => ({})));
@@ -51,7 +50,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     actionType: 'calendar_link_update',
     targetType: 'calendar_google_link',
     targetId: id,
-    metadata: { mailbox_id: link.mailbox_id, display_mode: d.display_mode },
+    metadata: { display_mode: d.display_mode },
   });
   return NextResponse.json({ ok: true });
 }
@@ -63,7 +62,7 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
   requireAuth(session);
   const link = await prisma.calendar_google_links.findUnique({ where: { id } });
   if (!link) return NextResponse.json({ error: 'not_found' }, { status: 404 });
-  if (!(await canManageCalendarLink(session.userId, link))) {
+  if (link.linked_by_user_id !== session.userId) { // a Google calendar is its owner's own
     return NextResponse.json({ error: 'forbidden' }, { status: 403 });
   }
   await prisma.calendar_google_links.delete({ where: { id } });
@@ -72,7 +71,7 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
     actionType: 'calendar_link_delete',
     targetType: 'calendar_google_link',
     targetId: id,
-    metadata: { mailbox_id: link.mailbox_id },
+    metadata: {},
   });
   return NextResponse.json({ ok: true });
 }

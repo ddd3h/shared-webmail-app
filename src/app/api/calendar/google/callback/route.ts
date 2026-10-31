@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse, connection } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { prisma } from '@/lib/db';
-import { canEditCalendar } from '@/lib/rbac';
 import { logAudit } from '@/lib/audit';
 import { calendarRedirectUri, sealToken } from '@/lib/google-calendar';
 
@@ -20,15 +19,14 @@ export async function GET(req: NextRequest) {
 
     const url = new URL(req.url);
     const code = url.searchParams.get('code');
-    const [nonce, mailboxId] = (url.searchParams.get('state') || '').split('.');
+    const nonce = url.searchParams.get('state') || '';
     const cookieNonce = req.cookies.get('gcal_oauth_state')?.value;
-    if (!nonce || !mailboxId || nonce !== cookieNonce) return back('google_error=invalid_state');
-    if (url.searchParams.get('error') || !code) return back(`mailbox=${mailboxId}&google_error=access_denied`);
-    if (!(await canEditCalendar(session.userId, mailboxId))) return back('google_error=forbidden');
+    if (!nonce || nonce !== cookieNonce) return back('google_error=invalid_state');
+    if (url.searchParams.get('error') || !code) return back('google_error=access_denied');
 
     const clientId = process.env.GOOGLE_CLIENT_ID;
     const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
-    if (!clientId || !clientSecret) return back(`mailbox=${mailboxId}&google_error=not_configured`);
+    if (!clientId || !clientSecret) return back('google_error=not_configured');
 
     const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
       method: 'POST',
@@ -41,12 +39,11 @@ export async function GET(req: NextRequest) {
     const body = await tokenRes.json();
     if (!tokenRes.ok || !body.refresh_token) {
       console.error('[Google Calendar callback] token exchange failed:', body.error);
-      return back(`mailbox=${mailboxId}&google_error=token_exchange_failed`);
+      return back('google_error=token_exchange_failed');
     }
 
     const link = await prisma.calendar_google_links.create({
       data: {
-        mailbox_id: mailboxId,
         linked_by_user_id: session.userId,
         encrypted_token: await sealToken({
           access_token: body.access_token,
@@ -60,10 +57,10 @@ export async function GET(req: NextRequest) {
       actionType: 'calendar_link_create',
       targetType: 'calendar_google_link',
       targetId: link.id,
-      metadata: { mailbox_id: mailboxId },
+      metadata: {},
     });
     // The UI then lets the user pick which Google calendar to import.
-    return back(`mailbox=${mailboxId}&link=${link.id}`);
+    return back(`link=${link.id}`);
   } catch (err) {
     console.error('[Google Calendar callback] unexpected error:', err);
     return back('google_error=internal_error');

@@ -334,17 +334,33 @@ export function notifyMfaChanged(userId: string, what: 'enabled' | 'disabled' | 
   });
 }
 
-// A to-do was given to somebody -> that person (never when they gave it to themselves)
+// A to-do was put on somebody's list by another person -> that person (never when they gave it to themselves)
 export function notifyTodoAssigned(todoId: string, byUserId: string) {
   return safely('todo_assigned', async () => {
     const t = await prisma.todos.findUnique({
       where: { id: todoId },
-      include: { assignee: { select: { id: true, email: true } }, creator: { select: { name: true } }, mailbox: { select: { display_name: true } } },
+      include: { assignee: { select: { id: true, email: true } } },
     });
     if (!t?.assignee || t.assignee.id === byUserId) return;
     const by = await prisma.users.findUnique({ where: { id: byUserId }, select: { name: true } });
     const due = t.due_date ? `\n期限: ${t.due_date.toISOString().slice(0, 10)}` : '';
-    const msg = `📝 **ToDoが割り当てられました**\n\n${mmText(t.title, 100)}${due}\n担当に指定した人: ${mmText(by?.name ?? '', 40)} ・ ${mmText(t.mailbox.display_name, 40)}\n\n${appUrl()}/todos`;
+    const msg = `📝 **ToDoが追加されました**\n\n${mmText(t.title, 100)}${due}\n追加した人: ${mmText(by?.name ?? '', 40)}\n\n${appUrl()}/todos`;
     await sendDirectMessage(t.assignee.id, t.assignee.email, msg, 'todo_assigned');
+  });
+}
+
+// People were invited to an event -> each of them (it is in their calendar now)
+export function notifyEventInvited(eventId: string, byUserId: string, userIds: string[]) {
+  return safely('event_invited', async () => {
+    const ev = await prisma.calendar_events.findUnique({ where: { id: eventId }, select: { title: true, all_day: true, start_at: true, end_at: true, location: true } });
+    if (!ev) return;
+    const [by, people] = await Promise.all([
+      prisma.users.findUnique({ where: { id: byUserId }, select: { name: true } }),
+      prisma.users.findMany({ where: { id: { in: userIds.filter(id => id !== byUserId) } }, select: { id: true, email: true } }),
+    ]);
+    const jst = (d: Date) => new Date(d.getTime() + (ev.all_day ? 0 : 9 * 3600_000)).toISOString();
+    const when = ev.all_day ? `${jst(ev.start_at).slice(0, 10)}（終日）` : `${jst(ev.start_at).slice(0, 10)} ${jst(ev.start_at).slice(11, 16)}–${jst(ev.end_at).slice(11, 16)}`;
+    const msg = `📅 **予定に招待されました**\n\n${mmText(ev.title ?? '', 100)}\n日時: ${when}${ev.location ? `\n場所: ${mmText(ev.location, 80)}` : ''}\n招待した人: ${mmText(by?.name ?? '', 40)}\n\n${appUrl()}/calendar`;
+    await Promise.all(people.map(u => sendDirectMessage(u.id, u.email, msg, 'event_invited')));
   });
 }

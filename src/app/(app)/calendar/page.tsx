@@ -7,14 +7,14 @@ import Fab from '@/components/mobile/Fab';
 import TimeGrid, { type GridEvent, type GridTodo } from '@/components/calendar/TimeGrid';
 import TodoModal from '@/components/todos/TodoModal';
 import { VIEWS, addDays, isView, parseYmd, shiftAnchor, viewTitle, visibleDays, type CalendarView } from '@/lib/calendar-view';
-import { canTick, setDone, type Todo } from '@/components/todos/types';
+import { setDone, type Todo } from '@/components/todos/types';
 
 type Mailbox = { id: string; display_name: string; type: string; email_address: string };
 type CalEvent = {
   id: string; source: string; title: string; renamed: boolean; original_title: string | null;
   description: string | null; location: string | null; all_day: boolean;
   start_at: string; end_at: string; color: string | null; link_name: string | null; created_by: string | null;
-  owner: { id: string; name: string } | null;
+  owner: { id: string; name: string }; attendees: { id: string; name: string }[]; can_edit: boolean;
 };
 type Person = { id: string; name: string };
 type Link = {
@@ -23,7 +23,7 @@ type Link = {
   linked_by_user_id: string; linked_by: { name: string };
 };
 type Draft = {
-  id?: string; source?: string; owner: string; title: string; description: string; location: string;
+  id?: string; source?: string; owner?: { id: string; name: string }; attendees: string[]; canEdit: boolean; title: string; description: string; location: string;
   all_day: boolean; start: string; end: string; original_title?: string | null; renamed?: boolean; readOnlyDetails?: boolean;
 };
 
@@ -31,9 +31,7 @@ const WEEK = ['日', '月', '火', '水', '木', '金', '土'];
 const pad = (n: number) => String(n).padStart(2, '0');
 const ymd = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 const hm = (d: Date) => `${pad(d.getHours())}:${pad(d.getMinutes())}`;
-const TEAM_COLOR = '#64748b';
 const PALETTE = ['#2563eb', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#0891b2', '#84cc16', '#f97316', '#6366f1'];
-const TEAM = 'team'; // pseudo person id for events that belong to the whole team
 
 // All-day events from Google are stored as UTC-midnight dates; show them as local dates.
 function evStart(e: CalEvent) { const d = new Date(e.start_at); return e.all_day ? new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()) : d; }
@@ -59,6 +57,7 @@ export default function CalendarPage() {
 function CalendarView() {
   const sp = useSearchParams();
   const [mailboxes, setMailboxes] = useState<Mailbox[]>([]);
+  // '' = my own calendar; a shared mailbox shows the calendars of its members
   const [mailboxId, setMailboxId] = useState(sp.get('mailbox') || '');
   // which of the three views is open (day / week / month); remembered for next time unless the address says otherwise
   const [view, setView] = useState<CalendarView>(() => (isView(sp.get('view')) ? (sp.get('view') as CalendarView) : 'month'));
@@ -68,11 +67,12 @@ function CalendarView() {
   const [ready, setReady] = useState(false);
   const [events, setEvents] = useState<CalEvent[]>([]);
   const [links, setLinks] = useState<Link[]>([]);
-  const [people, setPeople] = useState<Person[]>([]);
+  const [people, setPeople] = useState<Person[]>([]);          // whose calendars are on screen
+  const [everybody, setEverybody] = useState<Person[]>([]);     // everybody who can be invited
+  const [assignable, setAssignable] = useState<Person[]>([]);   // whose list a to-do may be put on
   const [me, setMe] = useState('');
-  // ids of people whose schedules are shown (TEAM = whole-team events); null = everyone
+  // ids of people whose schedules are shown; null = everyone
   const [shown, setShown] = useState<Set<string> | null>(null);
-  const [perm, setPerm] = useState({ can_edit: false, can_manage: false });
   const [googleConfigured, setGoogleConfigured] = useState(false);
   const [loading, setLoading] = useState(false);
   const [draft, setDraft] = useState<Draft | null>(null);
@@ -100,9 +100,7 @@ function CalendarView() {
     const err = sp.get('google_error');
     if (err) flash('error', `Google連携に失敗しました (${err})`);
     fetch('/api/mailboxes?mine=1').then(r => r.json()).then(d => {
-      const items: Mailbox[] = (d.items || []).filter((m: any) => m.is_active && m.user_permissions?.can_view);
-      setMailboxes(items);
-      setMailboxId(cur => cur || items.find(m => m.type === 'team')?.id || items[0]?.id || '');
+      setMailboxes((d.items || []).filter((m: any) => m.is_active && m.user_permissions?.can_view && m.type === 'team'));
     }).catch(() => {});
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -121,41 +119,41 @@ function CalendarView() {
   }, [ready, view, selected]);
 
   const load = useCallback(async () => {
-    if (!mailboxId || !ready) return;
+    if (!ready) return;
     setLoading(true);
     try {
       const lastDay = days[days.length - 1];
       const from = addDays(gridStart, -1).toISOString();
       const to = addDays(lastDay, 2).toISOString();
+      const q = mailboxId ? `mailboxId=${mailboxId}&` : '';
       const [res, todoRes] = await Promise.all([
-        fetch(`/api/calendar/events?mailboxId=${mailboxId}&from=${from}&to=${to}`),
-        fetch(`/api/todos?mailboxId=${mailboxId}&from=${ymd(gridStart)}&to=${ymd(lastDay)}`),
+        fetch(`/api/calendar/events?${q}from=${from}&to=${to}`),
+        fetch(`/api/todos?${q}from=${ymd(gridStart)}&to=${ymd(lastDay)}`),
       ]);
       if (res.ok) {
         const d = await res.json();
-        setEvents(d.items); setLinks(d.links); setPeople(d.people); setMe(d.me); setPerm(d.permissions); setGoogleConfigured(d.google_configured);
+        setEvents(d.items); setLinks(d.links); setPeople(d.people); setEverybody(d.everybody); setMe(d.me); setGoogleConfigured(d.google_configured);
       }
-      if (todoRes.ok) setTodos((await todoRes.json()).items);
+      if (todoRes.ok) { const d = await todoRes.json(); setTodos(d.items); setAssignable(d.assignable); }
     } finally { setLoading(false); }
   }, [mailboxId, gridStart, days, ready]);
 
   useEffect(() => { load(); }, [load]);
 
-  const colorOf = useCallback((id: string | null) => {
-    const i = people.findIndex(p => p.id === id);
-    return i < 0 ? TEAM_COLOR : PALETTE[i % PALETTE.length];
-  }, [people]);
-  const isShown = (e: CalEvent) => !shown || shown.has(e.owner?.id ?? TEAM);
+  // a person keeps one colour wherever they appear (the order of the company's list)
+  const colorOf = useCallback((id: string | null) => PALETTE[Math.max(0, everybody.findIndex(p => p.id === id)) % PALETTE.length], [everybody]);
+  // an event is shown when its owner or anybody who takes part is one of the people chosen
+  const isShown = (e: CalEvent) => !shown || shown.has(e.owner.id) || e.attendees.some(a => shown.has(a.id));
   const dayEvents = (d: Date) => events.filter(e => isShown(e) && occursOn(e, d));
   function toggle(id: string) {
-    const next = new Set(shown ?? [TEAM, ...people.map(p => p.id)]);
+    const next = new Set(shown ?? people.map(p => p.id));
     next.has(id) ? next.delete(id) : next.add(id);
     setShown(next);
   }
-  const todosOn = (d: Date) => showTodos ? todos.filter(t => t.due_date === ymd(d) && (!shown || shown.has(t.assignee?.id ?? TEAM))) : [];
+  const todosOn = (d: Date) => showTodos ? todos.filter(t => t.due_date === ymd(d) && (!shown || shown.has(t.assignee.id))) : [];
   const selectedEvents = dayEvents(selected);
   const selectedTodos = todosOn(selected);
-  const filtered = !!shown && shown.size < people.length + 1; // somebody is hidden
+  const filtered = !!shown && shown.size < people.length; // somebody is hidden
   const unit = { day: '日', week: '週', month: '月' }[view];
   const todayDate = () => new Date();
   function step(dir: -1 | 1) {
@@ -173,11 +171,12 @@ function CalendarView() {
   }
   function openDay(d: Date) { setSelected(d); setCursor(new Date(d.getFullYear(), d.getMonth(), 1)); setView('day'); }
   const todayYmd = ymd(new Date());
+  const viewLabel = mailboxId ? `${mailboxes.find(m => m.id === mailboxId)?.display_name ?? ''} のメンバー` : '自分のカレンダー';
 
   // what the hour-by-hour views draw
   const gridEvents: GridEvent[] = events.filter(isShown).map(e => ({
     id: e.id, allDay: e.all_day, start: e.all_day ? evStart(e) : new Date(e.start_at), end: e.all_day ? evEndExclusive(e) : new Date(e.end_at),
-    title: e.title, sub: [e.owner?.name ?? 'チーム全体', e.location].filter(Boolean).join(' ・ '), color: colorOf(e.owner?.id ?? null), open: () => openEvent(e),
+    title: e.title, sub: [e.owner.name, e.attendees.length > 0 ? `ほか${e.attendees.length}人` : '', e.location].filter(Boolean).join(' ・ '), color: colorOf(e.owner.id), open: () => openEvent(e),
   }));
   const gridTodos = (d: Date): GridTodo[] => todosOn(d).map(t => ({ id: t.id, title: t.title, done: t.done, overdue: t.overdue, open: () => setTodoModal({ todo: t }) }));
 
@@ -186,7 +185,7 @@ function CalendarView() {
 
   function newDraft(day: Date): Draft {
     const d = ymd(day);
-    return { owner: TEAM, title: '', description: '', location: '', all_day: false, start: `${d}T09:00`, end: `${d}T10:00` };
+    return { attendees: [], canEdit: true, title: '', description: '', location: '', all_day: false, start: `${d}T09:00`, end: `${d}T10:00` };
   }
 
   // a click on an empty hour of a day column: a new event that starts there and lasts an hour
@@ -203,7 +202,7 @@ function CalendarView() {
     const start = e.all_day ? utcDay(s) : fmt(s);
     const endShown = e.all_day ? utcDay(en, en > s ? 1 : 0) : fmt(en);
     setDraft({
-      id: e.id, source: e.source, owner: e.owner?.id ?? TEAM, title: e.source === 'google' ? (e.renamed ? e.title : '') : e.title,
+      id: e.id, source: e.source, owner: e.owner, attendees: e.attendees.map(a => a.id), canEdit: e.can_edit, title: e.source === 'google' ? (e.renamed ? e.title : '') : e.title,
       description: e.description || '', location: e.location || '', all_day: e.all_day,
       start, end: endShown, original_title: e.original_title, renamed: e.renamed,
       readOnlyDetails: e.source === 'google',
@@ -223,7 +222,7 @@ function CalendarView() {
       const start = draft.all_day ? new Date(`${draft.start.slice(0, 10)}T00:00:00Z`) : new Date(draft.start);
       const end = draft.all_day ? new Date(new Date(`${draft.end.slice(0, 10)}T00:00:00Z`).getTime() + 86400_000) : new Date(draft.end);
       const body = {
-        mailboxId, owner_user_id: draft.owner === TEAM ? null : draft.owner, title: draft.title, description: draft.description, location: draft.location,
+        title: draft.title, description: draft.description, location: draft.location, attendee_ids: draft.attendees,
         all_day: draft.all_day, start_at: start.toISOString(), end_at: end.toISOString(),
       };
       res = draft.id
@@ -247,22 +246,25 @@ function CalendarView() {
       <div className="flex items-center gap-3">
         <div className="min-w-0 flex-1">
           <h1 className="text-xl font-bold text-gray-900">カレンダー</h1>
-          <p className="hidden md:block text-xs text-gray-500 mt-0.5">共有メールアカウントごとのチームカレンダー</p>
-          {/* phone: the account name, tap to pick another (only when there is a choice) */}
-          {mailboxes.length > 1
-            ? <button onClick={() => setSheet('mailbox')} className="md:hidden mt-0.5 flex max-w-full items-center gap-1 text-xs text-gray-500"><span className="truncate">{mailboxes.find(m => m.id === mailboxId)?.display_name ?? ''}</span><span aria-hidden>▾</span></button>
-            : <p className="md:hidden mt-0.5 truncate text-xs text-gray-500">{mailboxes[0]?.display_name ?? ''}</p>}
+          <p className="hidden md:block text-xs text-gray-500 mt-0.5">自分のカレンダーです。共有メールを選ぶと、そのメンバーの予定が見られます</p>
+          {/* phone: whose calendar, tap to pick another */}
+          {mailboxes.length > 0
+            ? <button onClick={() => setSheet('mailbox')} className="md:hidden mt-0.5 flex max-w-full items-center gap-1 text-xs text-gray-500"><span className="truncate">{viewLabel}</span><span aria-hidden>▾</span></button>
+            : <p className="md:hidden mt-0.5 truncate text-xs text-gray-500">自分のカレンダー</p>}
         </div>
-        <select aria-label="メールアカウント" value={mailboxId} onChange={e => setMailboxId(e.target.value)} className="hidden md:block rounded-lg border border-gray-300 px-3 py-2 text-sm bg-white">
-          {mailboxes.map(m => <option key={m.id} value={m.id}>{m.display_name}</option>)}
-        </select>
-        {perm.can_edit && (
+        {mailboxes.length > 0 && (
+          <select aria-label="見るカレンダー" value={mailboxId} onChange={e => { setMailboxId(e.target.value); setShown(null); }} className="hidden md:block rounded-lg border border-gray-300 px-3 py-2 text-sm bg-white">
+            <option value="">自分のカレンダー</option>
+            {mailboxes.map(m => <option key={m.id} value={m.id}>{m.display_name} のメンバー</option>)}
+          </select>
+        )}
+        {(
           <button onClick={() => setShowSettings(true)} className="hidden md:block rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50">Google連携</button>
         )}
-        {perm.can_edit && (
+        {(
           <button onClick={() => setDraft(newDraft(selected))} className="hidden md:block rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700">＋ 予定</button>
         )}
-        {perm.can_edit && (
+        {(
           <button onClick={() => setTodoModal({ due: ymd(selected) })} className="hidden md:block rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50">＋ ToDo</button>
         )}
         {/* phone: everything about what is shown lives behind this one button */}
@@ -273,14 +275,13 @@ function CalendarView() {
       </div>
 
       {msg && <div className={`text-sm rounded-lg px-3 py-2 ${msg.type === 'success' ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-600'}`}>{msg.text}</div>}
-      {!mailboxId && !loading && <p className="text-sm text-gray-500">閲覧できるメールアカウントがありません。</p>}
 
-      {ready && people.length > 0 && (
+      {ready && mailboxId && people.length > 0 && (
         <div className="hidden md:flex flex-wrap items-center gap-2">
           <span className="text-xs text-gray-500">表示する人:</span>
-          {[{ id: TEAM, name: 'チーム全体' }, ...people].map(p => {
+          {people.map(p => {
             const on = !shown || shown.has(p.id);
-            const c = p.id === TEAM ? TEAM_COLOR : colorOf(p.id);
+            const c = colorOf(p.id);
             return (
               <button key={p.id} onClick={() => toggle(p.id)} aria-pressed={on}
                 className={`flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs ${on ? 'border-gray-300 bg-white text-gray-800' : 'border-gray-200 bg-gray-50 text-gray-400'}`}>
@@ -289,7 +290,7 @@ function CalendarView() {
               </button>
             );
           })}
-          <button onClick={() => setShown(new Set([TEAM, ...people.map(p => p.id)]))} className="text-xs text-blue-600 hover:underline">全員</button>
+          <button onClick={() => setShown(new Set(people.map(p => p.id)))} className="text-xs text-blue-600 hover:underline">全員</button>
           <button onClick={() => setShown(new Set([me]))} className="text-xs text-blue-600 hover:underline">自分のみ</button>
         </div>
       )}
@@ -316,7 +317,7 @@ function CalendarView() {
       </div>
 
       {ready && view !== 'month' && (
-        <TimeGrid days={days} events={gridEvents} todosOn={gridTodos} today={todayYmd} canEdit={perm.can_edit}
+        <TimeGrid days={days} events={gridEvents} todosOn={gridTodos} today={todayYmd} canEdit
           onCreate={(day, minutes) => setDraft(newDraftAt(day, minutes))} onPickDay={openDay} />
       )}
 
@@ -341,12 +342,12 @@ function CalendarView() {
                   <div className={`text-xs mb-0.5 ${ymd(d) === today ? 'flex h-5 w-5 items-center justify-center rounded-full bg-blue-600 text-white' : inMonth ? 'text-gray-700' : 'text-gray-400'}`}>{d.getDate()}</div>
                   {/* phone: small dots (one per event, a square for to-dos); the day's list is below the grid */}
                   <div className="md:hidden flex flex-wrap gap-0.5 px-0.5">
-                    {list.slice(0, 4).map(e => <span key={e.id} className="h-1.5 w-1.5 rounded-full" style={{ background: colorOf(e.owner?.id ?? null) }} />)}
+                    {list.slice(0, 4).map(e => <span key={e.id} className="h-1.5 w-1.5 rounded-full" style={{ background: colorOf(e.owner.id) }} />)}
                     {dayTodos.length > 0 && <span className="h-1.5 w-1.5 rounded-xs border border-amber-500" />}
                   </div>
                   <div className="hidden md:block space-y-0.5">
                     {shownEvents.map(e => (
-                      <div key={e.id} className="truncate rounded-sm px-1 text-[10px] md:text-[11px] leading-4 text-white" style={{ background: colorOf(e.owner?.id ?? null) }}>{e.title}</div>
+                      <div key={e.id} className="truncate rounded-sm px-1 text-[10px] md:text-[11px] leading-4 text-white" style={{ background: colorOf(e.owner.id) }}>{e.title}</div>
                     ))}
                     {shownTodos.map(t => (
                       <div key={t.id} data-testid="todo-chip" className={`truncate rounded-sm border border-dashed px-1 text-[10px] md:text-[11px] leading-4 ${t.done ? 'border-gray-300 text-gray-400 line-through' : t.overdue ? 'border-red-400 bg-red-50 text-red-700' : 'border-amber-400 bg-amber-50 text-amber-900'}`}>{t.done ? '☑' : '☐'} {t.title}</div>
@@ -362,14 +363,14 @@ function CalendarView() {
         <aside className="rounded-xl border border-gray-200 bg-white p-3 h-fit">
           <div className="flex items-center justify-between mb-2">
             <h2 className="text-sm font-semibold text-gray-900">{selected.getMonth() + 1}月{selected.getDate()}日（{WEEK[selected.getDay()]}）</h2>
-            {perm.can_edit && <button onClick={() => setDraft(newDraft(selected))} className="hidden md:block text-xs text-blue-600 hover:underline">追加</button>}
+            {<button onClick={() => setDraft(newDraft(selected))} className="hidden md:block text-xs text-blue-600 hover:underline">追加</button>}
           </div>
           {selectedEvents.length === 0 && <p className="text-xs text-gray-400">予定はありません</p>}
           <ul className="space-y-2">
             {selectedEvents.map(e => (
               <li key={e.id}>
-                <button onClick={() => openEvent(e)} className="w-full text-left rounded-lg border border-gray-100 p-2 hover:bg-gray-50" style={{ borderLeft: `4px solid ${colorOf(e.owner?.id ?? null)}` }}>
-                  <div className="text-xs text-gray-500">{timeLabel(e)} ・ {e.owner?.name ?? 'チーム全体'}</div>
+                <button onClick={() => openEvent(e)} className="w-full text-left rounded-lg border border-gray-100 p-2 hover:bg-gray-50" style={{ borderLeft: `4px solid ${colorOf(e.owner.id)}` }}>
+                  <div className="text-xs text-gray-500">{timeLabel(e)} ・ {e.owner.name}{e.attendees.length > 0 ? ` ほか${e.attendees.length}人` : ''}</div>
                   <div className="text-sm font-medium text-gray-900 wrap-break-word">{e.title}{e.renamed && <span className="ml-1 text-[10px] text-gray-400">(名称変更済)</span>}</div>
                   {e.location && <div className="text-xs text-gray-500 wrap-break-word">📍 {e.location}</div>}
                 </button>
@@ -382,11 +383,11 @@ function CalendarView() {
               <ul className="space-y-1.5">
                 {selectedTodos.map(t => (
                   <li key={t.id} className="flex items-start gap-2">
-                    <button onClick={() => tick(t)} disabled={!canTick(t, perm.can_edit, me)} role="checkbox" aria-checked={t.done} aria-label={`${t.title}を${t.done ? '未完了に戻す' : '完了にする'}`}
+                    <button onClick={() => tick(t)} disabled={!t.can_edit} role="checkbox" aria-checked={t.done} aria-label={`${t.title}を${t.done ? '未完了に戻す' : '完了にする'}`}
                       className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-sm border text-[10px] ${t.done ? 'border-emerald-500 bg-emerald-500 text-white' : 'border-gray-300 bg-white hover:border-blue-500'} disabled:opacity-40`}>{t.done ? '✓' : ''}</button>
                     <button onClick={() => setTodoModal({ todo: t })} className="min-w-0 flex-1 text-left">
                       <div className={`text-sm wrap-break-word ${t.done ? 'text-gray-400 line-through' : t.overdue ? 'text-red-700' : 'text-gray-900'}`}>{t.title}</div>
-                      <div className="text-xs text-gray-500">{t.assignee?.name ?? 'チーム全体'}</div>
+                      <div className="text-xs text-gray-500">{t.assignee.name}</div>
                     </button>
                   </li>
                 ))}
@@ -398,52 +399,67 @@ function CalendarView() {
       </>}
 
       {draft && (
-        <Modal onClose={() => setDraft(null)} title={draft.source === 'google' ? 'Googleから取り込んだ予定' : draft.id ? '予定を編集' : '予定を追加'}>
+        <Modal onClose={() => setDraft(null)} title={draft.source === 'google' ? 'Googleから取り込んだ予定' : draft.id ? (draft.canEdit ? '予定を編集' : '予定') : '予定を追加'}>
           {draft.source === 'google' ? (
             <div className="space-y-3">
               <p className="text-xs text-gray-500">Googleの予定は読み取り専用です。このアプリ内での表示名だけ変更できます。</p>
               <div>
                 <label className="text-xs text-gray-600">表示名（空欄で元の表示に戻す）</label>
-                <input className={inp} value={draft.title} disabled={!perm.can_edit} placeholder={draft.original_title || '予定あり'} onChange={e => setDraft({ ...draft, title: e.target.value })} />
+                <input className={inp} value={draft.title} disabled={!draft.canEdit} placeholder={draft.original_title || '予定あり'} onChange={e => setDraft({ ...draft, title: e.target.value })} />
               </div>
-              <p className="text-xs text-gray-500">誰の予定: {people.find(p => p.id === draft.owner)?.name ?? 'チーム全体'}</p>
+              <p className="text-xs text-gray-500">誰の予定: {draft.owner?.name}</p>
               {draft.original_title && <p className="text-xs text-gray-500">元のタイトル: {draft.original_title}</p>}
               {draft.location && <p className="text-xs text-gray-500">場所: {draft.location}</p>}
               {draft.description && <p className="text-xs text-gray-500 whitespace-pre-wrap wrap-break-word">{draft.description}</p>}
             </div>
           ) : (
             <div className="space-y-3">
-              <input className={inp} placeholder="タイトル" value={draft.title} disabled={!perm.can_edit} onChange={e => setDraft({ ...draft, title: e.target.value })} />
-              <div><label className="text-xs text-gray-600">誰の予定</label>
-                <select className={inp} value={draft.owner} disabled={!perm.can_edit} onChange={e => setDraft({ ...draft, owner: e.target.value })}>
-                  <option value={TEAM}>チーム全体</option>
-                  {people.map(p => <option key={p.id} value={p.id}>{p.name}{p.id === me ? '（自分）' : ''}</option>)}
-                </select></div>
+              <input className={inp} placeholder="タイトル" value={draft.title} disabled={!draft.canEdit} onChange={e => setDraft({ ...draft, title: e.target.value })} />
+              {draft.id && draft.owner && <p className="text-xs text-gray-500" data-testid="event-owner">{draft.owner.id === me ? '自分の予定' : `${draft.owner.name} さんの予定（参加者として入っています）`}</p>}
               <label className="flex items-center gap-2 text-sm text-gray-700">
-                <input type="checkbox" checked={draft.all_day} disabled={!perm.can_edit} onChange={e => setDraft({ ...draft, all_day: e.target.checked, start: draft.start.slice(0, 10) + (e.target.checked ? '' : 'T09:00'), end: draft.end.slice(0, 10) + (e.target.checked ? '' : 'T10:00') })} />終日
+                <input type="checkbox" checked={draft.all_day} disabled={!draft.canEdit} onChange={e => setDraft({ ...draft, all_day: e.target.checked, start: draft.start.slice(0, 10) + (e.target.checked ? '' : 'T09:00'), end: draft.end.slice(0, 10) + (e.target.checked ? '' : 'T10:00') })} />
+                終日
               </label>
               <div className="grid grid-cols-2 gap-2">
-                <div><label className="text-xs text-gray-600" htmlFor="event-start">開始</label><input id="event-start" className={inp} type={draft.all_day ? 'date' : 'datetime-local'} value={draft.start} disabled={!perm.can_edit} onChange={e => setDraft({ ...draft, start: e.target.value, end: e.target.value > draft.end ? e.target.value : draft.end })} /></div>
-                <div><label className="text-xs text-gray-600" htmlFor="event-end">終了</label><input id="event-end" className={inp} type={draft.all_day ? 'date' : 'datetime-local'} value={draft.end} min={draft.start} disabled={!perm.can_edit} onChange={e => setDraft({ ...draft, end: e.target.value })} /></div>
+                <div><label className="text-xs text-gray-600" htmlFor="event-start">開始</label><input id="event-start" className={inp} type={draft.all_day ? 'date' : 'datetime-local'} value={draft.start} disabled={!draft.canEdit} onChange={e => setDraft({ ...draft, start: e.target.value, end: draft.end < e.target.value ? e.target.value : draft.end })} /></div>
+                <div><label className="text-xs text-gray-600" htmlFor="event-end">終了</label><input id="event-end" className={inp} type={draft.all_day ? 'date' : 'datetime-local'} value={draft.end} min={draft.start} disabled={!draft.canEdit} onChange={e => setDraft({ ...draft, end: e.target.value })} /></div>
               </div>
-              <input className={inp} placeholder="場所" value={draft.location} disabled={!perm.can_edit} onChange={e => setDraft({ ...draft, location: e.target.value })} />
-              <textarea className={inp} rows={3} placeholder="メモ" value={draft.description} disabled={!perm.can_edit} onChange={e => setDraft({ ...draft, description: e.target.value })} />
+              <input className={inp} placeholder="場所" value={draft.location} disabled={!draft.canEdit} onChange={e => setDraft({ ...draft, location: e.target.value })} />
+              <div data-testid="attendees">
+                <label className="text-xs text-gray-600" htmlFor="event-attendee">参加者（それぞれのカレンダーにも入ります）</label>
+                <div className="mt-1 flex flex-wrap gap-1.5">
+                  {draft.attendees.length === 0 && <span className="text-xs text-gray-400">参加者はいません</span>}
+                  {draft.attendees.map(id => (
+                    <span key={id} className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2.5 py-1 text-xs text-blue-800">
+                      {everybody.find(p => p.id === id)?.name ?? '（不明）'}
+                      {draft.canEdit && <button type="button" className="text-blue-400 hover:text-red-600" aria-label={`${everybody.find(p => p.id === id)?.name ?? ''}を参加者から外す`} onClick={() => setDraft({ ...draft, attendees: draft.attendees.filter(x => x !== id) })}>×</button>}
+                    </span>
+                  ))}
+                </div>
+                {draft.canEdit && (
+                  <select id="event-attendee" className={`${inp} mt-1.5`} value="" onChange={e => e.target.value && setDraft({ ...draft, attendees: [...draft.attendees, e.target.value] })}>
+                    <option value="">社内の人を選んで追加…</option>
+                    {everybody.filter(p => p.id !== (draft.owner?.id ?? me) && !draft.attendees.includes(p.id)).map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                  </select>
+                )}
+              </div>
+              <textarea className={inp} rows={3} placeholder="メモ" value={draft.description} disabled={!draft.canEdit} onChange={e => setDraft({ ...draft, description: e.target.value })} />
             </div>
           )}
           <div className="flex items-center gap-2 pt-4">
-            {perm.can_edit && draft.id && draft.source !== 'google' && <button onClick={remove} className="text-sm text-red-600 hover:underline">削除</button>}
+            {draft.canEdit && draft.id && draft.source !== 'google' && <button onClick={remove} className="text-sm text-red-600 hover:underline">削除</button>}
             <div className="flex-1" />
             <button onClick={() => setDraft(null)} className="rounded-lg border border-gray-300 px-3 py-2 text-sm">閉じる</button>
-            {perm.can_edit && <button onClick={save} className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700">保存</button>}
+            {draft.canEdit && <button onClick={save} className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700">保存</button>}
           </div>
         </Modal>
       )}
 
-      {perm.can_edit && <Fab label="追加" onClick={() => setSheet('add')} />}
+      <Fab label="追加" onClick={() => setSheet('add')} />
 
       {sheet === 'mailbox' && (
-        <Modal title="メールアカウント" onClose={() => setSheet(null)}>
-          <ChoiceList value={mailboxId} onPick={v => { setMailboxId(v); setSheet(null); }} choices={mailboxes.map(m => ({ value: m.id, label: m.display_name }))} />
+        <Modal title="見るカレンダー" onClose={() => setSheet(null)}>
+          <ChoiceList value={mailboxId} onPick={v => { setMailboxId(v); setShown(null); setSheet(null); }} choices={[{ value: '', label: '自分のカレンダー' }, ...mailboxes.map(m => ({ value: m.id, label: `${m.display_name} のメンバー` }))]} />
         </Modal>
       )}
 
@@ -457,20 +473,20 @@ function CalendarView() {
       {sheet === 'display' && (
         <Modal title="表示の設定" onClose={() => setSheet(null)}>
           <div className="space-y-5">
-            {people.length > 0 && (
+            {mailboxId && people.length > 0 && (
               <section aria-label="表示する人">
                 <div className="mb-1 flex items-center gap-3">
                   <h4 className="flex-1 text-sm font-semibold text-gray-800">表示する人</h4>
-                  <button onClick={() => setShown(new Set([TEAM, ...people.map(p => p.id)]))} className="text-sm text-blue-600">全員</button>
+                  <button onClick={() => setShown(new Set(people.map(p => p.id)))} className="text-sm text-blue-600">全員</button>
                   <button onClick={() => setShown(new Set([me]))} className="text-sm text-blue-600">自分のみ</button>
                 </div>
                 <ul className="-mx-1 divide-y divide-gray-100">
-                  {[{ id: TEAM, name: 'チーム全体' }, ...people].map(p => {
+                  {people.map(p => {
                     const on = !shown || shown.has(p.id);
                     return (
                       <li key={p.id}>
                         <button onClick={() => toggle(p.id)} role="checkbox" aria-checked={on} className="flex w-full items-center gap-3 rounded-lg px-3 py-3 text-left active:bg-gray-100">
-                          <span className="h-3 w-3 rounded-full" style={{ background: on ? (p.id === TEAM ? TEAM_COLOR : colorOf(p.id)) : '#d1d5db' }} />
+                          <span className="h-3 w-3 rounded-full" style={{ background: on ? colorOf(p.id) : '#d1d5db' }} />
                           <span className={`flex-1 text-base ${on ? 'text-gray-900' : 'text-gray-400'}`}>{p.name}{p.id === me ? '（自分）' : ''}</span>
                           <span aria-hidden className={`flex h-5 w-5 items-center justify-center rounded-sm border text-xs ${on ? 'border-blue-600 bg-blue-600 text-white' : 'border-gray-300'}`}>{on ? '✓' : ''}</span>
                         </button>
@@ -484,19 +500,19 @@ function CalendarView() {
               <span className="flex-1 text-base text-gray-900">ToDoも表示</span>
               <span aria-hidden className={`relative h-6 w-10 rounded-full transition-colors ${showTodos ? 'bg-blue-600' : 'bg-gray-300'}`}><span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-all ${showTodos ? 'left-[1.15rem]' : 'left-0.5'}`} /></span>
             </button>
-            {perm.can_edit && <button onClick={() => { setSheet(null); setShowSettings(true); }} className="w-full rounded-lg border border-gray-300 px-3 py-3 text-base text-gray-800">Google連携の設定</button>}
+            {<button onClick={() => { setSheet(null); setShowSettings(true); }} className="w-full rounded-lg border border-gray-300 px-3 py-3 text-base text-gray-800">Google連携の設定</button>}
             <button onClick={() => setSheet(null)} className="w-full rounded-lg bg-gray-900 px-3 py-3 text-base font-medium text-white">閉じる</button>
           </div>
         </Modal>
       )}
 
       {todoModal && (
-        <TodoModal mailboxId={mailboxId} people={people} me={me} todo={todoModal.todo} defaultDue={todoModal.due} canEdit={perm.can_edit}
+        <TodoModal people={assignable} me={me} todo={todoModal.todo} defaultDue={todoModal.due} canEdit={todoModal.todo ? todoModal.todo.can_edit : true}
           onClose={() => setTodoModal(null)} onChanged={text => { setTodoModal(null); flash('success', text); load(); }} />
       )}
 
       {showSettings && (
-        <GoogleSettings mailboxId={mailboxId} links={links} configured={googleConfigured} focusLink={sp.get('link')}
+        <GoogleSettings links={links} configured={googleConfigured} focusLink={sp.get('link')}
           onClose={() => setShowSettings(false)} onChanged={load} flash={flash} />
       )}
     </div>
@@ -511,8 +527,8 @@ const LIST_ERROR_TEXT: Record<string, string> = {
   google_api_failed: 'Googleカレンダーの一覧を読み込めませんでした。しばらくしてからもう一度お試しください。続くときは、管理者にサーバーのログ（[Google Calendar] calendarList failed）を確認してもらってください。',
 };
 
-function GoogleSettings({ mailboxId, links, configured, focusLink, onClose, onChanged, flash }: {
-  mailboxId: string; links: Link[]; configured: boolean; focusLink: string | null;
+function GoogleSettings({ links, configured, focusLink, onClose, onChanged, flash }: {
+  links: Link[]; configured: boolean; focusLink: string | null;
   onClose: () => void; onChanged: () => void; flash: (t: 'success' | 'error', s: string) => void;
 }) {
   const [options, setOptions] = useState<Record<string, { id: string; name: string; primary: boolean }[]>>({});
@@ -547,7 +563,7 @@ function GoogleSettings({ mailboxId, links, configured, focusLink, onClose, onCh
 
   return (
     <Modal title="Googleカレンダー連携" onClose={onClose}>
-      <p className="text-xs text-gray-500 mb-3">Googleの予定を、連携した人の予定としてこのカレンダーに取り込みます（読み取り専用）。「予定あり」のみ表示にすると、タイトルや詳細は保存も表示もされません。</p>
+      <p className="text-xs text-gray-500 mb-3">Googleの予定を、あなた自身のカレンダーに取り込みます（読み取り専用）。「予定あり」のみ表示にすると、タイトルや詳細は保存も表示もされません。</p>
       <div className="space-y-4">
         {links.map(l => (
           <div key={l.id} className={`rounded-lg border p-3 space-y-2 ${l.id === focusLink ? 'border-blue-400' : 'border-gray-200'}`}>
@@ -590,7 +606,7 @@ function GoogleSettings({ mailboxId, links, configured, focusLink, onClose, onCh
           </div>
         ))}
         {configured ? (
-          <a href={`/api/calendar/google/auth?mailboxId=${mailboxId}`} className="inline-block rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50">＋ Googleカレンダーを連携</a>
+          <a href="/api/calendar/google/auth" className="inline-block rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50">＋ Googleカレンダーを連携</a>
         ) : (
           <p className="text-xs text-amber-600">GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET が未設定のため、Google連携は利用できません。</p>
         )}

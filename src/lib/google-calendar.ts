@@ -126,7 +126,7 @@ export async function syncLink(linkId: string): Promise<{ upserted: number; remo
     for (const r of rows) {
       await prisma.calendar_events.upsert({
         where: { link_id_google_event_id: { link_id: link.id, google_event_id: r.google_event_id } },
-        create: { ...r, mailbox_id: link.mailbox_id, source: 'google', link_id: link.id, owner_user_id: link.linked_by_user_id },
+        create: { ...r, source: 'google', link_id: link.id, owner_user_id: link.linked_by_user_id },
         update: { ...r, owner_user_id: link.linked_by_user_id },
       });
       upserted++;
@@ -153,11 +153,11 @@ export async function syncLink(linkId: string): Promise<{ upserted: number; remo
   }
 }
 
-// Best-effort refresh of links not synced recently; used when the calendar is opened.
-export async function syncStaleLinks(mailboxId: string) {
+// Best-effort refresh of the links of these people not synced recently; used when their calendars are opened.
+export async function syncStaleLinks(userIds: string[]) {
   const links = await prisma.calendar_google_links.findMany({
     where: {
-      mailbox_id: mailboxId,
+      linked_by_user_id: { in: userIds },
       google_calendar_id: { not: null },
       OR: [{ last_synced_at: null }, { last_synced_at: { lt: new Date(Date.now() - STALE_MS) } }],
     },

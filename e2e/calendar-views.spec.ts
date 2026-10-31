@@ -1,5 +1,5 @@
 import { test, expect, uniq } from './fixtures';
-import { AUTH, MAILBOX_ID, USERS } from './helpers/constants';
+import { AUTH, USERS } from './helpers/constants';
 import { db } from './helpers/db';
 import { seedCalendar, todayAt } from './helpers/seed';
 import { addDays, today } from './helpers/ui';
@@ -79,7 +79,8 @@ test.describe('日・週・月の切り替え（管理者）', () => {
 
   test('切り替えても、見ている日が変わらない（月で選んだ日 → 日 → 週 → 月）', async ({ page }) => {
     await open(page);
-    const target = addDays(today(), today().slice(8) === '28' ? -1 : 1);
+    // a day of this month (a day of the neighbouring month shown in the grid opens the 1st instead)
+    const target = addDays(today(), addDays(today(), 1).slice(0, 7) === today().slice(0, 7) ? 1 : -1);
     await page.locator(`main .grid-cols-7 button[data-date="${target}"]`).click();
     await view(page, '日').click();
     await expect(title(page)).toHaveText(jp(target));
@@ -113,8 +114,8 @@ test.describe('日・週・月の切り替え（管理者）', () => {
 
   test('重なる予定は横に並ぶ（幅が分かれる）。重ならない予定は幅いっぱい', async ({ page }) => {
     await db.calendar_events.createMany({ data: [
-      { id: 'ev_o1', mailbox_id: MAILBOX_ID, source: 'local', title: '重なりA', start_at: todayAt('18:00'), end_at: todayAt('19:00'), created_by_id: USERS.admin.id },
-      { id: 'ev_o2', mailbox_id: MAILBOX_ID, source: 'local', title: '重なりB', start_at: todayAt('18:30'), end_at: todayAt('19:30'), created_by_id: USERS.admin.id },
+      { id: 'ev_o1', source: 'local', title: '重なりA', start_at: todayAt('18:00'), end_at: todayAt('19:00'), created_by_id: USERS.admin.id, owner_user_id: USERS.admin.id },
+      { id: 'ev_o2', source: 'local', title: '重なりB', start_at: todayAt('18:30'), end_at: todayAt('19:30'), created_by_id: USERS.admin.id, owner_user_id: USERS.admin.id },
     ] });
     await open(page, `?view=day&date=${today()}`);
     const col = (await columns(page).first().boundingBox())!;
@@ -128,9 +129,9 @@ test.describe('日・週・月の切り替え（管理者）', () => {
 
   test('終日の予定とToDoは、時間の枠ではなく上の「終日」の行に出る', async ({ page }) => {
     const start = new Date(`${today()}T00:00:00Z`);
-    await db.calendar_events.create({ data: { id: 'ev_allday', mailbox_id: MAILBOX_ID, source: 'local', title: '終日の出張', all_day: true, start_at: start, end_at: new Date(start.getTime() + 86400_000), created_by_id: USERS.admin.id } });
+    await db.calendar_events.create({ data: { id: 'ev_allday', owner_user_id: USERS.admin.id, source: 'local', title: '終日の出張', all_day: true, start_at: start, end_at: new Date(start.getTime() + 86400_000), created_by_id: USERS.admin.id } });
     const todo = uniq('期限が今日');
-    await db.todos.create({ data: { mailbox_id: MAILBOX_ID, title: todo, due_date: new Date(`${today()}T00:00:00Z`), assignee_id: null } });
+    await db.todos.create({ data: { title: todo, due_date: new Date(`${today()}T00:00:00Z`), assignee_id: USERS.admin.id } });
     await open(page, `?view=week&date=${today()}`);
     const row = page.getByLabel('終日の予定とToDo');
     await expect(row.getByTestId('grid-allday').filter({ hasText: '終日の出張' })).toBeVisible();
@@ -168,25 +169,25 @@ test.describe('日・週・月の切り替え（管理者）', () => {
     expect((await created.boundingBox())!.y - (await col.boundingBox())!.y).toBeGreaterThan(9 * 48 - 3);
   });
 
-  test('「表示する人」の切り替えは、日・週にも効く', async ({ page }) => {
-    await open(page, `?view=day&date=${today()}`);
+  test('「表示する人」の切り替えは、日・週にも効く（共有メールのメンバーのカレンダーで）', async ({ page }) => {
+    await open(page, `?mailbox=mb_team&view=day&date=${today()}`);
     await expect(eventsOf(page, '週次ミーティング')).toBeVisible();
     await expect(eventsOf(page, '社内MTG')).toBeVisible();
     await page.getByRole('button', { name: '自分のみ' }).click();
     await expect(eventsOf(page, '社内MTG')).toHaveCount(0);
-    await expect(eventsOf(page, '週次ミーティング')).toHaveCount(0); // the whole-team events are not "mine"
+    await expect(eventsOf(page, '週次ミーティング')).toBeVisible(); // my own event stays
     await page.getByRole('button', { name: '全員' }).click();
     await expect(eventsOf(page, '社内MTG')).toBeVisible();
   });
 });
 
-test.describe('日・週・月（見るだけの人）', () => {
+test.describe('日・週・月（副管理者）', () => {
   test.use({ storageState: AUTH.admin2 });
-  test('時間の枠をクリックしても予定は作れない。予定は見られる', async ({ page }) => {
+  test('時間の枠をクリックすると、自分のカレンダーの予定が作れる。自分の予定だけが出る', async ({ page }) => {
     await open(page, `?view=day&date=${today()}`);
-    await expect(eventsOf(page, '週次ミーティング')).toBeVisible();
+    await expect(eventsOf(page, '全体会議')).toBeVisible();
+    await expect(eventsOf(page, '週次ミーティング')).toHaveCount(0); // not a party to it
     await columns(page).first().click({ position: { x: 8, y: 9 * 48 + 10 } });
-    await page.waitForTimeout(500);
-    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await expect(page.getByRole('dialog', { name: '予定を追加' })).toBeVisible();
   });
 });

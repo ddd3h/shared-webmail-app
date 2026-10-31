@@ -5,144 +5,174 @@ import { mm } from './helpers/mattermost-mock';
 import { clearNotifications } from './helpers/seed';
 import { addDays, today } from './helpers/ui';
 
+// ToDoは、個人に1つ。共有メールは「そのメンバーのToDoを見る」入口。
 test.describe.configure({ mode: 'serial' });
 test.beforeEach(async () => { await db.todos.deleteMany({}); await clearNotifications(); await mm.reset(); });
 test.afterAll(async () => { await db.todos.deleteMany({}); await mm.reset(); });
 
-const body = (o: object = {}) => ({ mailboxId: MAILBOX_ID, title: uniq('ToDo'), ...o });
-const list = async (c: import('@playwright/test').APIRequestContext, q = '') => (await (await c.get(`/api/todos?mailboxId=${MAILBOX_ID}${q}`)).json());
-const make = async (c: import('@playwright/test').APIRequestContext, o: object = {}) => (await (await c.post('/api/todos', { data: body(o) })).json()).id as string;
+type Api = import('@playwright/test').APIRequestContext;
+const body = (o: object = {}) => ({ title: uniq('ToDo'), ...o });
+const mine = async (c: Api, q = '') => (await (await c.get(`/api/todos?x=1${q}`)).json());
+const team = async (c: Api, q = '') => (await (await c.get(`/api/todos?mailboxId=${MAILBOX_ID}${q}`)).json());
+const make = async (c: Api, o: object = {}) => (await (await c.post('/api/todos', { data: body(o) })).json()).id as string;
+const titlesOf = (r: { items: { title: string }[] }) => r.items.map(t => t.title);
 
-// admin = edit rights, sato = edit rights, admin2 and tanaka = view only, suzuki = no access to the team mailbox
-test.describe('ToDoのAPI', () => {
-  test('作る・一覧に出る。担当・期限・メモも保存される', async ({ as }) => {
+// admin, sato = members of the team mailbox; admin2, tanaka = members too (view only on the mailbox); suzuki = not a member
+test.describe('ToDoのAPI（自分のToDo）', () => {
+  test('作ると、自分のリストに入る。期限・メモも保存される。自分のリストには自分の分だけ', async ({ as }) => {
     const admin = await as('admin');
-    const res = await admin.post('/api/todos', { data: body({ title: '見積もりを送る', due_date: today(), assignee_id: USERS.sato.id, description: '最新の単価で' }) });
-    expect(res.status()).toBe(201);
-    const { items, permissions, people, me } = await list(admin);
+    expect((await admin.post('/api/todos', { data: body({ title: '見積もりを送る', due_date: today(), description: '最新の単価で' }) })).status()).toBe(201);
+    await make(await as('sato'), { title: '佐藤の仕事' });
+    const { items, people, assignable, me } = await mine(admin);
     expect(items).toHaveLength(1);
-    expect(items[0]).toMatchObject({ title: '見積もりを送る', due_date: today(), description: '最新の単価で', done: false, overdue: false, assignee: { id: USERS.sato.id, name: '佐藤' }, created_by: '管理者' });
-    expect(permissions.can_edit).toBe(true);
+    expect(items[0]).toMatchObject({ title: '見積もりを送る', due_date: today(), description: '最新の単価で', done: false, overdue: false, assignee: { id: USERS.admin.id, name: '管理者' }, created_by: '管理者', can_edit: true });
     expect(me).toBe(USERS.admin.id);
-    expect(people.map((p: { id: string }) => p.id)).toContain(USERS.sato.id);
+    expect(people).toEqual([{ id: USERS.admin.id, name: '管理者' }]);
+    expect(assignable.map((p: { id: string }) => p.id)).toEqual(expect.arrayContaining([USERS.admin.id, USERS.sato.id, USERS.tanaka.id]));
+    expect(assignable.map((p: { id: string }) => p.id)).not.toContain(USERS.suzuki.id); // not in a team with admin
   });
 
   test('並び順: 未完了は期限の近い順（期限なしは最後）、完了したものはその後ろ', async ({ as }) => {
     const admin = await as('admin');
-    const late = await make(admin, { title: 'C 期限なし' });
+    await make(admin, { title: 'C 期限なし' });
     await make(admin, { title: 'B 来週', due_date: addDays(today(), 7) });
     await make(admin, { title: 'A 昨日', due_date: addDays(today(), -1) });
     const done = await make(admin, { title: 'D 完了', due_date: addDays(today(), -5) });
     await admin.patch(`/api/todos/${done}`, { data: { done: true } });
-    expect((await list(admin)).items.map((t: { title: string }) => t.title)).toEqual(['A 昨日', 'B 来週', 'C 期限なし', 'D 完了']);
-    expect(late).toBeTruthy();
+    expect(titlesOf(await mine(admin))).toEqual(['A 昨日', 'B 来週', 'C 期限なし', 'D 完了']);
   });
 
   test('期限が昨日以前の未完了だけが「期限切れ」。完了すれば外れる', async ({ as }) => {
     const admin = await as('admin');
     const id = await make(admin, { due_date: addDays(today(), -1) });
     await make(admin, { due_date: today() });
-    const before = (await list(admin)).items;
-    expect(before.map((t: { overdue: boolean }) => t.overdue)).toEqual([true, false]);
+    expect((await mine(admin)).items.map((t: { overdue: boolean }) => t.overdue)).toEqual([true, false]);
     await admin.patch(`/api/todos/${id}`, { data: { done: true } });
-    expect((await list(admin)).items.every((t: { overdue: boolean }) => !t.overdue)).toBe(true);
+    expect((await mine(admin)).items.every((t: { overdue: boolean }) => !t.overdue)).toBe(true);
   });
 
   test('完了にすると誰が完了したかが残り、戻すと消える', async ({ as }) => {
-    const admin = await as('admin'), sato = await as('sato');
+    const admin = await as('admin');
     const id = await make(admin);
-    expect((await sato.patch(`/api/todos/${id}`, { data: { done: true } })).status()).toBe(200);
-    const done = (await list(admin)).items[0];
-    expect(done).toMatchObject({ done: true, done_by: '佐藤' });
+    expect((await admin.patch(`/api/todos/${id}`, { data: { done: true } })).status()).toBe(200);
+    const done = (await mine(admin)).items[0];
+    expect(done).toMatchObject({ done: true, done_by: '管理者' });
     expect(done.done_at).toBeTruthy();
     await admin.patch(`/api/todos/${id}`, { data: { done: false } });
-    expect((await list(admin)).items[0]).toMatchObject({ done: false, done_by: null, done_at: null });
+    expect((await mine(admin)).items[0]).toMatchObject({ done: false, done_by: null, done_at: null });
   });
 
-  test('絞り込み: 状態・担当（自分／チーム全体／特定の人）・期限の範囲', async ({ as }) => {
+  test('絞り込み: 状態・期限の範囲', async ({ as }) => {
     const admin = await as('admin');
-    await make(admin, { title: 'チーム', due_date: '2031-03-10' });
-    await make(admin, { title: '自分', assignee_id: USERS.admin.id, due_date: '2031-03-20' });
-    const s = await make(admin, { title: '佐藤', assignee_id: USERS.sato.id, due_date: '2031-04-02' });
+    await make(admin, { title: '三月の前半', due_date: '2031-03-10' });
+    await make(admin, { title: '三月の後半', due_date: '2031-03-20' });
+    const s = await make(admin, { title: '四月', due_date: '2031-04-02' });
     await admin.patch(`/api/todos/${s}`, { data: { done: true } });
-    const titles = async (q: string) => (await list(admin, q)).items.map((t: { title: string }) => t.title).sort();
-    expect(await titles('&status=open')).toEqual(['チーム', '自分']);
-    expect(await titles('&status=done')).toEqual(['佐藤']);
-    expect(await titles('&assignee=me')).toEqual(['自分']);
-    expect(await titles('&assignee=team')).toEqual(['チーム']);
-    expect(await titles(`&assignee=${USERS.sato.id}`)).toEqual(['佐藤']);
-    expect(await titles('&from=2031-03-01&to=2031-03-31')).toEqual(['チーム', '自分']);
-    expect(await titles('&from=2031-03-15&to=2031-03-31')).toEqual(['自分']);
-    expect(await titles('&from=2031-04-02&to=2031-04-02')).toEqual(['佐藤']);
+    const titles = async (q: string) => titlesOf(await mine(admin, q)).sort();
+    expect(await titles('&status=open')).toEqual(['三月の前半', '三月の後半'].sort());
+    expect(await titles('&status=done')).toEqual(['四月']);
+    expect(await titles('&from=2031-03-01&to=2031-03-31')).toEqual(['三月の前半', '三月の後半'].sort());
+    expect(await titles('&from=2031-03-15&to=2031-03-31')).toEqual(['三月の後半']);
+    expect(await titles('&from=2031-04-02&to=2031-04-02')).toEqual(['四月']);
   });
 
-  test('内容を直せる。期限・担当を外す（null）こともできる', async ({ as }) => {
+  test('内容と期限を直せる。期限を外す（null）こともできる', async ({ as }) => {
     const admin = await as('admin');
-    const id = await make(admin, { due_date: today(), assignee_id: USERS.sato.id, description: 'メモ' });
-    expect((await admin.patch(`/api/todos/${id}`, { data: { title: '直した', due_date: null, assignee_id: null, description: null } })).status()).toBe(200);
-    expect((await list(admin)).items[0]).toMatchObject({ title: '直した', due_date: null, assignee: null, description: null });
+    const id = await make(admin, { due_date: today(), description: 'メモ' });
+    expect((await admin.patch(`/api/todos/${id}`, { data: { title: '直した', due_date: null, description: null } })).status()).toBe(200);
+    expect((await mine(admin)).items[0]).toMatchObject({ title: '直した', due_date: null, description: null });
   });
 
   test('削除できる', async ({ as }) => {
     const admin = await as('admin');
     const id = await make(admin);
     expect((await admin.delete(`/api/todos/${id}`)).status()).toBe(200);
-    expect((await list(admin)).items).toHaveLength(0);
+    expect((await mine(admin)).items).toHaveLength(0);
     expect((await admin.delete(`/api/todos/${id}`)).status()).toBe(404);
   });
 
-  test('入力の検査: 内容が空・長すぎる・日付が不正・担当がチームの人でない、は受け付けない', async ({ as }) => {
+  test('入力の検査: 内容が空・長すぎる・日付が不正は受け付けない。チーム全体（担当なし）のToDoはもうない', async ({ as }) => {
     const admin = await as('admin');
-    for (const bad of [{ title: '  ' }, { title: 'あ'.repeat(201) }, { due_date: '2031-02-30' }, { due_date: 'あした' }, { description: 'x'.repeat(5001) }, { assignee_id: USERS.suzuki.id }]) {
+    for (const bad of [{ title: '  ' }, { title: 'あ'.repeat(201) }, { due_date: '2031-02-30' }, { due_date: 'あした' }, { description: 'x'.repeat(5001) }, { assignee_id: null }, { assignee_id: '' }]) {
       expect((await admin.post('/api/todos', { data: body(bad) })).status(), JSON.stringify(bad).slice(0, 40)).toBe(400);
     }
-    expect((await admin.post('/api/todos', { data: { title: 'x' } })).status()).toBe(400);
+    expect((await admin.post('/api/todos', { data: {} })).status()).toBe(400);
     const id = await make(admin);
-    expect((await admin.patch(`/api/todos/${id}`, { data: { assignee_id: USERS.suzuki.id } })).status()).toBe(400);
     expect((await admin.patch(`/api/todos/${id}`, { data: { title: '' } })).status()).toBe(400);
-    expect((await admin.get(`/api/todos?mailboxId=${MAILBOX_ID}&from=bad`)).status()).toBe(400);
-    expect((await admin.get(`/api/todos?mailboxId=${MAILBOX_ID}&status=weird`)).status()).toBe(400);
-  });
-
-  test('権限: 見るだけの人は読めるが、作成・編集・削除はできない。権限のない人は存在も分からない', async ({ as }) => {
-    const admin = await as('admin'), viewer = await as('admin2'), outsider = await as('suzuki');
-    const id = await make(admin, { title: '共有' });
-    expect((await list(viewer)).items).toHaveLength(1);
-    expect((await list(viewer)).permissions.can_edit).toBe(false);
-    expect((await viewer.post('/api/todos', { data: body() })).status()).toBe(403);
-    expect((await viewer.patch(`/api/todos/${id}`, { data: { title: 'x' } })).status()).toBe(403);
-    expect((await viewer.patch(`/api/todos/${id}`, { data: { done: true } })).status()).toBe(403); // not assigned to them
-    expect((await viewer.delete(`/api/todos/${id}`)).status()).toBe(403);
-
-    expect((await outsider.get(`/api/todos?mailboxId=${MAILBOX_ID}`)).status()).toBe(403);
-    expect((await outsider.post('/api/todos', { data: body() })).status()).toBe(403);
-    expect((await outsider.patch(`/api/todos/${id}`, { data: { done: true } })).status()).toBe(404);
-    expect((await outsider.delete(`/api/todos/${id}`)).status()).toBe(404);
-    expect(await db.todos.count()).toBe(1);
-  });
-
-  test('見るだけの人でも、自分が担当のToDoは完了にできる（内容の編集はできない）', async ({ as }) => {
-    const admin = await as('admin'), tanaka = await as('tanaka');
-    const mine = await make(admin, { assignee_id: USERS.tanaka.id });
-    const others = await make(admin, { assignee_id: USERS.sato.id });
-    expect((await tanaka.patch(`/api/todos/${mine}`, { data: { title: '書き換え' } })).status()).toBe(403);
-    expect((await tanaka.patch(`/api/todos/${mine}`, { data: { done: true, title: '書き換え' } })).status()).toBe(403);
-    expect((await tanaka.patch(`/api/todos/${mine}`, { data: { done: true } })).status()).toBe(200);
-    expect((await tanaka.patch(`/api/todos/${others}`, { data: { done: true } })).status()).toBe(403);
-    expect(await db.todos.count({ where: { done_at: { not: null } } })).toBe(1);
+    expect((await admin.get('/api/todos?from=bad')).status()).toBe(400);
+    expect((await admin.get('/api/todos?status=weird')).status()).toBe(400);
   });
 
   test('ログインしていないと使えない', async ({ anon }) => {
-    expect((await anon.get(`/api/todos?mailboxId=${MAILBOX_ID}`, { maxRedirects: 0 })).status()).not.toBe(200);
+    expect((await anon.get('/api/todos', { maxRedirects: 0 })).status()).not.toBe(200);
     expect((await anon.post('/api/todos', { data: body(), maxRedirects: 0 })).status()).not.toBe(201);
   });
 });
 
+test.describe('ToDoのAPI（ほかの人のToDo）', () => {
+  test('共有メールを選ぶと、メンバー全員のToDoが見える。メンバーでない人は403。メンバーでない人のToDoは見えない', async ({ as }) => {
+    await make(await as('admin'), { title: '管理者の' });
+    await make(await as('sato'), { title: '佐藤の' });
+    await make(await as('suzuki'), { title: '鈴木の' });
+    const r = await team(await as('tanaka'));
+    expect(titlesOf(r).sort()).toEqual(['管理者の', '佐藤の'].sort());
+    expect(r.people.map((p: { id: string }) => p.id).sort()).toEqual([USERS.admin.id, USERS.admin2.id, USERS.sato.id, USERS.tanaka.id].sort());
+    expect((await (await as('suzuki')).get(`/api/todos?mailboxId=${MAILBOX_ID}`)).status()).toBe(403);
+    expect(titlesOf(await mine(await as('suzuki')))).toEqual(['鈴木の']);
+  });
+
+  test('担当で絞り込める（自分／メンバーの1人）。メンバーでない人を指定すると400', async ({ as }) => {
+    await make(await as('admin'), { title: '管理者の' });
+    await make(await as('sato'), { title: '佐藤の' });
+    const tanaka = await as('tanaka');
+    expect(titlesOf(await team(tanaka, `&assignee=${USERS.sato.id}`))).toEqual(['佐藤の']);
+    expect(titlesOf(await team(tanaka, '&assignee=me'))).toEqual([]);
+    expect((await tanaka.get(`/api/todos?mailboxId=${MAILBOX_ID}&assignee=${USERS.suzuki.id}`)).status()).toBe(400);
+  });
+
+  test('同じ共有メールのメンバーのリストに、ToDoを入れられる（入れた人も変えられる）。ほかの人のリストには入れられない', async ({ as }) => {
+    const admin = await as('admin');
+    const id = await make(admin, { title: '佐藤さんにお願い', assignee_id: USERS.sato.id });
+    expect(titlesOf(await mine(await as('sato')))).toEqual(['佐藤さんにお願い']);
+    expect(titlesOf(await mine(admin))).toEqual([]); // it is on sato's list, not on mine
+    const item = (await mine(await as('sato'))).items[0];
+    expect(item).toMatchObject({ assignee: { id: USERS.sato.id }, created_by: '管理者', can_edit: true });
+    expect((await admin.patch(`/api/todos/${id}`, { data: { title: '入れた人が直す' } })).status()).toBe(200);
+    expect((await admin.patch(`/api/todos/${id}`, { data: { done: true } })).status()).toBe(200);
+    expect((await admin.post('/api/todos', { data: body({ assignee_id: USERS.suzuki.id }) })).status()).toBe(400); // not in a team together
+    expect((await admin.post('/api/todos', { data: body({ assignee_id: 'u_nobody' }) })).status()).toBe(400);
+    const other = await make(admin);
+    expect((await admin.patch(`/api/todos/${other}`, { data: { assignee_id: USERS.suzuki.id } })).status()).toBe(400);
+  });
+
+  test('権限: 見るだけの人（メンバー）は、ほかの人のToDoを読めるが、変更・完了・削除はできない。無関係な人には存在も分からない', async ({ as }) => {
+    const id = await make(await as('admin'), { title: '管理者の' });
+    const viewer = await as('tanaka'), outsider = await as('suzuki');
+    expect(titlesOf(await team(viewer))).toEqual(['管理者の']);
+    expect((await team(viewer)).items[0].can_edit).toBe(false);
+    expect((await viewer.patch(`/api/todos/${id}`, { data: { title: 'x' } })).status()).toBe(403);
+    expect((await viewer.patch(`/api/todos/${id}`, { data: { done: true } })).status()).toBe(403);
+    expect((await viewer.delete(`/api/todos/${id}`)).status()).toBe(403);
+    expect((await outsider.patch(`/api/todos/${id}`, { data: { done: true } })).status()).toBe(404);
+    expect((await outsider.delete(`/api/todos/${id}`)).status()).toBe(403);
+    expect(await db.todos.count()).toBe(1);
+    expect(await db.todos.count({ where: { done_at: { not: null } } })).toBe(0);
+  });
+
+  test('自分のリストのToDoは、誰が入れたものでも、自分で完了・編集・削除できる', async ({ as }) => {
+    const id = await make(await as('admin'), { assignee_id: USERS.tanaka.id });
+    const tanaka = await as('tanaka');
+    expect((await tanaka.patch(`/api/todos/${id}`, { data: { done: true } })).status()).toBe(200);
+    expect((await tanaka.patch(`/api/todos/${id}`, { data: { title: '自分で直した' } })).status()).toBe(200);
+    expect((await tanaka.delete(`/api/todos/${id}`)).status()).toBe(200);
+  });
+});
+
 test.describe('ToDoの通知（Mattermost）', () => {
-  test('担当に指定すると本人にDMが届く。自分を担当にしたときは届かない', async ({ as }) => {
+  test('ほかの人のリストに入れると、本人にDMが届く。自分のリストに入れたときは届かない', async ({ as }) => {
     const admin = await as('admin');
     await admin.post('/api/todos', { data: body({ title: '請求書を確認', due_date: '2031-05-01', assignee_id: USERS.sato.id }) });
-    const [post] = await mm.waitFor(p => p.message.includes('ToDoが割り当てられました'));
+    const [post] = await mm.waitFor(p => p.message.includes('ToDoが追加されました'));
     expect(post.to).toBe('mm-sato');
     expect(post.message).toContain('請求書を確認');
     expect(post.message).toContain('2031-05-01');
@@ -150,12 +180,12 @@ test.describe('ToDoの通知（Mattermost）', () => {
 
     await mm.reset();
     await admin.post('/api/todos', { data: body({ assignee_id: USERS.admin.id }) });
-    await admin.post('/api/todos', { data: body() }); // the whole team: nobody in particular
+    await admin.post('/api/todos', { data: body() }); // my own
     await new Promise(r => setTimeout(r, 1500));
     expect(await mm.posts()).toHaveLength(0);
   });
 
-  test('担当を付け替えたときだけ新しい担当に届く（同じ人のままなら届かない）', async ({ as }) => {
+  test('リストを付け替えたときだけ新しい持ち主に届く（同じ人のままなら届かない）', async ({ as }) => {
     const admin = await as('admin');
     const id = await make(admin, { assignee_id: USERS.sato.id });
     await mm.waitFor(p => p.to === 'mm-sato');
@@ -189,19 +219,17 @@ test.describe('ToDoの画面', () => {
     await expect(done).toHaveCount(0);
   });
 
-  test('詳細つきで追加・編集・削除ができる。期限切れは赤く出る', async ({ page }) => {
+  test('詳細つきで追加・編集・削除ができる。期限切れは赤く出る。ほかの人のリストにも入れられる', async ({ page }) => {
     await page.goto('/todos');
     await page.getByRole('button', { name: '＋ ToDo' }).click();
     const title = uniq('請求書の確認');
     await page.getByLabel('ToDoの内容').fill(title);
     await page.getByLabel(/期限/).fill(addDays(today(), -2));
-    await page.locator('#todo-assignee').selectOption(USERS.admin.id);
     await page.getByLabel('メモ').fill('経理に確認');
     await page.getByRole('button', { name: '保存' }).click();
     await expect(page.getByText('保存しました')).toBeVisible();
     const row = page.getByRole('listitem').filter({ hasText: title });
     await expect(row).toContainText('期限切れ');
-    await expect(row).toContainText('担当: 管理者');
     await expect(row).toContainText('経理に確認');
 
     await row.getByText(title).click();
@@ -215,16 +243,33 @@ test.describe('ToDoの画面', () => {
     await expect(page.getByRole('listitem').filter({ hasText: title })).toHaveCount(0);
   });
 
-  test('「担当: 自分」で絞り込める', async ({ page, as }) => {
-    const admin = await as('admin');
-    const mine = uniq('佐藤の仕事'), other = uniq('管理者の仕事');
-    await admin.post('/api/todos', { data: body({ title: mine, assignee_id: USERS.sato.id }) });
-    await admin.post('/api/todos', { data: body({ title: other, assignee_id: USERS.admin.id }) });
+  test('「誰のToDo」を選ぶと、その人のリストに入る（自分のリストには出ない）', async ({ page }) => {
     await page.goto('/todos');
-    await expect(page.getByText(other)).toBeVisible();
+    await page.getByRole('button', { name: '＋ ToDo' }).click();
+    const title = uniq('管理者さんへ');
+    await page.getByLabel('ToDoの内容').fill(title);
+    await page.locator('#todo-assignee').selectOption(USERS.admin.id);
+    await page.getByRole('button', { name: '保存' }).click();
+    await expect(page.getByText('保存しました')).toBeVisible();
+    await expect(page.getByText(title)).toHaveCount(0);
+    expect((await db.todos.findFirstOrThrow({ where: { title } })).assignee_id).toBe(USERS.admin.id);
+  });
+
+  test('共有メールを選ぶと、メンバーのToDoが見える。「担当: 自分」で絞り込める。メンバーのものは編集できない', async ({ page, as }) => {
+    const admin = await as('admin');
+    const a = uniq('管理者の仕事'), s = uniq('佐藤の仕事');
+    await admin.post('/api/todos', { data: body({ title: a }) });
+    await make(await as('sato'), { title: s });
+    await page.goto('/todos');
+    await expect(page.getByText(a)).toHaveCount(0);   // my own list first
+    await expect(page.getByText(s)).toBeVisible();
+    await page.getByLabel('見るToDo').selectOption({ label: '営業チーム共有 のメンバー' });
+    await expect(page.getByText(a)).toBeVisible();
+    await expect(page.getByRole('listitem').filter({ hasText: a }).getByRole('checkbox')).toBeDisabled();
+    await expect(page.getByRole('listitem').filter({ hasText: s }).getByRole('checkbox')).toBeEnabled();
     await page.getByLabel('担当で絞り込み').selectOption('me');
-    await expect(page.getByText(mine)).toBeVisible();
-    await expect(page.getByText(other)).toHaveCount(0);
+    await expect(page.getByText(s)).toBeVisible();
+    await expect(page.getByText(a)).toHaveCount(0);
   });
 
   test('メニューにToDoがある', async ({ page }) => {
@@ -234,21 +279,12 @@ test.describe('ToDoの画面', () => {
   });
 });
 
-test.describe('ToDoの画面（見るだけの人）', () => {
-  test.use({ storageState: AUTH.tanaka });
-
-  test('追加ボタンはなく、自分が担当のものだけチェックできる', async ({ page, as }) => {
-    const admin = await as('admin');
-    const mine = uniq('田中の仕事'), other = uniq('佐藤の仕事');
-    await admin.post('/api/todos', { data: body({ title: mine, assignee_id: USERS.tanaka.id }) });
-    await admin.post('/api/todos', { data: body({ title: other, assignee_id: USERS.sato.id }) });
+test.describe('ToDoの画面（共有メールのメンバーでない人）', () => {
+  test.use({ storageState: AUTH.suzuki });
+  test('自分のToDoだけ。共有メールを選ぶ欄はない', async ({ page }) => {
     await page.goto('/todos');
-    await expect(page.getByRole('button', { name: '＋ ToDo' })).toHaveCount(0);
-    await expect(page.getByLabel('ToDoをすばやく追加')).toHaveCount(0);
-    await expect(page.getByRole('listitem').filter({ hasText: mine }).getByRole('checkbox')).toBeEnabled();
-    await expect(page.getByRole('listitem').filter({ hasText: other }).getByRole('checkbox')).toBeDisabled();
-    await page.getByRole('listitem').filter({ hasText: mine }).getByRole('checkbox').click();
-    await expect(page.getByRole('listitem').filter({ hasText: mine })).toHaveCount(0);
+    await expect(page.getByLabel('ToDoをすばやく追加')).toBeVisible();
+    await expect(page.getByLabel('見るToDo')).toHaveCount(0);
   });
 });
 
@@ -256,18 +292,17 @@ test.describe('カレンダーにToDoが出る', () => {
   test.use({ storageState: AUTH.sato });
   const cells = (page: import('@playwright/test').Page) => page.locator('main .grid-cols-7').getByTestId('todo-chip');
 
-  test('期限の日のマスに表示され、その日を選ぶと一覧からチェック・編集できる', async ({ page, as }) => {
-    const admin = await as('admin');
+  test('期限の日のマスに表示され、その日を選ぶと一覧からチェック・編集できる。期限なしは出ない', async ({ page }) => {
+    const sato = await db.users.findFirstOrThrow({ where: { id: USERS.sato.id } });
     const title = uniq('今日が期限');
-    await admin.post('/api/todos', { data: body({ title, due_date: today(), assignee_id: USERS.sato.id }) });
-    await admin.post('/api/todos', { data: body({ title: '期限なしは出ない' }) });
+    await db.todos.create({ data: { title, due_date: new Date(`${today()}T00:00:00Z`), assignee_id: sato.id, created_by_id: sato.id } });
+    await db.todos.create({ data: { title: '期限なしは出ない', assignee_id: sato.id, created_by_id: sato.id } });
     await page.goto('/calendar');
     await expect(cells(page).filter({ hasText: title })).toBeVisible();
     await expect(page.getByText('期限なしは出ない')).toHaveCount(0);
 
     const panel = page.getByLabel('この日のToDo');
     await expect(panel).toContainText(title);
-    await expect(panel).toContainText('佐藤');
     await panel.getByRole('checkbox', { name: new RegExp(title) }).click();
     await expect(cells(page).filter({ hasText: title })).toContainText('☑');
     await expect.poll(() => db.todos.count({ where: { title, done_at: { not: null } } })).toBe(1);
@@ -289,15 +324,16 @@ test.describe('カレンダーにToDoが出る', () => {
     expect((await db.todos.findFirst({ where: { title } }))?.due_date?.toISOString().slice(0, 10)).toBe(today());
   });
 
-  test('「ToDoも表示」を外すと消える。表示する人の切り替えにも従う', async ({ page, as }) => {
-    const admin = await as('admin');
+  test('自分のカレンダーには自分のToDoだけ。共有メールのメンバーのカレンダーでは、メンバーのToDoも出て、人の切り替えに従う。「ToDoも表示」を外すと消える', async ({ page, as }) => {
     const a = uniq('管理者の'), s = uniq('佐藤の');
-    await admin.post('/api/todos', { data: body({ title: a, due_date: today(), assignee_id: USERS.admin.id }) });
-    await admin.post('/api/todos', { data: body({ title: s, due_date: today(), assignee_id: USERS.sato.id }) });
+    await (await as('admin')).post('/api/todos', { data: body({ title: a, due_date: today() }) });
+    await (await as('sato')).post('/api/todos', { data: body({ title: s, due_date: today() }) });
     await page.goto('/calendar');
     const panel = page.getByLabel('この日のToDo');
+    await expect(panel.getByRole('listitem')).toHaveCount(1);
+    await expect(panel).toContainText(s);
+    await page.getByLabel('見るカレンダー').selectOption({ label: '営業チーム共有 のメンバー' });
     await expect(panel.getByRole('listitem')).toHaveCount(2);
-    await expect(cells(page).first()).toBeVisible(); // a busy day still shows at least one to-do in its cell
     await page.getByRole('button', { name: '自分のみ' }).click();
     await expect(panel.getByRole('listitem')).toHaveCount(1);
     await expect(panel).toContainText(s);
@@ -306,17 +342,5 @@ test.describe('カレンダーにToDoが出る', () => {
     await page.getByLabel('ToDoも表示').uncheck();
     await expect(panel).toHaveCount(0);
     await expect(cells(page)).toHaveCount(0);
-  });
-});
-
-test.describe('カレンダー（見るだけの人）', () => {
-  test.use({ storageState: AUTH.tanaka });
-  test('「＋ ToDo」は出ないが、ToDoは見える', async ({ page, as }) => {
-    const admin = await as('admin');
-    const title = uniq('見えるだけ');
-    await admin.post('/api/todos', { data: body({ title, due_date: today() }) });
-    await page.goto('/calendar');
-    await expect(page.getByRole('button', { name: '＋ ToDo' })).toHaveCount(0);
-    await expect(page.locator('main .grid-cols-7').getByTestId('todo-chip').filter({ hasText: title })).toBeVisible();
   });
 });
