@@ -56,6 +56,7 @@ test.describe('パスワードの入れ直し（高リスクの操作）', () =>
     // the screen: it asks for the password in a dialog, and the same save goes through (nothing typed is lost)
     await page.goto('/admin/security#access');
     const box = page.getByText(/操作がないときに自動ログアウトするまでの分数/).locator('..').locator('input');
+    await expect(box).not.toHaveValue(''); // the settings have arrived (typing before that would be overwritten by them)
     await box.fill('20');
     await page.getByLabel('アクセスの条件', { exact: true }).getByRole('button', { name: '保存' }).click();
     const dialog = page.getByRole('dialog', { name: 'パスワードの確認' });

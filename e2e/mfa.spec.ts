@@ -6,6 +6,7 @@ import { deleteAccountsWithPrefix, newAccount as newAccountIn } from './helpers/
 import { mm } from './helpers/mattermost-mock';
 import { clearNotifications, resetSecurity } from './helpers/seed';
 import { fakeIp, freshContext } from './helpers/ui';
+import { refreshSavedLogins } from './helpers/auth';
 import { base32Decode, codeForStep, stepAt } from '../src/lib/totp';
 
 test.describe.configure({ mode: 'serial' });
@@ -16,7 +17,7 @@ const setRule = (on: boolean, trustDays?: number) => adminApi.put('/api/admin/se
 
 test.beforeAll(async ({ playwright }) => { adminApi = await playwright.request.newContext({ baseURL: BASE_URL, storageState: AUTH.admin }); });
 test.beforeEach(async () => { await resetSecurity(); await clearNotifications(); await mm.reset(); expect((await setRule(true, 30)).status()).toBe(200); });
-test.afterAll(async () => { await resetSecurity(); await deleteAccountsWithPrefix('mfa'); await adminApi.dispose(); });
+test.afterAll(async () => { await resetSecurity(); await deleteAccountsWithPrefix('mfa'); await adminApi.dispose(); await refreshSavedLogins(); }); // (turning the second step on ends the sessions of people without one: the saved test logins too)
 
 const opened: APIRequestContext[] = [];
 test.afterEach(async () => { await Promise.all(opened.splice(0).map(c => c.dispose())); });

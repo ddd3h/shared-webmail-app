@@ -318,7 +318,7 @@ test.describe('領収書のダウンロード権限', () => {
     const { rid } = await claimWithReceipt(as);
     expect((await (await as('tanaka')).get(`/api/expenses/receipts/${rid}`)).status()).toBe(403);
     expect((await (await as('suzuki')).get(`/api/expenses/receipts/${rid}`)).status()).toBe(403);
-    expect((await anon.get(`/api/expenses/receipts/${rid}`, { maxRedirects: 0 })).status()).toBe(307);
+    expect((await anon.get(`/api/expenses/receipts/${rid}`, { maxRedirects: 0 })).status()).toBe(401);
   });
 
   test('存在しない領収書は404', async ({ as }) => {

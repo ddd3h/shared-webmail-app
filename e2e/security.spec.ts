@@ -5,11 +5,12 @@ import { db } from './helpers/db';
 import { mm } from './helpers/mattermost-mock';
 import { clearNotifications, resetSecurity } from './helpers/seed';
 import { fakeIp } from './helpers/ui';
+import { refreshSavedLogins } from './helpers/auth';
 import { deleteAccountsWithPrefix, newAccount as newAccountIn } from './helpers/accounts';
 
 test.describe.configure({ mode: 'serial' });
 test.beforeEach(async () => { await resetSecurity(); await clearNotifications(); await mm.reset(); });
-test.afterAll(async () => { await resetSecurity(); });
+test.afterAll(async () => { await resetSecurity(); await refreshSavedLogins(); }); // (this spec ends the sessions of the saved test users: locks, "log out everywhere")
 
 const CHROME_WIN = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36';
 const SAFARI_IOS = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1';
