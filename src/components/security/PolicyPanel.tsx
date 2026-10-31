@@ -11,7 +11,7 @@ export default function PolicyPanel() {
 
   async function save() {
     if (!p) return;
-    const res = await fetch('/api/admin/security/policy', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ allowed_cidrs: p.allowed_cidrs, allowed_countries: p.allowed_countries, session_max_days: Number(p.session_max_days), new_device_alert: p.new_device_alert, device_binding: p.device_binding, require_2fa: p.require_2fa, mfa_trust_days: Number(p.mfa_trust_days), block_bots: p.block_bots, remember_days: Number(p.remember_days), idle_minutes: Number(p.idle_minutes) }) });
+    const res = await fetch('/api/admin/security/policy', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ allowed_cidrs: p.allowed_cidrs, allowed_countries: p.allowed_countries, session_max_days: Number(p.session_max_days), new_device_alert: p.new_device_alert, device_binding: p.device_binding, require_2fa: p.require_2fa, mfa_trust_days: Number(p.mfa_trust_days), block_bots: p.block_bots, remember_days: Number(p.remember_days), idle_minutes: Number(p.idle_minutes), reauth_minutes: Number(p.reauth_minutes ?? 15) }) });
     const e = await res.json().catch(() => ({}));
     setMsg(res.ok ? { ok: true, text: '保存しました' } : { ok: false, text: e.message ?? '保存できませんでした。入力を確認してください' });
   }
@@ -36,6 +36,8 @@ export default function PolicyPanel() {
       </div>
       <div className="rounded-xl border border-gray-200 p-3 space-y-2">
         <div className="max-w-xs"><label className="label text-xs">操作がないときに自動ログアウトするまでの分数（0=しない）</label><input className="input" type="number" min={0} max={1440} value={p.idle_minutes} onChange={e => setP({ ...p, idle_minutes: Number(e.target.value) })} /></div>
+        <div className="max-w-xs"><label className="label text-xs">重要な操作の前に、パスワードの入れ直しを求める分数（0=求めない）</label><input className="input" type="number" min={0} max={240} value={p.reauth_minutes ?? 15} onChange={e => setP({ ...p, reauth_minutes: Number(e.target.value) })} data-testid="reauth-minutes" /></div>
+        <p className="text-xs text-gray-500">ユーザーの追加・権限の変更、セキュリティ設定、メールボックスの権限、振込データ・給与の登録など、影響の大きい操作は、ログインやパスワードの入力から、この分数以内でないと実行できません（超えていると、その場でパスワードを聞きます。盗まれたセッションや、席を離れたままの画面では、実行できなくなります）。</p>
         <p className="text-xs text-gray-500">キーボード・タップ・マウス・スクロールがこの分数ないと、自動でログアウトします（1分前に「ログインを続ける」の確認が出ます）。画面を閉じたままでも、サーバー側でログインが切れます。「ログインを維持する」を選んだホーム画面のアプリ（PWA）は、端末の鍵だけで判断するため、この無操作の自動ログアウトの対象外です（接続元のアドレスが変わっても切れません）。</p>
       </div>
       <div className="rounded-xl border border-gray-200 p-3 space-y-2">

@@ -1,3 +1,4 @@
+import { randomBytes } from 'crypto';
 import { NextResponse } from 'next/server';
 import { getSession, requireAuth } from '@/lib/auth';
 
@@ -24,7 +25,12 @@ export async function GET() {
   url.searchParams.set('scope', scope);
   url.searchParams.set('access_type', 'offline');
   url.searchParams.set('prompt', 'consent');
-  url.searchParams.set('state', session.userId); // simple CSRF via userId
+  // CSRF: a random value in a cookie, echoed back through `state`. (The person's id is public: it proves nothing, and a link that makes somebody
+  // finish the login of ANOTHER Google account would put that account's address book into theirs.)
+  const nonce = randomBytes(16).toString('hex');
+  url.searchParams.set('state', nonce);
 
-  return NextResponse.redirect(url.toString());
+  const res = NextResponse.redirect(url.toString());
+  res.cookies.set('gcontacts_oauth_state', nonce, { httpOnly: true, sameSite: 'lax', path: '/api/contacts/google', secure: process.env.NODE_ENV === 'production', maxAge: 600 });
+  return res;
 }

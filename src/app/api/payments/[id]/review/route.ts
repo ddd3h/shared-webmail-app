@@ -5,6 +5,7 @@ import { getSession, requireAuth } from '@/lib/auth';
 import { logAudit } from '@/lib/audit';
 import { getActor, isAdmin } from '@/lib/work-auth';
 import { notifyPaymentReviewed } from '@/lib/work-notify';
+import { vendorFingerprint } from '@/lib/payment-fp';
 
 const schema = z.object({ action: z.enum(['approve', 'reject']), comment: z.string().trim().max(1000).optional() });
 
@@ -21,7 +22,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const { action, comment } = parsed.data;
   if (action === 'reject' && !comment) return NextResponse.json({ error: 'comment_required' }, { status: 400 });
 
-  const r = await prisma.payment_requests.findUnique({ where: { id }, include: { vendor: { select: { verified_at: true, is_active: true } } } });
+  const r = await prisma.payment_requests.findUnique({ where: { id }, include: { vendor: true } });
   if (!r) return NextResponse.json({ error: 'not_found' }, { status: 404 });
   if (r.status !== 'pending') return NextResponse.json({ error: 'not_pending' }, { status: 409 });
   if (action === 'approve' && (!r.vendor.verified_at || !r.vendor.is_active)) return NextResponse.json({ error: 'vendor_unverified' }, { status: 409 });
@@ -30,7 +31,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   }
   const res = await prisma.payment_requests.updateMany({
     where: { id, status: 'pending' },
-    data: { status: action === 'approve' ? 'approved' : 'rejected', reviewed_by_id: actor.id, reviewed_at: new Date(), review_comment: comment || null },
+    data: { status: action === 'approve' ? 'approved' : 'rejected', reviewed_by_id: actor.id, reviewed_at: new Date(), review_comment: comment || null, ...(action === 'approve' ? { approved_account_fp: vendorFingerprint(r.vendor) } : {}) },
   });
   if (res.count === 0) return NextResponse.json({ error: 'not_pending' }, { status: 409 });
   await logAudit({ actorUserId: actor.id, actionType: `payment_${action}`, targetType: 'payment_requests', targetId: id, metadata: { user_id: r.user_id, amount: r.amount, vendor_id: r.vendor_id } });

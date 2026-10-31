@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getSession, requireAuth } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { logAudit } from '@/lib/audit';
+import { canViewThread } from '@/lib/rbac';
 
 // POST /api/threads/[id]/mattermost/discuss
 // Posts the thread summary to the mailbox's pre-configured Mattermost channel
@@ -10,6 +11,8 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
   const session = await getSession();
   requireAuth(session);
 
+  // a thread of a mailbox the person may not look at is, to them, not there (its subject, sender and text would be posted to a channel)
+  if (!(await canViewThread(session!.userId, id))) return NextResponse.json({ error: 'not_found' }, { status: 404 });
   const thread = await prisma.threads.findUnique({
     where: { id },
     include: {
@@ -57,7 +60,7 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
     if (!mmRes.ok) {
       const errText = await mmRes.text();
       console.error('Mattermost API error:', mmRes.status, errText);
-      return NextResponse.json({ error: 'mattermost_api_error', status: mmRes.status, detail: errText }, { status: 500 });
+      return NextResponse.json({ error: 'mattermost_api_error', status: mmRes.status }, { status: 500 }); // (the other side's answer stays in the server log)
     }
 
     const post = await mmRes.json();
@@ -92,6 +95,6 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
     return NextResponse.json({ ok: true, permalink: `${cleanBaseUrl}/_redirect/pl/${post.id}` });
   } catch (e: any) {
     console.error('Mattermost fetch failed:', e);
-    return NextResponse.json({ error: 'fetch_failed', detail: String(e) }, { status: 500 });
+    return NextResponse.json({ error: 'fetch_failed' }, { status: 500 });
   }
 }

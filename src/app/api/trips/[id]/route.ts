@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/db';
+import { selfDealing, selfDealingResponse } from '@/lib/finance-guard';
 import { getSession, requireAuth } from '@/lib/auth';
 import { logAudit } from '@/lib/audit';
 import { getActor, isFinance } from '@/lib/work-auth';
@@ -40,6 +41,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     const involved = trip.user_id === actor.id || isFinance(actor);
     return NextResponse.json({ error: involved ? 'not_editable' : 'forbidden' }, { status: involved ? 409 : 403 });
   }
+
+  if (adminAdjust && (await selfDealing(actor.id, trip.user_id))) return selfDealingResponse(); // nobody sets the allowances of their own trip
 
   const start = trip.start_date.toISOString().slice(0, 10);
   const end = trip.end_date.toISOString().slice(0, 10);

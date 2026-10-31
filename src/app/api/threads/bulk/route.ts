@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { getSession, requireAuth } from '@/lib/auth';
+import { viewableThreadIds } from '@/lib/rbac';
 import { buildThreadsWhere } from '@/lib/threads-filter';
 import { hiddenTeamMailboxIds } from '@/lib/team-view';
 import { sendBulkDeleteApprovalDm } from '@/lib/mattermost-dm';
@@ -15,7 +16,9 @@ export async function POST(req: NextRequest) {
   const session = await getSession();
   requireAuth(session);
 
-  const { action, status: newStatus, ids, all, filters, validate_only } = await req.json();
+  const { action, status: newStatus, ids: rawIds, all, filters, validate_only } = await req.json();
+  // the ids a client names are only the ones in mailboxes the person may look at (the "select all" path is scoped by buildThreadsWhere)
+  const ids = Array.isArray(rawIds) ? await viewableThreadIds(session!.userId, rawIds) : rawIds;
 
   console.log(`[bulk-api] action=${action}, all=${all}, validate_only=${validate_only}, filters.type=${filters?.type}`);
 
@@ -39,7 +42,8 @@ export async function POST(req: NextRequest) {
   });
 
   // Security Check: Approval required for deleting > X% of any team mailbox's active emails
-  if (action === 'delete' && filters?.type === 'team') {
+  // (also when threads are named one by one, whatever `filters.type` says: otherwise a client could skip the check by leaving the filter out)
+  if (action === 'delete' && (filters?.type === 'team' || (!all && Array.isArray(ids) && ids.length > 0))) {
     console.log('[bulk-delete-check] Protected path active');
     
     // 1. Identify which mailboxes are affected
@@ -55,7 +59,7 @@ export async function POST(req: NextRequest) {
       affectedMailboxIds = filters?.mailbox_id ? mailboxes.filter(m => m.id === filters.mailbox_id).map(m => m.id) : mailboxes.filter(m => !hiddenIds.includes(m.id)).map(m => m.id);
     } else if (Array.isArray(ids) && ids.length > 0) {
       const threads = await prisma.threads.findMany({
-        where: { id: { in: ids } },
+        where: { id: { in: ids }, mailbox: { type: 'team' } },
         select: { mailbox_id: true },
         distinct: ['mailbox_id']
       });

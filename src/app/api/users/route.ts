@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { recentAuthOrResponse } from '@/lib/reauth';
 import { prisma } from '@/lib/db';
 import { getSession, requireAuth } from '@/lib/auth';
 import { hashPassword } from '@/lib/password';
@@ -38,6 +39,7 @@ export async function POST(req: NextRequest) {
   if (actor?.role !== 'admin') {
     return NextResponse.json({ error: 'forbidden' }, { status: 403 });
   }
+  { const stale = await recentAuthOrResponse(); if (stale) return stale; } // high-risk: a recent proof of who is asking (lib/reauth.ts)
 
   const schema = z.object({
     name: z.string().min(1),

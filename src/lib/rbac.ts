@@ -15,6 +15,40 @@ export async function canViewMailbox(userId: string, mailboxId: string) {
   return !!m;
 }
 
+/** Mailboxes a person may look at, as a query condition (the same rule as canViewMailbox). */
+export const viewableMailboxWhere = (userId: string) => ({
+  OR: [{ type: 'personal' as const, owner_user_id: userId }, { permissions: { some: { user_id: userId, can_view: true } } }],
+});
+
+/** Of the thread ids a client names, the ones in mailboxes the person may look at. A client's list of ids is never trusted as it is. */
+export async function viewableThreadIds(userId: string, ids: unknown): Promise<string[]> {
+  if (!Array.isArray(ids)) return [];
+  const wanted = [...new Set(ids.filter((i): i is string => typeof i === 'string' && i.length > 0 && i.length < 100))].slice(0, 20000);
+  if (wanted.length === 0) return [];
+  const rows = await prisma.threads.findMany({ where: { id: { in: wanted }, mailbox: viewableMailboxWhere(userId) }, select: { id: true } });
+  return rows.map(r => r.id);
+}
+
+/** Is a draft that names this mailbox / thread one the person may make? The mailbox they write from has to be one they may reply from, and the thread
+ *  has to be one they may look at, in that mailbox. (Otherwise a draft could be planted into a team's mailbox, where its members would see it.) */
+export async function draftTargetOk(userId: string, mailboxId: unknown, threadId: unknown): Promise<boolean> {
+  if (mailboxId !== undefined && mailboxId !== null && mailboxId !== '') {
+    if (typeof mailboxId !== 'string' || !(await canReplyMailbox(userId, mailboxId))) return false;
+  }
+  if (threadId !== undefined && threadId !== null && threadId !== '') {
+    if (typeof threadId !== 'string') return false;
+    const t = await prisma.threads.findFirst({ where: { id: threadId, mailbox: viewableMailboxWhere(userId) }, select: { mailbox_id: true } });
+    if (!t) return false;
+    if (typeof mailboxId === 'string' && mailboxId && t.mailbox_id !== mailboxId) return false;
+  }
+  return true;
+}
+
+/** May the person look at this thread (is it in a mailbox they may look at)? */
+export async function canViewThread(userId: string, threadId: string): Promise<boolean> {
+  return (await viewableThreadIds(userId, [threadId])).length === 1;
+}
+
 export async function canReplyMailbox(userId: string, mailboxId: string) {
   const m = await prisma.mailboxes.findFirst({ where: { id: mailboxId } });
   if (!m) return false;

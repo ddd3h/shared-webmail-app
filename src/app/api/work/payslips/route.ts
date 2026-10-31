@@ -1,9 +1,11 @@
 import { triggerFreeeSync } from '@/lib/freee-sync';
+import { recentAuthOrResponse } from '@/lib/reauth';
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/db';
 import { getSession, requireAuth } from '@/lib/auth';
 import { logAudit } from '@/lib/audit';
+import { selfDealing, selfDealingResponse } from '@/lib/finance-guard';
 import { getActor, isFinance } from '@/lib/work-auth';
 import { notifyPayslip } from '@/lib/work-notify';
 import { isValidDateString, isValidMonth, jstDateString, payslipTotals, toDbDate } from '@/lib/work';
@@ -88,10 +90,12 @@ export async function POST(req: NextRequest) {
   requireAuth(session);
   const actor = await getActor(session.userId);
   if (!actor || !isFinance(actor)) return NextResponse.json({ error: 'forbidden' }, { status: 403 });
+  { const stale = await recentAuthOrResponse(); if (stale) return stale; } // high-risk: a recent proof of who is asking (lib/reauth.ts)
   const parsed = createSchema.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) return NextResponse.json({ error: 'invalid_body' }, { status: 400 });
   const d = parsed.data;
   if (!(await getActor(d.userId))) return NextResponse.json({ error: 'not_found' }, { status: 404 });
+  if (await selfDealing(actor.id, d.userId)) return selfDealingResponse();
 
   const row = await prisma.payslips.create({
     data: {

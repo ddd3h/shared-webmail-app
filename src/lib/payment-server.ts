@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db';
 import { decrypt } from '@/lib/crypto';
 import { maskAccount, transferAmount, type AccountType } from '@/lib/payment';
 import { transferSlotFor } from '@/lib/transfer-days';
+import { accountChangedSinceApproval } from '@/lib/payment-fp';
 import { jstDateString } from '@/lib/work';
 
 const ymd = (d: Date | null) => (d ? d.toISOString().slice(0, 10) : null);
@@ -43,6 +44,7 @@ export async function serializeRequest(r: any, admin: boolean) {
     invoice_number: r.invoice_number,
     invoice_date: ymd(r.invoice_date),
     due_date: ymd(r.due_date),
+    account_changed: r.status === 'approved' && accountChangedSinceApproval(r, r.vendor), // the payee's bank details changed after the approval: not paid until an admin confirms them
     transfer_date: slot?.date ?? null, transfer_day: slot?.day ?? null, transfer_late: slot?.late ?? false,
     description: r.description,
     batch_id: r.batch_id ?? null,

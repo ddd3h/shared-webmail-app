@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { recentAuthOrResponse } from '@/lib/reauth';
 import { revokeUserSessions } from '@/lib/auth';
 import { logAudit } from '@/lib/audit';
 import { prisma } from '@/lib/db';
@@ -13,6 +14,7 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
   const { id } = await params;
   const actor = await adminActor();
   if (!actor) return forbidden();
+  { const stale = await recentAuthOrResponse(); if (stale) return stale; } // high-risk: a recent proof of who is asking (lib/reauth.ts)
   const target = await prisma.users.findUnique({ where: { id }, select: { id: true, email: true } });
   if (!target) return NextResponse.json({ error: 'not_found' }, { status: 404 });
   await clearTotp(id);

@@ -70,6 +70,7 @@ type SealedPayload = {
   fp?: string;       // browser + OS of the login (no versions): a cookie replayed from another kind of device is refused
   ip?: string;       // the address of the login: a session is only good from the address it began on
   resumed?: boolean; // made by the installed app's key (no password was typed): sensitive changes ask for a real login first
+  reauthAt?: number; // epoch ms of the last time the person proved who they are again in this session (see lib/reauth.ts)
   pwa?: boolean;     // the installed app that stays logged in with its device key: the key alone vouches for it (no address / idle / browser-kind checks)
 };
 
@@ -86,6 +87,7 @@ export type Session = {
   ip?: string;
   resumed?: boolean;
   pwa?: boolean;
+  reauthAt?: number;
 };
 
 async function sealSession(payload: SealedPayload): Promise<string> {
@@ -126,7 +128,7 @@ export async function checkLive(payload: SealedPayload, get: (name: string) => s
   const dbSession = await prisma.sessions.findUnique({
     where: { id: payload.sessionId },
     relationLoadStrategy: 'join',
-    select: { id: true, expires_at: true, created_at: true, ip_address: true, last_input_at: true, user: { select: { role: true, locked_at: true } } },
+    select: { id: true, expires_at: true, created_at: true, ip_address: true, last_input_at: true, reauth_at: true, user: { select: { role: true, locked_at: true } } },
   });
   if (!dbSession) return ended();
   if (dbSession.expires_at < new Date()) {
@@ -170,6 +172,7 @@ export async function checkLive(payload: SealedPayload, get: (name: string) => s
       ip: dbSession.ip_address,
       resumed: payload.resumed,
       pwa: payload.pwa,
+      reauthAt: dbSession.reauth_at?.getTime(),
     },
   };
 }

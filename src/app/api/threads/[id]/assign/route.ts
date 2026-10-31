@@ -4,6 +4,7 @@ import { prisma } from '@/lib/db';
 import { z } from 'zod';
 import { logAudit } from '@/lib/audit';
 import { queues } from '@/lib/queue';
+import { canViewMailbox } from '@/lib/rbac';
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -19,6 +20,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const perm = await prisma.mailbox_permissions.findFirst({ where: { mailbox_id: thread.mailbox_id, user_id: session!.userId, can_assign: true } });
     if (!perm) return NextResponse.json({ error: 'forbidden' }, { status: 403 });
   }
+
+  // a thread is given to somebody who can look at it (otherwise its subject and link would go to a person with no access to the mail)
+  if (user_id && !(await canViewMailbox(user_id, thread.mailbox_id))) return NextResponse.json({ error: 'invalid_assignee' }, { status: 400 });
 
   // Auto-update status: assigned → 対応中(in_progress), unassigned → 未対応(open)
   const newStatus = user_id ? 'in_progress' : 'open';

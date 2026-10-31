@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { recentAuthOrResponse } from '@/lib/reauth';
 import { z } from 'zod';
 import { prisma } from '@/lib/db';
 import { logAudit } from '@/lib/audit';
@@ -43,6 +44,7 @@ function categoryFor(kind: 'payment' | 'payroll' | 'monthly', asked: string | un
 export async function POST(req: NextRequest) {
   const actor = await financeActor();
   if (!actor) return forbidden();
+  { const stale = await recentAuthOrResponse(); if (stale) return stale; } // high-risk: a recent proof of who is asking (lib/reauth.ts)
   const parsed = schema.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) return NextResponse.json({ error: 'invalid_body' }, { status: 400 });
   const d = parsed.data;

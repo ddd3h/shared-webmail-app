@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { getSession, requireAuth } from '@/lib/auth';
+import { draftTargetOk } from '@/lib/rbac';
 
 // GET /api/drafts?mailbox_id=&thread_id= - list accessible drafts
 export async function GET(req: NextRequest) {
@@ -50,6 +51,7 @@ export async function POST(req: NextRequest) {
 
   const body = await req.json().catch(() => ({}));
   const { mailbox_id, thread_id, to_raw, cc_raw, bcc_raw, subject, html_body, text_body, is_shared } = body;
+  if (!(await draftTargetOk(session.userId, mailbox_id, thread_id))) return NextResponse.json({ error: 'forbidden' }, { status: 403 });
 
   // Shared team drafts are collaborative: one draft per (thread, mailbox) so all
   // participants join the same Yjs room (webmail-draft-<id>). Return the existing

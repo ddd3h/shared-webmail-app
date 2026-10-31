@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { recentAuthOrResponse } from '@/lib/reauth';
 import { z } from 'zod';
 import { logAudit } from '@/lib/audit';
 import { matchesAny, parseRules, isValidRule } from '@/lib/cidr';
@@ -6,6 +7,8 @@ import { getClientIp } from '@/lib/rate-limit';
 import { adminActor, forbidden } from '@/lib/finance-guard';
 import { getSetting } from '@/lib/settings';
 import { loadSecurityPolicy, saveSecurityPolicy, MAX_IDLE_MINUTES } from '@/lib/security-settings';
+import { forgetReauthMinutes, MAX_REAUTH_MINUTES, reauthMinutes } from '@/lib/reauth';
+import { setSetting } from '@/lib/settings';
 import { recordSecurityEvent } from '@/lib/security-events';
 
 const schema = z.object({
@@ -20,6 +23,7 @@ const schema = z.object({
   block_bots: z.boolean().optional(),
   remember_days: z.number().int().min(0).max(90).optional(),
   idle_minutes: z.number().int().min(0).max(MAX_IDLE_MINUTES).optional(),
+  reauth_minutes: z.number().int().min(0).max(MAX_REAUTH_MINUTES).optional(),
 });
 
 // GET /api/admin/security/policy - the current rules, and which address the admin is calling from
@@ -27,7 +31,7 @@ export async function GET(req: NextRequest) {
   if (!(await adminActor())) return forbidden();
   const p = await loadSecurityPolicy();
   const [cidrs, countries] = await Promise.all([getSetting('SECURITY_ALLOWED_CIDRS'), getSetting('SECURITY_ALLOWED_COUNTRIES')]);
-  return NextResponse.json({ allowed_cidrs: cidrs ?? '', allowed_countries: countries ?? '', session_max_days: p.sessionMaxDays, new_device_alert: p.newDeviceAlert, device_binding: p.deviceBinding, require_2fa: p.require2fa, mfa_trust_days: p.mfaTrustDays, block_bots: p.blockBots, remember_days: p.rememberDays, idle_minutes: p.idleMinutes, your_ip: getClientIp(req) });
+  return NextResponse.json({ reauth_minutes: await reauthMinutes(), allowed_cidrs: cidrs ?? '', allowed_countries: countries ?? '', session_max_days: p.sessionMaxDays, new_device_alert: p.newDeviceAlert, device_binding: p.deviceBinding, require_2fa: p.require2fa, mfa_trust_days: p.mfaTrustDays, block_bots: p.blockBots, remember_days: p.rememberDays, idle_minutes: p.idleMinutes, your_ip: getClientIp(req) });
 }
 
 // PUT /api/admin/security/policy
@@ -35,6 +39,7 @@ export async function GET(req: NextRequest) {
 export async function PUT(req: NextRequest) {
   const actor = await adminActor();
   if (!actor) return forbidden();
+  { const stale = await recentAuthOrResponse(); if (stale) return stale; } // high-risk: a recent proof of who is asking (lib/reauth.ts)
   const parsed = schema.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) return NextResponse.json({ error: 'invalid_body' }, { status: 400 });
   const d = parsed.data;
@@ -51,6 +56,7 @@ export async function PUT(req: NextRequest) {
   const remember_days = d.remember_days ?? current.rememberDays;
   const idle_minutes = d.idle_minutes ?? current.idleMinutes;
   await saveSecurityPolicy({ ...d, require_2fa, mfa_trust_days: d.mfa_trust_days ?? current.mfaTrustDays, block_bots, remember_days, idle_minutes }, actor.id);
+  if (d.reauth_minutes !== undefined) { await setSetting('SECURITY_REAUTH_MINUTES', String(d.reauth_minutes), false, actor.id); forgetReauthMinutes(); }
   if (require_2fa !== current.require2fa) {
     // turning the second step off is the one change that weakens every account at once: leave a loud record
     await recordSecurityEvent({ type: require_2fa ? 'policy_2fa_on' : 'policy_2fa_off', severity: require_2fa ? 'info' : 'alert', userId: actor.id });

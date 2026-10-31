@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { getSession, requireAuth } from '@/lib/auth';
+import { draftTargetOk } from '@/lib/rbac';
 import { checkAccess } from '@/lib/draft-access';
 import { deleteStoredFiles } from '@/lib/attachment-storage';
 
@@ -40,6 +41,9 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   if (!accessible) return NextResponse.json({ error: 'forbidden' }, { status: 403 });
 
   const body = await req.json().catch(() => ({}));
+  if ((body.mailbox_id !== undefined || body.thread_id !== undefined) && !(await draftTargetOk(session!.userId, body.mailbox_id ?? draft.mailbox_id, body.thread_id ?? draft.thread_id))) {
+    return NextResponse.json({ error: 'forbidden' }, { status: 403 });
+  }
 
   // Optimistic lock — only enforced when caller sends client_updated_at
   if (body.client_updated_at !== undefined) {

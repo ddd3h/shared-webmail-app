@@ -37,6 +37,11 @@ export default function AdminPayments({ meId, onVendorsChanged, canReview = true
     }
     load();
   }
+  async function reconfirm(id: string) {
+    const res = await api(`/api/payments/${id}/reconfirm`, 'POST');
+    if (res.ok) flash('success', '新しい口座で振り込めるようにしました'); else flash('error', (await res.json().catch(() => ({}))).error === 'self_approval' ? '自分の申請は他の管理者が確認してください' : '確認できませんでした');
+    load();
+  }
   async function verify(vendorId: string) {
     const res = await api(`/api/payments/vendors/${vendorId}/verify`, 'POST');
     if (res.ok) { flash('success', '口座を確認済にしました'); onVendorsChanged(); load(); } else flash('error', '確認できませんでした');
@@ -99,6 +104,12 @@ export default function AdminPayments({ meId, onVendorsChanged, canReview = true
             {(open === r.id || r.status === 'pending') && (
               <div className="border-t border-gray-100 p-3 space-y-3">
                 <RequestDetail r={r} />
+                {r.account_changed && (
+                  <div className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-800 flex flex-wrap items-center gap-2" data-testid="account-changed">
+                    <span>⚠ 承認のあとに、振込先の口座が変更されています。新しい口座を請求書と照合して、問題がなければ確認してください（それまで振り込めません）。</span>
+                    {canReview && <button className="rounded-sm bg-red-600 px-2 py-1 text-white hover:bg-red-700" onClick={() => reconfirm(r.id)}>新しい口座で、振り込んでよいと確認する</button>}
+                  </div>
+                )}
                 {r.status === 'pending' && (
                   <div className="space-y-2">
                     {!r.vendor.verified && (

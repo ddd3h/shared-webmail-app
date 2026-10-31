@@ -23,7 +23,7 @@ async function seed() {
   }
 }
 const index = (request: import('@playwright/test').APIRequestContext) =>
-  request.get('/api/cron/embeddings', { headers: { authorization: 'Bearer e2e-cron-secret' } });
+  request.get('/api/cron/embeddings', { headers: { authorization: 'Bearer e2e-cron-secret-0123456789' } });
 
 test.beforeEach(async () => { await mm.reset(); await seed(); });
 test.afterAll(async () => { await db.messages.deleteMany({}); await db.threads.deleteMany({}); });

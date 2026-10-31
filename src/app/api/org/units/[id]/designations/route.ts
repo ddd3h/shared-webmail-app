@@ -31,9 +31,12 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     prisma.org_unit_designations.findMany({ where: { unit_id: id, kind }, orderBy: [{ created_at: 'asc' }, { user_id: 'asc' }], select: { user_id: true } }),
   ]);
   if (!unit) return NextResponse.json({ error: 'not_found' }, { status: 404 });
+  // HR may not name THEMSELVES as the one who approves a 部署's expenses (who decides on money is not up to the person who gains it): an admin does that
+  const admin = isAdmin((await getActor(session.userId))!);
+  const had = new Set(before.map(b => b.user_id));
+  if (kind === 'expense' && !admin && userIds.includes(session.userId) && !had.has(session.userId)) return NextResponse.json({ error: 'self_designation' }, { status: 403 });
   if (users.length !== userIds.length) return NextResponse.json({ error: 'invalid_user' }, { status: 400 });
   const keep = new Set(userIds);
-  const had = new Set(before.map(b => b.user_id));
   // keep the people already named where they are (so the order they were named in stays); newly named ones go after them, in the order given
   const now = Date.now();
   await prisma.$transaction([

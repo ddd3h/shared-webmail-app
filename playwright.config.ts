@@ -65,7 +65,7 @@ export default defineConfig({
       FREEE_API_URL: `${MM_URL}/freee-api`,
       EMBEDDING_API_URL: `${MM_URL}/v1`,
       EMBEDDING_MODEL: 'e2e-concepts',
-      CRON_SECRET: 'e2e-cron-secret',
+      CRON_SECRET: 'e2e-cron-secret-0123456789',
       // the API clients of the specs introduce themselves as "Playwright/…" and the browsers that specs open by hand as
       // "HeadlessChrome"; the bot specs send their own User-Agent
       BOT_ALLOW_UA: 'Playwright/,HeadlessChrome',

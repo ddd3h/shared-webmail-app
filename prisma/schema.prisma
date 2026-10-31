@@ -651,6 +651,8 @@ model sessions {
   last_activity_at DateTime @default(now())
   // the last time the person themself did something (keys, taps; sent by the page) - background requests do not move it. Idle logout reads this.
   last_input_at    DateTime @default(now())
+  // the last time the person proved who they are again (password, and the code) inside this session: high-risk actions need it to be recent
+  reauth_at        DateTime?
   created_at       DateTime @default(now())
 
   user users @relation(fields: [user_id], references: [id], onDelete: Cascade)
@@ -1074,6 +1076,7 @@ model payment_requests {
   paid_by_id       String?
   paid_note        String?
   batch_id         String?   // the 全銀 transfer file this request was put into
+  approved_account_fp String? // a fingerprint of the payee's bank details at the moment of approval: paying to details that changed since is refused (re-confirmed by an admin)
   created_at       DateTime  @default(now())
   updated_at       DateTime  @updatedAt
 

@@ -15,7 +15,7 @@ async function fetchPaymentLines(): Promise<Line[]> {
   if (!res.ok) return [];
   return (await res.json()).items.map((r: any): Line => ({
     id: r.id, who: r.vendor.name, title: r.title, amount: r.transfer_amount, batched: !!r.batch_id,
-    blocker: r.vendor.verified ? null : '口座未確認', sub: `期日 ${dateLabel(r.due_date)} ・ 申請者 ${r.user.name}`,
+    blocker: !r.vendor.verified ? '口座未確認' : r.account_changed ? '承認後に口座が変更されています' : null, sub: `期日 ${dateLabel(r.due_date)} ・ 申請者 ${r.user.name}`,
     label: r.transfer_day ? `${r.transfer_day}日振込` : undefined, date: r.transfer_date ?? undefined, overdue: r.transfer_late, pay_date: r.transfer_date,
   }));
 }

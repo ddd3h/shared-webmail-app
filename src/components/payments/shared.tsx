@@ -11,7 +11,7 @@ export type Vendor = {
 export type Doc = { id: string; filename: string; content_type: string; size: number };
 export type Request = {
   id: string; user: { id: string; name: string }; vendor: Vendor; title: string; amount: number; deduction_amount: number; fee: number;
-  fee_bearer: FeeBearer; transfer_amount: number; invoice_number: string | null; invoice_date: string | null; due_date: string; transfer_date: string | null; transfer_day: 15 | 25 | null; transfer_late: boolean;
+  fee_bearer: FeeBearer; transfer_amount: number; invoice_number: string | null; invoice_date: string | null; due_date: string; account_changed?: boolean; transfer_date: string | null; transfer_day: 15 | 25 | null; transfer_late: boolean;
   description: string | null; status: PaymentStatus; reviewer: string | null; review_comment: string | null; paid_at: string | null; paid_note: string | null; documents: Doc[];
 };
 export type Summary = { pending: { count: number; amount: number }; approved: { count: number; amount: number }; paid: { count: number; amount: number }; overdue: number };

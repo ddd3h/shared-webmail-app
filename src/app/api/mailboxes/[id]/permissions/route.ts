@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { getSession, requireAuth } from '@/lib/auth';
+import { logAudit } from '@/lib/audit';
+import { recentAuthOrResponse } from '@/lib/reauth';
 
 // PUT: upsert permissions for a mailbox
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -14,6 +16,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   ]);
   if (!mb) return NextResponse.json({ error: 'not_found' }, { status: 404 });
   if (!(user?.role === 'admin' || mb.owner_user_id === session!.userId)) return NextResponse.json({ error: 'forbidden' }, { status: 403 });
+  { const stale = await recentAuthOrResponse(); if (stale) return stale; } // who can read a mailbox: a recent proof of who is asking (lib/reauth.ts)
   const body = await req.json().catch(() => ({}));
   const list: Array<{ user_id: string; can_view?: boolean; can_reply?: boolean; can_assign?: boolean }> = body.items || [];
   for (const it of list) {
@@ -24,5 +27,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       update: { can_view: !!it.can_view, can_reply: !!it.can_reply, can_assign: !!it.can_assign }
     });
   }
+  // who may read, answer or hand out a mailbox's mail is changed here: it is always on record
+  await logAudit({ actorUserId: session!.userId, actionType: 'mailbox_permissions_update', targetType: 'mailboxes', targetId: mailboxId, metadata: { items: list.filter(it => it.user_id).map(it => ({ user_id: it.user_id, can_view: !!it.can_view, can_reply: !!it.can_reply, can_assign: !!it.can_assign })) } });
   return NextResponse.json({ ok: true });
 }

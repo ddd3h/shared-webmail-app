@@ -11,6 +11,7 @@ import { transferAmount } from '@/lib/payment';
 import { WORKER_TYPE_LABEL, isBonusTitle, isContractorLike, jstDateString, payslipTotals, usesReports, type WorkerType } from '@/lib/work';
 import { DEFAULT_SCHEDULES } from '@/lib/pay-schedule';
 import type { ItemRef } from '@/lib/transfer-server';
+import { accountChangedSinceApproval } from '@/lib/payment-fp';
 import { slotOfDate, transferSlotFor, type TransferDay } from '@/lib/transfer-days';
 
 export type MonthlyItem = {
@@ -94,7 +95,7 @@ export async function loadMonthlyItems(month: string): Promise<MonthlyItem[]> {
     items.push({
       key: `payment:${r.id}`, type: 'payment', ids: [r.id], group: 'payment', kind_label: '振込申請',
       who: r.vendor.name, title: r.title, sub: `期日 ${due.slice(5).replace('-', '/')} ・ 申請者 ${r.user.name}`, amount: transferAmount(r),
-      scheduled_date: slot.date, slot: slot.day, overdue: slot.late, batched: !!r.batch_id, blocker: r.vendor.verified_at ? null : '口座未確認',
+      scheduled_date: slot.date, slot: slot.day, overdue: slot.late, batched: !!r.batch_id, blocker: !r.vendor.verified_at ? '口座未確認' : accountChangedSinceApproval(r, r.vendor) ? '承認後に口座が変更されています' : null,
       report_missing: false, activity_flag: false,
     });
   }
