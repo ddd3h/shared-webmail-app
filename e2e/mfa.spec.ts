@@ -503,7 +503,7 @@ test.describe('画面', () => {
       const name = `一覧確認${acct.id.slice(-6)}`; // the other test accounts are all called 試験用
       await db.users.update({ where: { id: acct.id }, data: { name } });
       await page.goto('/admin/security#accounts');
-      const list = page.getByLabel('ログイン方法', { exact: true });
+      const list = page.getByLabel('ユーザーとログイン方法', { exact: true });
       await expect(list.getByText('2段階認証 有効').first()).toBeVisible();
       await expect(list.getByText('2段階認証 未設定').first()).toBeVisible();
       page.once('dialog', d => d.accept());

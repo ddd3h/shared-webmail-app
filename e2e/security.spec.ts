@@ -609,7 +609,7 @@ test.describe('画面', () => {
       await expect(page.getByText('ログイン失敗（24時間）')).toBeVisible();
       await expect(page.getByLabel('アクセスの条件', { exact: true })).toHaveCount(0); // not on the page until chosen
       await page.getByRole('tab', { name: 'アカウントと端末' }).click();
-      for (const name of ['ログイン方法', 'ログイン中の端末']) await expect(page.getByLabel(name, { exact: true })).toBeVisible();
+      for (const name of ['ユーザーとログイン方法', 'ログイン中の端末']) await expect(page.getByLabel(name, { exact: true })).toBeVisible();
       await page.getByRole('tab', { name: 'ログイン履歴' }).click();
       await expect(page.getByLabel('ログイン履歴', { exact: true })).toBeVisible();
       await page.getByRole('tab', { name: 'アクセスの条件' }).click();
