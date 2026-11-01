@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getSession, requireAuth } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { logAudit } from '@/lib/audit';
+import { canViewMailbox } from '@/lib/rbac';
 
 // POST /api/threads/[id]/move
 // Moves a personal mailbox thread to a team mailbox.
@@ -20,10 +21,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   });
   if (!thread) return NextResponse.json({ error: 'not_found' }, { status: 404 });
 
-  // Only owner of personal mailbox (or admin) can move
+  // Only the owner of a personal mailbox can move its mail (an admin has no way into other people's mailboxes)
   const isOwner = thread.mailbox.type === 'personal' && thread.mailbox.owner_user_id === session!.userId;
-  const actor = await prisma.users.findUnique({ where: { id: session!.userId }, select: { role: true } });
-  if (!isOwner && actor?.role !== 'admin') return NextResponse.json({ error: 'forbidden' }, { status: 403 });
+  if (!isOwner) return NextResponse.json({ error: 'forbidden' }, { status: 403 });
 
   if (thread.mailbox.type !== 'personal') return NextResponse.json({ error: 'not_personal' }, { status: 400 });
 
@@ -31,6 +31,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const target = await prisma.mailboxes.findUnique({ where: { id: target_mailbox_id } });
   if (!target) return NextResponse.json({ error: 'target_not_found' }, { status: 404 });
   if (target.type !== 'team') return NextResponse.json({ error: 'target_not_team' }, { status: 400 });
+  // and only into a team mailbox they belong to (mail pushed into one they cannot see would be a way to plant content there)
+  if (!(await canViewMailbox(session!.userId, target_mailbox_id))) return NextResponse.json({ error: 'forbidden' }, { status: 403 });
 
   const messageIds = thread.messages.map(m => m.id);
 

@@ -2,6 +2,7 @@
 //
 // Flow of createBatch: check the company settings → turn every id into a line (or a problem) → refuse if any
 // problem → build the file → save it and claim the items in ONE transaction.
+import { accountChangedSinceApproval, ACCOUNT_CHANGED_REASON } from '@/lib/payment-fp';
 import { prisma } from '@/lib/db';
 import { decrypt } from '@/lib/crypto';
 import { transferAmount } from '@/lib/payment';
@@ -59,6 +60,7 @@ async function loadPaymentLines(ids: string[], force: boolean): Promise<Loaded> 
     const problem =
       r.status !== 'approved' ? '承認済み（振込待ち）ではありません' :
       !v.verified_at ? '振込先の口座が未確認です' :
+      accountChangedSinceApproval(r, v) ? ACCOUNT_CHANGED_REASON :
       batchedReason(r.batch_id, force);
     return checkLine({
       id, label: `${v.name} 宛「${r.title}」`, bankCode: v.bank_code ?? '', bankName: v.bank_name, branchCode: v.branch_code ?? '', branchName: v.branch_name,

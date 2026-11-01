@@ -4,15 +4,21 @@
 import { prisma } from '@/lib/db';
 import { transferAmount } from '@/lib/payment';
 import { isContractorLike, jstDateString, payslipTotals, type WorkerType } from '@/lib/work';
-import { createDeal, freeeReady, loadFreeeConfig, type AccountMap, type FreeeConfig } from '@/lib/freee';
+import { createDeal, freeeReady, loadFreeeConfig, uploadReceipt, type AccountMap, type FreeeConfig } from '@/lib/freee';
+import { readStoredFile } from '@/lib/attachment-storage';
 
 export type Movement = {
   source_type: 'payslip' | 'payment' | 'expense'; source_id: string; date: string; amount: number; description: string;
   /** Where the money goes, by account key (see MAP_KINDS), with the amounts. They add up to `amount`. */
   parts: { key: string; amount: number; description: string }[];
+  /** 証憑: the receipts of the expenses and the invoices of a payment request that belong to this movement. `key` identifies the file for good. */
+  documents: Document[];
 };
+export type Document = { key: string; filename: string; content_type: string; storage_key: string };
 
 const ymd = (d: Date) => d.toISOString().slice(0, 10);
+const receiptDoc = (r: { id: string; filename: string; content_type: string; storage_key: string }): Document => ({ key: `receipt:${r.id}`, filename: r.filename, content_type: r.content_type, storage_key: r.storage_key });
+const paymentDoc = (r: { id: string; filename: string; content_type: string; storage_key: string }): Document => ({ key: `doc:${r.id}`, filename: r.filename, content_type: r.content_type, storage_key: r.storage_key });
 const clip = (s: string) => s.replace(/\s+/g, ' ').trim().slice(0, 250);
 
 /** The movements paid on or after `from` (the day the connection was made / chosen): everything before it belongs to the books already. */
@@ -21,11 +27,11 @@ export async function collectMovements(from: string): Promise<Movement[]> {
   const [slips, pays, claims] = await Promise.all([
     prisma.payslips.findMany({
       where: { status: 'paid', OR: [{ pay_date: { gte: start } }, { pay_date: null, updated_at: { gte: start } }] },
-      include: { items: true, user: { select: { name: true, worker_type: true } }, expense_claims: { select: { category: true, amount: true } } },
+      include: { items: true, user: { select: { name: true, worker_type: true } }, expense_claims: { select: { category: true, amount: true, receipts: { select: { id: true, filename: true, content_type: true, storage_key: true }, orderBy: { created_at: 'asc' } } } } },
     }),
-    prisma.payment_requests.findMany({ where: { status: 'paid', paid_at: { gte: start } }, include: { vendor: { select: { name: true } } } }),
+    prisma.payment_requests.findMany({ where: { status: 'paid', paid_at: { gte: start } }, include: { vendor: { select: { name: true } }, documents: { select: { id: true, filename: true, content_type: true, storage_key: true }, orderBy: { created_at: 'asc' } } } }),
     // a claim inside a pay statement is part of the statement's deal
-    prisma.expense_claims.findMany({ where: { status: 'paid', payslip_id: null, reimbursed_at: { gte: start } }, include: { user: { select: { name: true } } } }),
+    prisma.expense_claims.findMany({ where: { status: 'paid', payslip_id: null, reimbursed_at: { gte: start } }, include: { user: { select: { name: true } }, receipts: { select: { id: true, filename: true, content_type: true, storage_key: true }, orderBy: { created_at: 'asc' } } } }),
   ]);
   const out: Movement[] = [];
   for (const p of slips) {
@@ -41,16 +47,17 @@ export async function collectMovements(from: string): Promise<Movement[]> {
     const parts = net - expenseTotal > 0 && expenseTotal > 0
       ? [{ key: mainKey, amount: net - expenseTotal, description: label }, ...[...byCat].map(([cat, amount]) => ({ key: `expense:${cat}`, amount, description: `${label} 立替金（${cat}）` }))]
       : [{ key: mainKey, amount: net, description: label }];
-    out.push({ source_type: 'payslip', source_id: p.id, date, amount: net, description: clip(label), parts });
+    // the receipts of the expenses merged into the statement go with it
+    out.push({ source_type: 'payslip', source_id: p.id, date, amount: net, description: clip(label), parts, documents: p.expense_claims.flatMap(c => c.receipts.map(receiptDoc)) });
   }
   for (const r of pays) {
     const amount = transferAmount(r);
     const label = `${r.vendor.name} ${r.title}`;
-    out.push({ source_type: 'payment', source_id: r.id, date: ymd(r.paid_at!), amount, description: clip(label), parts: [{ key: 'payment', amount, description: clip(label) }] });
+    out.push({ source_type: 'payment', source_id: r.id, date: ymd(r.paid_at!), amount, description: clip(label), parts: [{ key: 'payment', amount, description: clip(label) }], documents: r.documents.map(paymentDoc) });
   }
   for (const c of claims) {
     const label = `経費精算 ${c.user.name} ${c.title}`;
-    out.push({ source_type: 'expense', source_id: c.id, date: ymd(c.reimbursed_at!), amount: c.amount, description: clip(label), parts: [{ key: `expense:${c.category}`, amount: c.amount, description: clip(label) }] });
+    out.push({ source_type: 'expense', source_id: c.id, date: ymd(c.reimbursed_at!), amount: c.amount, description: clip(label), parts: [{ key: `expense:${c.category}`, amount: c.amount, description: clip(label) }], documents: c.receipts.map(receiptDoc) });
   }
   return out;
 }
@@ -92,7 +99,9 @@ export async function syncToFreee(cfg?: FreeeConfig): Promise<SyncResult> {
   try {
     await prisma.freee_exports.updateMany({ where: { status: 'sending', updated_at: { lt: new Date(Date.now() - STALE_MS) } }, data: { status: 'failed', error: STALE_ERROR } });
     const movements = await collectMovements(c.syncFrom!);
-    const existing = new Map((await prisma.freee_exports.findMany({ select: { source_type: true, source_id: true, status: true, error: true } })).map(e => [`${e.source_type}:${e.source_id}`, e.status === 'failed' && e.error === STALE_ERROR ? 'stale' : e.status]));
+    const rows = await prisma.freee_exports.findMany({ select: { source_type: true, source_id: true, status: true, error: true, receipt_map: true } });
+    const existing = new Map(rows.map(e => [`${e.source_type}:${e.source_id}`, e.status === 'failed' && e.error === STALE_ERROR ? 'stale' : e.status]));
+    const uploaded = new Map(rows.map(e => [`${e.source_type}:${e.source_id}`, (e.receipt_map ?? {}) as Record<string, number>]));
     const todo = movements.filter(m => { const s = existing.get(`${m.source_type}:${m.source_id}`); return !s || s === 'failed' || s === 'pending'; }).sort((a, b) => a.date.localeCompare(b.date));
     const r = { sent: 0, failed: 0, skipped: 0, pending: Math.max(0, todo.length - MAX_PER_RUN) };
     for (const m of todo.slice(0, MAX_PER_RUN)) {
@@ -105,12 +114,35 @@ export async function syncToFreee(cfg?: FreeeConfig): Promise<SyncResult> {
       if (m.amount <= 0) { await prisma.freee_exports.update({ where, data: { status: 'skipped', error: '金額が0円以下のため送りません' } }); r.skipped++; continue; }
       const d = dealDetails(m, c.map);
       if (!d.ok) { await prisma.freee_exports.update({ where, data: { status: 'failed', error: d.error } }); r.failed++; continue; }
-      const res = await createDeal({ companyId: c.companyId!, date: m.date, walletable: c.walletable!, details: d.details });
+      // 証憑 first: they have to be in freee before the deal can point at them. Those already uploaded by an earlier try are not uploaded again.
+      let receiptIds: number[] = [];
+      if (c.sendReceipts && m.documents.length > 0) {
+        const up = await uploadDocuments(c.companyId!, m, uploaded.get(`${m.source_type}:${m.source_id}`) ?? {}, async map => { await prisma.freee_exports.update({ where, data: { receipt_map: map } }); });
+        if (!up.ok) { await prisma.freee_exports.update({ where, data: { status: 'failed', error: up.error } }); r.failed++; if (up.status === 401) break; continue; }
+        receiptIds = up.ids;
+      }
+      const res = await createDeal({ companyId: c.companyId!, date: m.date, walletable: c.walletable!, details: d.details, receiptIds });
       if (res.ok) { await prisma.freee_exports.update({ where, data: { status: 'sent', freee_deal_id: res.data.deal.id, sent_at: new Date(), error: null } }); r.sent++; }
       else { await prisma.freee_exports.update({ where, data: { status: 'failed', error: res.message } }); r.failed++; if (res.status === 401) break; }
     }
     return { ok: true, ...r };
   } finally { running = false; }
+}
+
+/** Puts the 証憑 of a movement into freee, one by one, remembering each (`save`) so a retry continues where it stopped. A file that is gone from the disk is left out. */
+async function uploadDocuments(companyId: number, m: Movement, done: Record<string, number>, save: (map: Record<string, number>) => Promise<void>):
+  Promise<{ ok: true; ids: number[] } | { ok: false; error: string; status: number }> {
+  const map = { ...done };
+  for (const doc of m.documents) {
+    if (map[doc.key]) continue;
+    const bytes = await readStoredFile(doc.storage_key);
+    if (!bytes) { console.error('[freee] a 証憑 file is missing on the disk:', doc.storage_key); continue; }
+    const r = await uploadReceipt({ companyId, filename: doc.filename, contentType: doc.content_type, bytes, description: m.description, date: m.date });
+    if (!r.ok) return { ok: false, status: r.status, error: `証憑「${doc.filename}」を送れませんでした: ${r.message}`.slice(0, 500) };
+    map[doc.key] = r.data.receipt.id;
+    await save(map);
+  }
+  return { ok: true, ids: m.documents.map(d => map[d.key]).filter((x): x is number => !!x) };
 }
 
 /** After money is paid: send it soon, without making the person wait or fail if freee is down. Does nothing unless automatic sending is on. */

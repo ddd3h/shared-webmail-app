@@ -1,10 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createReadStream } from 'fs';
-import path from 'path';
 import { prisma } from '@/lib/db';
 import { getSession, requireAuth } from '@/lib/auth';
 import { getActor, isFinance } from '@/lib/work-auth';
-import { APP_ROOT } from '@/lib/app-root';
+import { fileResponse } from '@/lib/file-response';
 import { deleteStoredFiles } from '@/lib/attachment-storage';
 
 async function load(did: string, userId: string) {
@@ -13,7 +11,7 @@ async function load(did: string, userId: string) {
   return { actor, doc };
 }
 
-// GET /api/payments/documents/:did - download (applicant or admin). Always an attachment, never rendered inline.
+// GET /api/payments/documents/:did - shown in the browser (images and PDF; see file-response.ts). Who may open it: the applicant, 経理担当・管理者.
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ did: string }> }) {
   const { did } = await params;
   const session = await getSession();
@@ -21,14 +19,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ did
   const { actor, doc } = await load(did, session.userId);
   if (!actor || !doc) return NextResponse.json({ error: 'not_found' }, { status: 404 });
   if (doc.request.user_id !== actor.id && !isFinance(actor)) return NextResponse.json({ error: 'forbidden' }, { status: 403 });
-  return new NextResponse(createReadStream(path.join(APP_ROOT, doc.storage_key)) as any, {
-    headers: {
-      'Content-Type': doc.content_type,
-      'Content-Length': String(doc.size),
-      'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(doc.filename)}`,
-      'X-Content-Type-Options': 'nosniff',
-    },
-  });
+  return fileResponse(doc);
 }
 
 // DELETE /api/payments/documents/:did - remove an invoice from your own pending/rejected request

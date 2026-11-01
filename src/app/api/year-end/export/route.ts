@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { recentAuthOrResponse } from '@/lib/reauth';
 import { prisma } from '@/lib/db';
 import { logAudit } from '@/lib/audit';
 import { forbidden, yearEndActor } from '@/lib/finance-guard';
@@ -10,6 +11,7 @@ import { openRow } from '@/lib/year-end-server';
 export async function GET(req: NextRequest) {
   const actor = await yearEndActor();
   if (!actor) return forbidden();
+  { const stale = await recentAuthOrResponse(); if (stale) return stale; } // high-risk: a recent proof of who is asking (lib/reauth.ts)
   const year = Number(req.nextUrl.searchParams.get('year'));
   if (!isValidYear(year)) return NextResponse.json({ error: 'invalid_year' }, { status: 400 });
 

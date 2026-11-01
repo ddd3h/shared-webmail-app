@@ -6,6 +6,8 @@ import { getActor, isFinance } from '@/lib/work-auth';
 import { notifyWorkReportSubmitted } from '@/lib/work-notify';
 import { activityNote, checkReportActivity } from '@/lib/activity-check';
 import { loadSchedules, planOf } from '@/lib/pay-schedule-server';
+import { oneReportPerPeriod } from '@/lib/work-reports';
+import { reportInPeriod } from '@/lib/work-reports-server';
 import { usesReports, isValidDateString, isValidMonth, jstDateString, monthRange, toDbDate } from '@/lib/work';
 
 const serialize = (r: any, schedules: Awaited<ReturnType<typeof loadSchedules>>['schedules']) => ({
@@ -70,6 +72,11 @@ export async function POST(req: NextRequest) {
   const parsed = reportSchema.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) return NextResponse.json({ error: 'invalid_body' }, { status: 400 });
   const d = parsed.data;
+  // 準業務委託は、1期間（月）に1通でよい: すでに出していれば、新しくは作らず、その報告書を直してもらう
+  if (oneReportPerPeriod(actor.worker_type)) {
+    const existing = await reportInPeriod(actor.id, actor.worker_type, d.report_date);
+    if (existing) return NextResponse.json({ error: 'period_already_reported', id: existing.id, report_date: existing.report_date }, { status: 409 });
+  }
   // 準業務委託がログインの記録のない日の報告をするときは、警告を読んだという確認（activity_ack）がなければ受け付けない。画面の判断は信用せず、毎回ここで調べる
   const verdict = await checkReportActivity(actor, d.report_date);
   if (verdict?.suspicious && !d.activity_ack) {

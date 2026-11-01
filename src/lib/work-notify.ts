@@ -1,6 +1,7 @@
 // Mattermost DMs for the expense / work-report / payslip / attendance features.
 // Every function swallows its own errors so callers can fire and forget.
 import { prisma } from '@/lib/db';
+import { transferSlotFor, transferSlotLabel } from '@/lib/transfer-days';
 import { mmText, sendDirectMessage } from '@/lib/mattermost-dm';
 import { PAYMENT_LABEL, type PaymentMethod } from '@/lib/expense';
 import { approversOf } from '@/lib/org-server';
@@ -17,8 +18,8 @@ async function adminsExcept(userId: string) {
 }
 
 // Admins plus the unit heads who may approve this person's requests, without the person themselves
-async function reviewersOf(userId: string) {
-  const [admins, heads] = await Promise.all([adminsExcept(userId), approversOf(userId)]);
+async function reviewersOf(userId: string, unitId: string | null = null) {
+  const [admins, heads] = await Promise.all([adminsExcept(userId), approversOf(userId, unitId)]);
   return [...new Map([...admins, ...heads].map(u => [u.id, u])).values()];
 }
 
@@ -29,14 +30,15 @@ async function dmAll(users: { id: string; email: string }[], message: string, ty
 // A new (or resubmitted) claim -> admins and the claimant's unit heads (never the claimant)
 export function notifyExpenseSubmitted(claimId: string, resubmitted = false) {
   return safely('expense_submitted', async () => {
-    const c = await prisma.expense_claims.findUnique({ where: { id: claimId }, include: { user: { select: { id: true, name: true } } } });
+    const c = await prisma.expense_claims.findUnique({ where: { id: claimId }, include: { user: { select: { id: true, name: true } }, unit: { select: { name: true } } } });
     if (!c) return;
     const msg =
       `🧾 **経費申請が${resubmitted ? '再申請されました' : '届きました'}**\n\n` +
       `**${mmText(c.user.name, 40)}** さん ・ **${yen(c.amount)}** ・ ${mmText(c.category, 20)}（${PAYMENT_LABEL[c.payment_method as PaymentMethod]}）\n` +
-      `件名: ${mmText(c.title, 100)}\n\n` +
+      `件名: ${mmText(c.title, 100)}\n` +
+      (c.unit ? `部門: ${mmText(c.unit.name, 40)}\n` : '') + '\n' +
       `承認・却下: ${appUrl()}/approvals`;
-    await dmAll(await reviewersOf(c.user_id), msg, 'expense_submitted');
+    await dmAll(await reviewersOf(c.user_id, c.unit_id), msg, 'expense_submitted');
   });
 }
 
@@ -162,7 +164,7 @@ export function notifyPaymentSubmitted(requestId: string, resubmitted = false) {
     const msg =
       `🏦 **振込申請が${resubmitted ? '再申請されました' : '届きました'}**\n\n` +
       `**${mmText(r.user.name, 40)}** さん ・ ${mmText(r.vendor.name, 60)} 宛 ・ **${yen(r.amount)}**\n` +
-      `件名: ${mmText(r.title, 100)} ・ 支払期日 ${r.due_date.toISOString().slice(0, 10)}\n\n承認・却下: ${appUrl()}/payments`;
+      `件名: ${mmText(r.title, 100)} ・ 支払期日 ${r.due_date.toISOString().slice(0, 10)} ・ 振込予定 ${transferSlotLabel(transferSlotFor(r.due_date.toISOString().slice(0, 10), new Date(Date.now() + 9 * 3600_000).toISOString().slice(0, 10)))}\n\n承認・却下: ${appUrl()}/payments`;
     await dmAll(await adminsExcept(r.user_id), msg, 'payment_submitted');
   });
 }
@@ -253,7 +255,7 @@ export function notifyBankAccountVerified(userId: string) {
 
 // ---- 人事評価 (scores and grades are never put in a DM) ----
 async function hrPeopleExcept(userId: string) {
-  return prisma.users.findMany({ where: { id: { not: userId }, OR: [{ role: 'admin' }, { position: { permissions: { has: 'hr_admin' } } }] }, select: { id: true, email: true } });
+  return prisma.users.findMany({ where: { id: { not: userId }, OR: [{ role: 'admin' }, { is_hr: true }, { org_memberships: { some: { position: { permissions: { has: 'hr_admin' } } } } }] }, select: { id: true, email: true } });
 }
 
 export function notifyEvaluationOpened(cycleId: string) {
@@ -332,17 +334,33 @@ export function notifyMfaChanged(userId: string, what: 'enabled' | 'disabled' | 
   });
 }
 
-// A to-do was given to somebody -> that person (never when they gave it to themselves)
+// A to-do was put on somebody's list by another person -> that person (never when they gave it to themselves)
 export function notifyTodoAssigned(todoId: string, byUserId: string) {
   return safely('todo_assigned', async () => {
     const t = await prisma.todos.findUnique({
       where: { id: todoId },
-      include: { assignee: { select: { id: true, email: true } }, creator: { select: { name: true } }, mailbox: { select: { display_name: true } } },
+      include: { assignee: { select: { id: true, email: true } } },
     });
     if (!t?.assignee || t.assignee.id === byUserId) return;
     const by = await prisma.users.findUnique({ where: { id: byUserId }, select: { name: true } });
     const due = t.due_date ? `\n期限: ${t.due_date.toISOString().slice(0, 10)}` : '';
-    const msg = `📝 **ToDoが割り当てられました**\n\n${mmText(t.title, 100)}${due}\n担当に指定した人: ${mmText(by?.name ?? '', 40)} ・ ${mmText(t.mailbox.display_name, 40)}\n\n${appUrl()}/todos`;
+    const msg = `📝 **ToDoが追加されました**\n\n${mmText(t.title, 100)}${due}\n追加した人: ${mmText(by?.name ?? '', 40)}\n\n${appUrl()}/todos`;
     await sendDirectMessage(t.assignee.id, t.assignee.email, msg, 'todo_assigned');
+  });
+}
+
+// People were invited to an event -> each of them (it is in their calendar now)
+export function notifyEventInvited(eventId: string, byUserId: string, userIds: string[]) {
+  return safely('event_invited', async () => {
+    const ev = await prisma.calendar_events.findUnique({ where: { id: eventId }, select: { title: true, all_day: true, start_at: true, end_at: true, location: true } });
+    if (!ev) return;
+    const [by, people] = await Promise.all([
+      prisma.users.findUnique({ where: { id: byUserId }, select: { name: true } }),
+      prisma.users.findMany({ where: { id: { in: userIds.filter(id => id !== byUserId) } }, select: { id: true, email: true } }),
+    ]);
+    const jst = (d: Date) => new Date(d.getTime() + (ev.all_day ? 0 : 9 * 3600_000)).toISOString();
+    const when = ev.all_day ? `${jst(ev.start_at).slice(0, 10)}（終日）` : `${jst(ev.start_at).slice(0, 10)} ${jst(ev.start_at).slice(11, 16)}–${jst(ev.end_at).slice(11, 16)}`;
+    const msg = `📅 **予定に招待されました**\n\n${mmText(ev.title ?? '', 100)}\n日時: ${when}${ev.location ? `\n場所: ${mmText(ev.location, 80)}` : ''}\n招待した人: ${mmText(by?.name ?? '', 40)}\n\n${appUrl()}/calendar`;
+    await Promise.all(people.map(u => sendDirectMessage(u.id, u.email, msg, 'event_invited')));
   });
 }

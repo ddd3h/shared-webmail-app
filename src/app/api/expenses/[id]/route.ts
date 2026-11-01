@@ -10,6 +10,7 @@ import { checkTripLink } from '@/lib/trip-server';
 import { EXPENSE_CATEGORIES, MAX_AMOUNT, MILEAGE_CATEGORY, isEditable } from '@/lib/expense';
 import { homeAddressOf, isMileageError, resolveMileage } from '@/lib/mileage-server';
 import { MAX_ADDRESS_LENGTH } from '@/lib/mileage';
+import { resolveUnit } from '@/lib/org-server';
 
 const schema = z.object({
   expense_date: z.string().refine(isValidDateString),
@@ -20,6 +21,7 @@ const schema = z.object({
   description: z.string().trim().max(2000).nullable().optional(),
   // undefined = leave as is, null = detach from the trip
   trip_id: z.string().min(1).nullable().optional(),
+  unit_id: z.string().min(1).optional(),   // the 部署 claimed for; not sent = as it was
   destination: z.string().trim().min(1).max(MAX_ADDRESS_LENGTH).optional(),
   origin: z.string().trim().max(MAX_ADDRESS_LENGTH).optional(),
   transit_from: z.string().trim().max(MAX_ADDRESS_LENGTH).nullable().optional(),   // undefined = keep, null/'' = remove
@@ -44,6 +46,9 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   if (d.trip_id && d.trip_id !== claim.trip_id && !(await checkTripLink(session.userId, d.trip_id))) {
     return NextResponse.json({ error: 'invalid_trip' }, { status: 400 });
   }
+  // the 部署: the one sent, else the one it had; an older claim without one follows the same rule as a new claim
+  const unit = await resolveUnit(session.userId, d.unit_id ?? claim.unit_id);
+  if (!unit.ok) return NextResponse.json({ error: unit.error }, { status: 400 });
   // own-car claim: worked out again from the route, unless nothing about the trip changed (then the figures it was sent with stay, even if the rate has changed since)
   let mileage: Record<string, unknown> = { mileage_origin: null, mileage_destination: null, mileage_distance_m: null, mileage_rate: null, mileage_source: null };
   let amount = d.amount;
@@ -74,6 +79,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       ...(d.category !== '交通費' ? { transit_from: null, transit_to: null, transit_summary: null }
         : { ...(d.transit_from !== undefined ? { transit_from: d.transit_from || null } : {}), ...(d.transit_to !== undefined ? { transit_to: d.transit_to || null } : {}), ...(d.transit_summary !== undefined ? { transit_summary: d.transit_summary || null } : {}) }),
       ...(d.trip_id !== undefined ? { trip_id: d.trip_id } : {}),
+      unit_id: unit.unit_id,
       status: 'pending', reviewed_by_id: null, reviewed_at: null, review_comment: null,
     },
   });

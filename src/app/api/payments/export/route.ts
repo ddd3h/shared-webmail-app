@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { recentAuthOrResponse } from '@/lib/reauth';
 import { prisma } from '@/lib/db';
 import { getSession, requireAuth } from '@/lib/auth';
 import { logAudit } from '@/lib/audit';
+import { accountChangedSinceApproval } from '@/lib/payment-fp';
 import { decrypt } from '@/lib/crypto';
 import { getActor, isFinance } from '@/lib/work-auth';
 import { jstDateString } from '@/lib/work';
@@ -14,14 +16,16 @@ export async function GET(req: NextRequest) {
   requireAuth(session);
   const actor = await getActor(session.userId);
   if (!actor || !isFinance(actor)) return NextResponse.json({ error: 'forbidden' }, { status: 403 });
+  { const stale = await recentAuthOrResponse(); if (stale) return stale; } // high-risk: a recent proof of who is asking (lib/reauth.ts)
   const idsParam = new URL(req.url).searchParams.get('ids');
   const ids = idsParam ? idsParam.split(',').filter(Boolean).slice(0, 500) : null;
 
-  const rows = await prisma.payment_requests.findMany({
+  const all = await prisma.payment_requests.findMany({
     where: { status: 'approved', vendor: { verified_at: { not: null } }, ...(ids ? { id: { in: ids } } : {}) },
     include: { vendor: true, user: { select: { name: true } } },
     orderBy: [{ due_date: 'asc' }, { created_at: 'asc' }],
   });
+  const rows = all.filter(r => !accountChangedSinceApproval(r, r.vendor)); // not to details that changed after the approval
   const header = ['振込先銀行名', '銀行コード', '支店名', '支店コード', '預金種目', '口座番号', '口座名義', '振込金額', '支払期日', '取引先名', '件名', '請求書番号', '申請者'];
   const body = await Promise.all(rows.map(async r => [
     r.vendor.bank_name, r.vendor.bank_code, r.vendor.branch_name, r.vendor.branch_code,

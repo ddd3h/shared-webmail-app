@@ -1,9 +1,11 @@
 import { triggerFreeeSync } from '@/lib/freee-sync';
+import { recentAuthOrResponse } from '@/lib/reauth';
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/db';
 import { getSession, requireAuth } from '@/lib/auth';
 import { logAudit } from '@/lib/audit';
+import { accountChangedSinceApproval } from '@/lib/payment-fp';
 import { getActor, isFinance } from '@/lib/work-auth';
 import { isValidDateString, jstDateString, toDbDate } from '@/lib/work';
 import { transferAmount } from '@/lib/payment';
@@ -22,15 +24,17 @@ export async function POST(req: NextRequest) {
   requireAuth(session);
   const actor = await getActor(session.userId);
   if (!actor || !isFinance(actor)) return NextResponse.json({ error: 'forbidden' }, { status: 403 });
+  { const stale = await recentAuthOrResponse(); if (stale) return stale; } // high-risk: a recent proof of who is asking (lib/reauth.ts)
   const parsed = schema.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) return NextResponse.json({ error: 'invalid_body' }, { status: 400 });
   const { ids, paid_date, note } = parsed.data;
   const date = paid_date ?? jstDateString(new Date());
 
-  const rows = await prisma.payment_requests.findMany({
+  const candidates = await prisma.payment_requests.findMany({
     where: { id: { in: ids }, status: 'approved', vendor: { verified_at: { not: null } } },
-    select: { id: true, amount: true, deduction_amount: true, fee: true, fee_bearer: true },
+    select: { id: true, amount: true, deduction_amount: true, fee: true, fee_bearer: true, approved_account_fp: true, vendor: true },
   });
+  const rows = candidates.filter(r => !accountChangedSinceApproval(r, r.vendor)); // not to details that changed after the approval
   const res = await prisma.payment_requests.updateMany({
     where: { id: { in: rows.map(r => r.id) }, status: 'approved' },
     data: { status: 'paid', paid_at: toDbDate(date), paid_by_id: actor.id, paid_note: note || null },

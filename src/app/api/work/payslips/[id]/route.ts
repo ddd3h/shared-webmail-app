@@ -1,7 +1,9 @@
 import { triggerFreeeSync } from '@/lib/freee-sync';
+import { recentAuthOrResponse } from '@/lib/reauth';
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/db';
+import { selfDealing, selfDealingResponse } from '@/lib/finance-guard';
 import { getSession, requireAuth } from '@/lib/auth';
 import { logAudit } from '@/lib/audit';
 import { getActor, isFinance } from '@/lib/work-auth';
@@ -38,11 +40,13 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   const { id } = await params;
   const actor = await adminOnly();
   if (!actor) return NextResponse.json({ error: 'forbidden' }, { status: 403 });
+  { const stale = await recentAuthOrResponse(); if (stale) return stale; } // high-risk: a recent proof of who is asking (lib/reauth.ts)
   const parsed = schema.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) return NextResponse.json({ error: 'invalid_body' }, { status: 400 });
   const d = parsed.data;
   const existing = await prisma.payslips.findUnique({ where: { id } });
   if (!existing) return NextResponse.json({ error: 'not_found' }, { status: 404 });
+  if (await selfDealing(actor.id, existing.user_id)) return selfDealingResponse();
   if (lockedByTransfer(existing)) return NextResponse.json(LOCKED, { status: 409 });
 
   // Items sent by the client never include the system 立替金精算 line; it is rebuilt from the attached claims.
@@ -84,8 +88,10 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
   const { id } = await params;
   const actor = await adminOnly();
   if (!actor) return NextResponse.json({ error: 'forbidden' }, { status: 403 });
+  { const stale = await recentAuthOrResponse(); if (stale) return stale; } // high-risk: a recent proof of who is asking (lib/reauth.ts)
   const existing = await prisma.payslips.findUnique({ where: { id } });
   if (!existing) return NextResponse.json({ error: 'not_found' }, { status: 404 });
+  if (await selfDealing(actor.id, existing.user_id)) return selfDealingResponse();
   if (lockedByTransfer(existing)) return NextResponse.json(LOCKED, { status: 409 });
   await prisma.payslips.delete({ where: { id } });
   await logAudit({

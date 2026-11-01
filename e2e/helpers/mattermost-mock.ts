@@ -39,7 +39,8 @@ export function startMattermostMock(): Promise<() => Promise<void>> {
   let freeeRefresh = '';
   let freeeTokenCalls: string[] = [];
   let freeeDeals: any[] = [];
-  let failFreee: 'down' | 'invalid' | null = null;
+  let freeeReceipts: any[] = [];   // 証憑 uploaded to the ファイルボックス
+  let failFreee: 'down' | 'invalid' | 'receipt' | 'receipt_second' | null = null;
   let freeeCompanies = 1;
   let failMaps: 'down' | 'denied' | null = null;
   let lastMaps: { key: string; origin?: string; destination?: string; mode?: string; departureTime?: string } | null = null;
@@ -51,7 +52,7 @@ export function startMattermostMock(): Promise<() => Promise<void>> {
       const url = req.url || '';
       const send = (o: unknown, code = 200) => { res.writeHead(code, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(o)); };
       if (url === '/__posts') return send(posts);
-      if (url === '/__reset') { posts.length = 0; failPosts = false; imageHits = 0; failEmbeddings = false; embeddingCalls = 0; mapsCalls = 0; failMaps = null; lastMaps = null; osm.gsi = []; osm.nominatim = []; osm.osrm = []; osm.uas = []; failOsm = null; freeeAccess = ''; freeeRefresh = ''; freeeTokenCalls = []; freeeDeals = []; failFreee = null; freeeCompanies = 1; return send({ ok: true }); }
+      if (url === '/__reset') { posts.length = 0; failPosts = false; imageHits = 0; failEmbeddings = false; embeddingCalls = 0; mapsCalls = 0; failMaps = null; lastMaps = null; osm.gsi = []; osm.nominatim = []; osm.osrm = []; osm.uas = []; failOsm = null; freeeAccess = ''; freeeRefresh = ''; freeeTokenCalls = []; freeeDeals = []; freeeReceipts = []; failFreee = null; freeeCompanies = 1; return send({ ok: true }); }
       if (url === '/__fail_embeddings') { failEmbeddings = JSON.parse(body || '{}').on !== false; return send({ failEmbeddings }); }
       if (url === '/__embedding_calls') return send({ calls: embeddingCalls });
       if (url === '/v1/embeddings') {
@@ -118,7 +119,7 @@ export function startMattermostMock(): Promise<() => Promise<void>> {
         const lon = Number(b.split(',')[0]);
         return send({ code: 'Ok', routes: [{ distance: OSRM_METERS(lon), duration: 600 }] });
       }
-      if (url === '/__freee_state') return send({ deals: freeeDeals, tokenCalls: freeeTokenCalls, access: freeeAccess });
+      if (url === '/__freee_state') return send({ deals: freeeDeals, receipts: freeeReceipts, tokenCalls: freeeTokenCalls, access: freeeAccess });
       if (url === '/__freee_fail') { failFreee = JSON.parse(body || '{}').mode ?? null; return send({ failFreee }); }
       if (url === '/__freee_companies') { freeeCompanies = JSON.parse(body || '{}').n ?? 1; return send({ freeeCompanies }); }
       if (url === '/__freee_expire') { freeeAccess = ''; return send({ ok: true }); } // the access token stops working (the refresh token still does)
@@ -144,10 +145,24 @@ export function startMattermostMock(): Promise<() => Promise<void>> {
         if (path === '/api/1/companies') return send({ companies: [{ id: 111, name: 'テスト株式会社', display_name: 'テスト株式会社' }, { id: 222, name: '別会社', display_name: '別会社' }].slice(0, freeeCompanies) });
         if (path === '/api/1/walletables') return send({ walletables: [{ id: 501, name: 'みずほ銀行 普通', type: 'bank_account' }, { id: 502, name: '現金', type: 'wallet' }] });
         if (path === '/api/1/account_items') return send({ account_items: [{ id: 9001, name: '給料手当' }, { id: 9002, name: '役員報酬' }, { id: 9003, name: '外注費' }, { id: 9004, name: '買掛金' }, { id: 9005, name: '旅費交通費' }, { id: 9006, name: '交際費' }] });
+        if (path === '/api/1/receipts' && req.method === 'POST') {
+          if (failFreee === 'receipt_second' && freeeReceipts.length === 1) return send({ message: 'unavailable' }, 500);   // only the second upload fails
+          if (failFreee === 'down' || failFreee === 'receipt') return send({ message: 'unavailable' }, failFreee === 'down' ? 503 : 500);
+          // multipart: the fields are read out of the raw text (the file's bytes are not needed)
+          const field = (name: string) => new RegExp('name="' + name + '"\\r\\n\\r\\n([^\\r]*)').exec(body)?.[1];
+          const file = /name="receipt"; filename="([^"]*)"/.exec(body);
+          if (!file || !/multipart\/form-data/.test(String(req.headers['content-type'] ?? ''))) return send({ message: 'invalid receipt' }, 400);
+          const company = field('company_id'); const description = field('description'); const issue = field('issue_date');
+          if (!company || !issue) return send({ message: 'invalid receipt' }, 400);
+          const receipt = { id: 8000 + freeeReceipts.length + 1, filename: file[1], company_id: Number(company), description: description ?? '', issue_date: issue, size: body.length };
+          freeeReceipts.push(receipt);
+          return send({ receipt: { id: receipt.id } });
+        }
         if (path === '/api/1/deals' && req.method === 'POST') {
           if (failFreee === 'down') return send({ message: 'unavailable' }, 503);
           const deal = JSON.parse(body || '{}');
           if (failFreee === 'invalid') return send({ status_code: 400, errors: [{ type: 'status', messages: ['勘定科目が不正です'] }] }, 400);
+          if ((deal.receipt_ids ?? []).some((id: number) => !freeeReceipts.some(r => r.id === id))) return send({ message: 'unknown receipt' }, 400);
           const total = (deal.details ?? []).reduce((s: number, x: any) => s + x.amount, 0);
           if (deal.type !== 'expense' || !deal.company_id || !deal.issue_date || !(deal.details ?? []).length || (deal.payments ?? []).reduce((s: number, x: any) => s + x.amount, 0) !== total) return send({ message: 'invalid deal' }, 400);
           freeeDeals.push({ ...deal, id: 7000 + freeeDeals.length + 1, version: req.headers['x-api-version'] });
@@ -191,8 +206,8 @@ export const mm = {
     async fail(mode: 'gsi' | 'nominatim' | 'osrm' | 'noroute' | null) { await fetch(`${MM_URL}/__fail_osm`, { method: 'POST', body: JSON.stringify({ mode }) }); },
   },
   freee: {
-    async state(): Promise<{ deals: any[]; tokenCalls: string[]; access: string }> { return (await fetch(`${MM_URL}/__freee_state`)).json(); },
-    async fail(mode: 'down' | 'invalid' | null) { await fetch(`${MM_URL}/__freee_fail`, { method: 'POST', body: JSON.stringify({ mode }) }); },
+    async state(): Promise<{ deals: any[]; receipts: any[]; tokenCalls: string[]; access: string }> { return (await fetch(`${MM_URL}/__freee_state`)).json(); },
+    async fail(mode: 'down' | 'invalid' | 'receipt' | 'receipt_second' | null) { await fetch(`${MM_URL}/__freee_fail`, { method: 'POST', body: JSON.stringify({ mode }) }); },
     async companies(n: number) { await fetch(`${MM_URL}/__freee_companies`, { method: 'POST', body: JSON.stringify({ n }) }); },
     async expireAccessToken() { await fetch(`${MM_URL}/__freee_expire`, { method: 'POST' }); },
   },

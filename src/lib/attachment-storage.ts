@@ -2,7 +2,7 @@
 // (IMAP sync), outgoing, scheduled and draft — lives in a single flat directory
 // under APP_ROOT/storage/attachments with a UUID filename, and the DB stores the
 // project-root-relative path in `storage_key`.
-import { writeFile, mkdir, copyFile, unlink } from 'fs/promises';
+import { writeFile, readFile, mkdir, copyFile, unlink } from 'fs/promises';
 import path from 'path';
 import { APP_ROOT } from '@/lib/app-root';
 import type { DeliverAttachment } from '@/lib/mail/deliver';
@@ -56,4 +56,9 @@ export async function deleteStoredFiles(storageKeys: string[]): Promise<void> {
       unlink(path.join(APP_ROOT, key)).catch(() => {})
     )
   );
+}
+
+/** The bytes of a stored file, or null when the file is gone. */
+export async function readStoredFile(storageKey: string): Promise<Buffer | null> {
+  return readFile(path.join(APP_ROOT, storageKey)).catch(() => null);
 }

@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Notice, Stat, api, btn, btnPrimary, yen } from '@/components/work/ui';
 
-type Row = { id: string; source_type: string; status: 'pending' | 'sending' | 'sent' | 'failed' | 'skipped'; amount: number; paid_date: string; description: string; freee_deal_id: number | null; error: string | null; attempts: number };
+type Row = { id: string; source_type: string; status: 'pending' | 'sending' | 'sent' | 'failed' | 'skipped'; amount: number; paid_date: string; description: string; freee_deal_id: number | null; receipts?: number; error: string | null; attempts: number };
 type Waiting = { source_type: string; source_id: string; date: string; amount: number; description: string };
 type Data = { connected: boolean; ready: boolean; auto_sync: boolean; sync_from: string | null; company: string | null; counts: { sent: number; failed: number; skipped: number; waiting: number }; waiting: Waiting[]; items: Row[] };
 
@@ -83,7 +83,7 @@ export default function FreeeSync() {
               <span className="order-last basis-full text-gray-900 wrap-break-word sm:order-none sm:min-w-0 sm:flex-1 sm:basis-auto">{r.description}</span>
               <span className="ml-auto text-xs text-gray-500">{r.paid_date}</span><span className="font-bold tabular-nums">{yen(r.amount)}</span>
             </div>
-            {r.freee_deal_id && <p className="text-xs text-gray-400">freeeの取引ID: {r.freee_deal_id}</p>}
+            {r.freee_deal_id && <p className="text-xs text-gray-400">freeeの取引ID: {r.freee_deal_id}{r.receipts ? ` ・ 証憑 ${r.receipts}件を紐づけ` : ''}</p>}
             {r.error && <p className="text-xs text-red-700 bg-red-50 rounded-lg px-2 py-1">{r.error}</p>}
             {r.status === 'failed' && (
               <div className="flex gap-3 text-xs"><button className="text-blue-600 hover:underline" onClick={() => act(r.id, 'retry')}>再送する</button><button className={`${btn} !px-2 !py-0.5 text-xs`} onClick={() => act(r.id, 'skip')}>送らない</button></div>

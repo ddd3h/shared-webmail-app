@@ -4,31 +4,35 @@ import { db } from './helpers/db';
 
 test.describe.configure({ mode: 'serial' });
 test.afterAll(async () => {
-  await db.users.update({ where: { id: USERS.sato.id }, data: { org_unit_id: null, position_id: null, mattermost_user_id: null } });
-  await db.org_units.deleteMany({ where: { id: 'u_prof' } });
+  await db.org_memberships.deleteMany({ where: { user_id: USERS.sato.id } });
+  await db.users.update({ where: { id: USERS.sato.id }, data: { mattermost_user_id: null } });
+  await db.org_units.deleteMany({ where: { id: { in: ['u_prof', 'u_prof2'] } } });
   await db.org_positions.deleteMany({ where: { id: 'p_prof' } });
 });
 
 test.describe('プロフィール: 個人情報と受取口座をここにまとめる', () => {
   test.use({ storageState: AUTH.sato });
 
-  test('個人情報（名前・メール・区分・所属・役職・権限・Mattermost）が出る。変更は管理者に依頼', async ({ page }) => {
+  test('個人情報（名前・メール・区分・所属と役職・権限・Mattermost）が出る。複数の部署なら、部署ごとの役職が出る。変更は管理者に依頼', async ({ page }) => {
     await db.org_units.create({ data: { id: 'u_prof', name: '営業部' } });
     await db.org_positions.create({ data: { id: 'p_prof', name: '課長', level: 3, permissions: [] } });
-    await db.users.update({ where: { id: USERS.sato.id }, data: { org_unit_id: 'u_prof', position_id: 'p_prof', mattermost_user_id: 'mm-sato-x' } });
+    await db.org_units.create({ data: { id: 'u_prof2', name: '開発部' } });
+    await db.org_memberships.createMany({ data: [{ user_id: USERS.sato.id, unit_id: 'u_prof', position_id: 'p_prof' }, { user_id: USERS.sato.id, unit_id: 'u_prof2', position_id: null }] });
+    await db.users.update({ where: { id: USERS.sato.id }, data: { mattermost_user_id: 'mm-sato-x' } });
     await page.goto('/profile');
     const card = page.getByRole('region', { name: '個人情報' });
-    for (const [k, v] of [['名前', '佐藤'], ['メールアドレス', 'sato@e2e.test'], ['区分', '従業員'], ['所属', '営業部'], ['役職', '課長'], ['システムの権限', '一般'], ['Mattermost連携', '連携済み']]) {
+    for (const [k, v] of [['名前', '佐藤'], ['メールアドレス', 'sato@e2e.test'], ['区分', '従業員'], ['所属・役職', '営業部（課長）、開発部'], ['システムの権限', '一般'], ['Mattermost連携', '連携済み']]) {
       await expect(card.locator('dt', { hasText: k }).locator('xpath=following-sibling::dd')).toContainText(v);
     }
     await expect(card).toContainText('管理者に依頼してください');
   });
 
-  test('所属・役職が未設定、Mattermost未連携のときは、そう表示する。管理者は「管理者」', async ({ page, as }) => {
-    await db.users.update({ where: { id: USERS.sato.id }, data: { org_unit_id: null, position_id: null, mattermost_user_id: null } });
+  test('所属が未設定、Mattermost未連携のときは、そう表示する。管理者は「管理者」', async ({ page, as }) => {
+    await db.org_memberships.deleteMany({ where: { user_id: USERS.sato.id } });
+    await db.users.update({ where: { id: USERS.sato.id }, data: { mattermost_user_id: null } });
     await page.goto('/profile');
     const card = page.getByRole('region', { name: '個人情報' });
-    await expect(card.locator('dt', { hasText: '所属' }).locator('xpath=following-sibling::dd')).toHaveText('未設定');
+    await expect(card.locator('dt', { hasText: '所属・役職' }).locator('xpath=following-sibling::dd')).toHaveText('未設定');
     await expect(card.locator('dt', { hasText: 'Mattermost連携' }).locator('xpath=following-sibling::dd')).toHaveText('未連携');
     const info = await (await (await as('admin')).get('/api/profile/info')).json();
     expect(info).toMatchObject({ name: '管理者', is_admin: true, worker_type: '従業員' });

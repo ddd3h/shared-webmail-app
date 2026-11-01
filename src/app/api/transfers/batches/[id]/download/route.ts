@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { recentAuthOrResponse } from '@/lib/reauth';
 import { prisma } from '@/lib/db';
 import { logAudit } from '@/lib/audit';
 import { financeActor, forbidden } from '@/lib/finance-guard';
@@ -8,6 +9,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   const { id } = await params;
   const actor = await financeActor();
   if (!actor) return forbidden();
+  { const stale = await recentAuthOrResponse(); if (stale) return stale; } // high-risk: a recent proof of who is asking (lib/reauth.ts)
   const b = await prisma.transfer_batches.findUnique({ where: { id } });
   if (!b) return NextResponse.json({ error: 'not_found' }, { status: 404 });
   await logAudit({ actorUserId: actor.id, actionType: 'transfer_batch_download', targetType: 'transfer_batches', targetId: id, metadata: { file: b.file_name, count: b.item_count, total: b.total_amount } });

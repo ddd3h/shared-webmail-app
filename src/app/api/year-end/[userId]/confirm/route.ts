@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/db';
 import { logAudit } from '@/lib/audit';
-import { forbidden, yearEndActor } from '@/lib/finance-guard';
+import { forbidden, selfDealing, selfDealingResponse, yearEndActor } from '@/lib/finance-guard';
 import { isValidYear } from '@/lib/year-end';
 
 const schema = z.object({ year: z.number().int(), version: z.string() });
@@ -13,6 +13,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ use
   const actor = await yearEndActor();
   if (!actor) return forbidden();
   const { userId } = await params;
+  if (await selfDealing(actor.id, userId)) return selfDealingResponse(); // nobody confirms their own declaration
   const parsed = schema.safeParse(await req.json().catch(() => null));
   if (!parsed.success || !isValidYear(parsed.data.year)) return NextResponse.json({ error: 'invalid_body' }, { status: 400 });
   const { year, version } = parsed.data;

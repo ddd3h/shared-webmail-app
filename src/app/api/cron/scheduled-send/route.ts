@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { cronAuthorized } from '@/lib/cron-auth';
 import { checkRateLimit, getClientIp } from '@/lib/rate-limit';
 import { sendDosAlert } from '@/lib/dos-alert';
 import { dispatchDueScheduledSends } from '@/lib/mail/deliver';
@@ -18,8 +19,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'too_many_requests' }, { status: 429 });
   }
 
-  const authHeader = req.headers.get('authorization');
-  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+  if (!cronAuthorized(req)) {
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   }
 

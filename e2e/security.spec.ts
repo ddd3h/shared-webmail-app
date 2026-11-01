@@ -5,11 +5,12 @@ import { db } from './helpers/db';
 import { mm } from './helpers/mattermost-mock';
 import { clearNotifications, resetSecurity } from './helpers/seed';
 import { fakeIp } from './helpers/ui';
+import { refreshSavedLogins } from './helpers/auth';
 import { deleteAccountsWithPrefix, newAccount as newAccountIn } from './helpers/accounts';
 
 test.describe.configure({ mode: 'serial' });
 test.beforeEach(async () => { await resetSecurity(); await clearNotifications(); await mm.reset(); });
-test.afterAll(async () => { await resetSecurity(); });
+test.afterAll(async () => { await resetSecurity(); await refreshSavedLogins(); }); // (this spec ends the sessions of the saved test users: locks, "log out everywhere")
 
 const CHROME_WIN = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36';
 const SAFARI_IOS = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1';
@@ -132,7 +133,7 @@ test.describe('総当たり・スイーピングへの対策', () => {
     const paths = ['/wp-admin', '/.env', '/admin/login', '/phpmyadmin', '/api/users', '/api/admin/users', '/api/threads', '/.git/config', '/backup.zip', '/api/work/payslips', '/api/bank-accounts', '/api/transfers/batches', '/config.json', '/server-status', '/api/expenses', '/api/trips'];
     const statuses: number[] = [];
     for (const p of paths) statuses.push((await c.get(p, { maxRedirects: 0 })).status());
-    expect(statuses.slice(0, 15).every(s => s === 307)).toBe(true); // just sent to the login page
+    expect(statuses.slice(0, 15).every(s => s === 307 || s === 401)).toBe(true); // just sent to the login page (an API: told 401)
     expect(statuses[15]).toBe(429);
     expect(await db.ip_blocks.findUnique({ where: { ip } })).toMatchObject({ source: 'auto' });
     expect((await db.security_events.findMany({ where: { type: 'sweep_detected' } })).length).toBeGreaterThan(0);
@@ -608,7 +609,7 @@ test.describe('画面', () => {
       await expect(page.getByText('ログイン失敗（24時間）')).toBeVisible();
       await expect(page.getByLabel('アクセスの条件', { exact: true })).toHaveCount(0); // not on the page until chosen
       await page.getByRole('tab', { name: 'アカウントと端末' }).click();
-      for (const name of ['ログイン方法', 'ログイン中の端末']) await expect(page.getByLabel(name, { exact: true })).toBeVisible();
+      for (const name of ['ユーザーとログイン方法', 'ログイン中の端末']) await expect(page.getByLabel(name, { exact: true })).toBeVisible();
       await page.getByRole('tab', { name: 'ログイン履歴' }).click();
       await expect(page.getByLabel('ログイン履歴', { exact: true })).toBeVisible();
       await page.getByRole('tab', { name: 'アクセスの条件' }).click();

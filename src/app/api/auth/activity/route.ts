@@ -9,5 +9,5 @@ export async function POST() {
   const session = await getSession();
   if (!session) return NextResponse.json({ authenticated: false }, { status: 401 });
   await prisma.sessions.update({ where: { id: session.sessionId }, data: { last_input_at: new Date() } }).catch(() => {});
-  return NextResponse.json({ ok: true, idle_minutes: (await loadSecurityPolicy()).idleMinutes });
+  return NextResponse.json({ ok: true, idle_minutes: session.pwa ? 0 : (await loadSecurityPolicy()).idleMinutes });
 }

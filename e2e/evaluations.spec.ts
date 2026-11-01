@@ -63,22 +63,23 @@ test.describe('評価期間（人事）', () => {
     expect((await keiri.post(`/api/evaluations/cycles/${id}/open`)).status()).toBe(409);
   });
 
-  test('開始すると全員分の評価票ができ、評価者は部署長（いなければ上の部署の部署長）になる', async ({ as }) => {
+  test('開始すると全員分の評価票ができ、評価者は、その部署で一つ上の役職の人（いなければ上の部署の一番上の人）になる', async ({ as }) => {
     await buildOrg(as);
     const keiri = await as('keiri');
     const id = (await (await keiri.post('/api/evaluations/cycles', { data: body() })).json()).id;
     const res = await (await keiri.post(`/api/evaluations/cycles/${id}/open`)).json();
     expect(res.created).toBe(Object.keys(USERS).length);
     const evaluatorOf = async (r: Role) => (await db.evaluations.findFirst({ where: { cycle_id: id, user_id: USERS[r].id } }))!.evaluator_id;
-    expect(await evaluatorOf('tanaka')).toBe(USERS.sato.id); // 営業部の部署長
+    expect(await evaluatorOf('tanaka')).toBe(USERS.sato.id); // 営業部の課長
     expect(await evaluatorOf('suzuki')).toBe(USERS.sato.id);
-    expect(await evaluatorOf('sato')).toBe(USERS.admin.id); // 自分が部署長 → 本社の部署長
+    expect(await evaluatorOf('sato')).toBe(USERS.admin.id); // 営業部で一番上 → 本社の部長
     expect(await evaluatorOf('yamada')).toBe(USERS.admin.id);
-    expect(await evaluatorOf('keiri')).toBeNull(); // 所属なし
+    expect(await evaluatorOf('keiri')).toBe(USERS.admin.id); // 本社の「人事」(序列15)の上は部長(30)
+    expect(await evaluatorOf('guest')).toBeNull(); // どの部署にもいない
     expect(res.withoutEvaluator).toBeGreaterThanOrEqual(1);
   });
 
-  test('評価の権限（役職）がない部署長は評価者にならず、さらに上の人になる', async ({ as }) => {
+  test('評価の権限（役職）がない上の人は評価者にならず、さらに上の人になる', async ({ as }) => {
     const org = await buildOrg(as);
     await (await as('admin')).put(`/api/org/positions/${org.positions['課長']}`, { data: { name: '課長', level: 20, permissions: ['approve_requests'] } });
     const id = await openCycle(await as('keiri'));
@@ -256,8 +257,8 @@ test.describe('確定', () => {
   test('自分の評価は、他に確定できる人がいる限り自分では確定できない', async ({ as }) => {
     const { keiri, criteria } = await setup(as);
     const own = await formOf(keiri, (await db.eval_cycles.findFirst())!.id, 'keiri');
-    expect((await put(await as('admin'), own, 'manager', {})).status()).toBe(403); // 評価者ではない
     await keiri.put(`/api/evaluations/${own}/evaluator`, { data: { evaluator_id: USERS.sato.id } });
+    expect((await put(await as('admin'), own, 'manager', {})).status()).toBe(403); // 評価者ではない（本社の部長だが、この票の評価者は佐藤に変えた）
     expect((await put(keiri, own, 'self', { scores: scoresFor(criteria, 3), submit: true })).status()).toBe(200);
     expect((await put(await as('sato'), own, 'manager', { scores: scoresFor(criteria, 3), submit: true })).status()).toBe(200);
     const res = await keiri.post(`/api/evaluations/${own}/finalize`, { data: {} });

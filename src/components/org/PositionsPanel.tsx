@@ -10,7 +10,7 @@ type Draft = { id?: string; name: string; level: string; permissions: Capability
 export default function PositionsPanel({ data, onChanged }: { data: OrgData; onChanged: () => void }) {
   const [draft, setDraft] = useState<Draft | null>(null);
   const [msg, setMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
-  const holders = (p: OrgPosition) => data.members.filter(m => m.position_id === p.id).length;
+  const holders = (p: OrgPosition) => data.members.flatMap(m => m.memberships).filter(m => m.position_id === p.id).length;
   const flash = (type: 'success' | 'error', text: string) => setMsg({ type, text });
 
   async function save() {
@@ -21,7 +21,7 @@ export default function PositionsPanel({ data, onChanged }: { data: OrgData; onC
     else flash('error', (await res.json().catch(() => ({}))).error === 'duplicate_name' ? '同じ名前の役職があります' : '保存できませんでした');
   }
   async function remove(p: OrgPosition) {
-    if (!confirm(`「${p.name}」を削除しますか？ ${holders(p)}人が役職なしになります。`)) return;
+    if (!confirm(`「${p.name}」を削除しますか？ ${holders(p)}件の所属が役職なしになります。`)) return;
     if ((await api(`/api/org/positions/${p.id}`, 'DELETE')).ok) { flash('success', '削除しました'); onChanged(); }
   }
   async function addDefaults() {
@@ -33,7 +33,7 @@ export default function PositionsPanel({ data, onChanged }: { data: OrgData; onC
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">
-        <p className="flex-1 min-w-48 text-xs text-gray-500">役職ごとに権限を決めます。権限は、その人が<b>部署長になっている部署（配下を含む）</b>に対して効きます。</p>
+        <p className="flex-1 min-w-48 text-xs text-gray-500">役職ごとに権限を決めます。権限は、その人が<b>この役職で所属している部署（配下の部署を含む）</b>に対して効きます。同じ人でも、部署ごとに別の役職にできます。</p>
         {data.positions.length === 0 && <button className={btn} onClick={addDefaults}>標準の役職を作成</button>}
         <button className={btnPrimary} onClick={() => setDraft({ name: '', level: '0', permissions: [] })}>＋ 役職を追加</button>
       </div>

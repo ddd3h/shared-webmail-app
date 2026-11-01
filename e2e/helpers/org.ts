@@ -7,10 +7,10 @@ type As = (role: Role) => Promise<APIRequestContext>;
 export type OrgIds = { headquarters: string; sales: string; dev: string; positions: Record<string, string> };
 
 /**
- *  本社 (head: 管理者)
- *   ├─ 営業部 (head: 佐藤 = 課長)   members: 田中 メンバー, 鈴木 メンバー
- *   └─ 開発部 (head: 山田 = 部長)
- *  経理 (人事の役職: 人事評価を運用する) has no unit.
+ *  本社   管理者 (部長), 経理 (人事)
+ *   ├─ 営業部   佐藤 (課長), 田中 (メンバー), 鈴木 (メンバー)
+ *   └─ 開発部   山田 (部長)
+ *  Placements come from each person's 役職 in each 部署; there is no separate "head".
  */
 export async function buildOrg(as: As): Promise<OrgIds> {
   const admin = await as('admin');
@@ -20,23 +20,29 @@ export async function buildOrg(as: As): Promise<OrgIds> {
   const listed = await (await admin.get('/api/org')).json();
   const positions: Record<string, string> = Object.fromEntries(listed.positions.map((p: any) => [p.name, p.id]));
 
-  const unit = async (name: string, parent_id: string | null, head: Role | null) => {
-    const res = await admin.post('/api/org/units', { data: { name, parent_id, head_user_id: head ? USERS[head].id : null } });
+  const unit = async (name: string, parent_id: string | null) => {
+    const res = await admin.post('/api/org/units', { data: { name, parent_id } });
     expect(res.status()).toBe(201);
     return (await res.json()).id as string;
   };
-  const headquarters = await unit('本社', null, 'admin');
-  const sales = await unit('営業部', headquarters, 'sato');
-  const dev = await unit('開発部', headquarters, 'yamada');
+  const headquarters = await unit('本社', null);
+  const sales = await unit('営業部', headquarters);
+  const dev = await unit('開発部', headquarters);
 
-  const place = async (role: Role, unitId: string | null, position: string | null) =>
-    expect((await admin.put(`/api/org/members/${USERS[role].id}`, { data: { org_unit_id: unitId, position_id: position ? positions[position] : null } })).status()).toBe(200);
+  const place = async (role: Role, unitId: string, position: string | null) => putMemberships(admin, USERS[role].id, [{ unit_id: unitId, position_id: position ? positions[position] : null }]);
+  await place('admin', headquarters, '部長');
   await place('sato', sales, '課長');
   await place('tanaka', sales, 'メンバー');
   await place('suzuki', sales, 'メンバー');
   await place('yamada', dev, '部長');
-  await place('keiri', null, '人事');
+  await place('keiri', headquarters, '人事');
   return { headquarters, sales, dev, positions };
+}
+
+/** Sets every 所属 of a person: [{ unit_id, position_id }]. */
+export async function putMemberships(admin: APIRequestContext, userId: string, memberships: { unit_id: string; position_id: string | null }[]) {
+  const res = await admin.put(`/api/org/members/${userId}`, { data: { memberships } });
+  expect(res.status()).toBe(200);
 }
 
 export const CRITERIA = [

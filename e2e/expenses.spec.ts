@@ -303,12 +303,12 @@ test.describe('領収書のダウンロード権限', () => {
     return { id, rid };
   }
 
-  test('本人と管理者は取得でき、添付ファイルとして返る（その場で表示されない）', async ({ as }) => {
+  test('本人と管理者は取得でき、ブラウザでそのまま表示される形で返る（ダウンロードにならない）', async ({ as }) => {
     const { rid } = await claimWithReceipt(as);
     for (const role of ['sato', 'admin'] as const) {
       const res = await (await as(role)).get(`/api/expenses/receipts/${rid}`);
       expect(res.status()).toBe(200);
-      expect(res.headers()['content-disposition']).toContain('attachment');
+      expect(res.headers()['content-disposition']).toMatch(/^inline;/);
       expect(res.headers()['x-content-type-options']).toBe('nosniff');
       expect(res.headers()['content-type']).toBe('application/pdf');
     }
@@ -318,7 +318,7 @@ test.describe('領収書のダウンロード権限', () => {
     const { rid } = await claimWithReceipt(as);
     expect((await (await as('tanaka')).get(`/api/expenses/receipts/${rid}`)).status()).toBe(403);
     expect((await (await as('suzuki')).get(`/api/expenses/receipts/${rid}`)).status()).toBe(403);
-    expect((await anon.get(`/api/expenses/receipts/${rid}`, { maxRedirects: 0 })).status()).toBe(307);
+    expect((await anon.get(`/api/expenses/receipts/${rid}`, { maxRedirects: 0 })).status()).toBe(401);
   });
 
   test('存在しない領収書は404', async ({ as }) => {

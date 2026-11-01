@@ -6,7 +6,7 @@ import FoldCard from '@/components/mobile/FoldCard';
 type Status = {
   client_id: string | null; has_secret: boolean; connected: boolean; ready: boolean; company: { id: number; name: string | null } | null;
   walletable: { id: number; type: string; name?: string } | null; account_map: Record<string, { account_item_id: number; tax_code: number }>;
-  auto_sync: boolean; sync_from: string | null; redirect_uri: string; kinds: Record<string, string>; expense_categories: string[];
+  auto_sync: boolean; send_receipts?: boolean; sync_from: string | null; redirect_uri: string; kinds: Record<string, string>; expense_categories: string[];
 };
 type Options = { companies: { id: number; name: string }[]; walletables: { id: number; name: string; type: string }[]; account_items: { id: number; name: string }[] };
 const RESULT: Record<string, string> = { connected: 'freeeに接続しました。会社・口座・勘定科目を選んでください', invalid_state: '接続を確認できませんでした。もう一度「freeeに接続」を押してください', denied: 'freeeで許可されませんでした', token_failed: 'freeeから許可の情報を受け取れませんでした。Client ID と Secret を確認してください' };
@@ -123,6 +123,8 @@ export default function FreeeSettingsCard() {
                 <p className="text-xs text-gray-400 mt-1">これより前の分は、すでにfreeeに入っている想定で送りません。</p></div>
               <label className="flex items-start gap-2 text-sm text-gray-900"><input type="checkbox" className="mt-1" checked={st.auto_sync} disabled={busy} onChange={e => put({ auto_sync: e.target.checked }, e.target.checked ? '自動送信をオンにしました' : '自動送信をオフにしました')} />
                 <span>支払い済みになったら自動でfreeeに送る<span className="block text-xs text-gray-500">オフのときは「振込データ › freee連携」の「今すぐ送る」で送ります。</span></span></label>
+              <label className="flex items-start gap-2 text-sm text-gray-900"><input type="checkbox" className="mt-1" checked={st.send_receipts !== false} disabled={busy} onChange={e => put({ send_receipts: e.target.checked }, e.target.checked ? '証憑も一緒に送ります' : '証憑は送りません（取引だけ送ります）')} />
+                <span>証憑（領収書・請求書）も一緒に送る<span className="block text-xs text-gray-500">経費に添付した領収書、給与明細に合算した経費の領収書、振込申請の請求書を、freeeの「ファイルボックス」に入れて、取引に紐づけます。</span></span></label>
             </div>
           </>
         )}

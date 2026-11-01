@@ -54,9 +54,9 @@ test.describe('PCのナビゲーション', () => {
         await openOrgMenu(page);
         for (const label of ['組織', '人事評価']) await expect(header(page).getByRole('link', { name: new RegExp(`^${label}`) })).toBeVisible();
         await openWorkMenu(page);
-        // nobody has a unit in this test, so only admins can approve
+        // nobody has a unit in this test, so only admins can approve (and 役員, who decide each other's requests)
         const approvals = header(page).getByRole('link', { name: /^チームの承認/ });
-        if (USERS[role].role === 'admin') await expect(approvals).toBeVisible(); else await expect(approvals).toHaveCount(0);
+        if (USERS[role].role === 'admin' || USERS[role].worker_type === 'executive') await expect(approvals).toBeVisible(); else await expect(approvals).toHaveCount(0);
       });
 
       test('アカウントメニューに予約送信・プロフィール・ログアウトがあり、「管理」は管理者だけ', async ({ page }) => {

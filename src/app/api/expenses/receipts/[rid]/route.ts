@@ -1,10 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createReadStream } from 'fs';
-import path from 'path';
 import { prisma } from '@/lib/db';
 import { getSession, requireAuth } from '@/lib/auth';
 import { getActor, isFinance } from '@/lib/work-auth';
-import { APP_ROOT } from '@/lib/app-root';
+import { fileResponse } from '@/lib/file-response';
+import { canReviewRequest } from '@/lib/org-server';
 import { deleteStoredFiles } from '@/lib/attachment-storage';
 import { isEditable } from '@/lib/expense';
 
@@ -14,23 +13,16 @@ async function load(rid: string, userId: string) {
   return { actor, receipt };
 }
 
-// GET /api/expenses/receipts/:rid - download (claimant or admin). Always an attachment, never rendered inline.
+// GET /api/expenses/receipts/:rid - shown in the browser (images and PDF; see file-response.ts). Who may open it: the claimant, 経理担当・管理者,
+// and the people who decide the claim (the approvers of the 部署 it was made for: they have to see the receipt to approve).
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ rid: string }> }) {
   const { rid } = await params;
   const session = await getSession();
   requireAuth(session);
   const { actor, receipt } = await load(rid, session.userId);
   if (!actor || !receipt) return NextResponse.json({ error: 'not_found' }, { status: 404 });
-  if (receipt.claim.user_id !== actor.id && !isFinance(actor)) return NextResponse.json({ error: 'forbidden' }, { status: 403 });
-  const stream = createReadStream(path.join(APP_ROOT, receipt.storage_key));
-  return new NextResponse(stream as any, {
-    headers: {
-      'Content-Type': receipt.content_type,
-      'Content-Length': String(receipt.size),
-      'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(receipt.filename)}`,
-      'X-Content-Type-Options': 'nosniff',
-    },
-  });
+  if (receipt.claim.user_id !== actor.id && !isFinance(actor) && !(await canReviewRequest(actor, receipt.claim))) return NextResponse.json({ error: 'forbidden' }, { status: 403 });
+  return fileResponse(receipt);
 }
 
 // DELETE /api/expenses/receipts/:rid - remove a receipt from your own pending/rejected claim

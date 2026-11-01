@@ -88,11 +88,13 @@ async function organisation() {
     pos[key] = existing?.id ?? `demo_pos_${key}`;
     if (!existing) await up('org_positions', pos[key], { name, level, permissions });
   }
-  await up('org_units', 'demo_unit_hq', { name: 'デモ株式会社', head_user_id: U.yamada, sort: 0 });
-  await up('org_units', 'demo_unit_sales', { name: '営業部', parent_id: 'demo_unit_hq', head_user_id: U.sato, sort: 1 });
-  await up('org_units', 'demo_unit_admin', { name: '管理部', parent_id: 'demo_unit_hq', head_user_id: U.keiri, sort: 2 });
+  await up('org_units', 'demo_unit_hq', { name: 'デモ株式会社', sort: 0 });
+  await up('org_units', 'demo_unit_sales', { name: '営業部', parent_id: 'demo_unit_hq', sort: 1 });
+  await up('org_units', 'demo_unit_admin', { name: '管理部', parent_id: 'demo_unit_hq', sort: 2 });
   const place = { [U.yamada]: ['demo_unit_hq', pos.head], [U.sato]: ['demo_unit_sales', pos.lead], [U.tanaka]: ['demo_unit_sales', pos.member], [U.suzuki]: ['demo_unit_sales', pos.member], [U.keiri]: ['demo_unit_admin', pos.lead], [U.admin]: ['demo_unit_admin', pos.head] };
-  for (const [id, [org_unit_id, position_id]] of Object.entries(place)) await prisma.users.update({ where: { id }, data: { org_unit_id, position_id } });
+  // 所属は「人 × 部署 × 役職」（複数の部署に、部署ごとの役職で入れられる）
+  await prisma.org_memberships.deleteMany({ where: { user_id: { in: Object.keys(place) } } });
+  await prisma.org_memberships.createMany({ data: Object.entries(place).map(([user_id, [unit_id, position_id]]) => ({ user_id, unit_id, position_id })) });
 }
 
 async function mail() {
@@ -128,21 +130,28 @@ async function mail() {
   }
 }
 
+async function attend(eventId, userIds) {
+  for (const user_id of userIds) await prisma.calendar_event_attendees.upsert({ where: { event_id_user_id: { event_id: eventId, user_id } }, create: { event_id: eventId, user_id }, update: {} });
+}
+
 async function calendarAndTodos() {
   const events = [
     ['朝会', 0, '09:30', '10:00', null], ['週次ミーティング', 0, '10:00', '11:00', null], ['A社 打ち合わせ', 0, '14:00', '15:30', U.sato],
     ['見積書レビュー', 1, '11:00', '12:00', U.tanaka], ['全社会議', 2, '15:00', '16:30', null], ['B社 訪問', 3, '13:00', '17:00', U.sato], ['新人研修', 4, '10:00', '12:00', U.yamada],
   ];
   for (const [i, [title, offset, from, to, owner]] of events.entries()) {
-    await up('calendar_events', `demo_ev_${i + 1}`, { mailbox_id: MB.team, source: 'local', title, start_at: at(offset, from), end_at: at(offset, to), owner_user_id: owner, created_by_id: U.admin });
+    // everybody has one calendar: an event with no owner of its own is the admin's, and the team takes part (so it is in each calendar)
+    await up('calendar_events', `demo_ev_${i + 1}`, { source: 'local', title, start_at: at(offset, from), end_at: at(offset, to), owner_user_id: owner ?? U.admin, created_by_id: U.admin });
+    if (!owner) await attend(`demo_ev_${i + 1}`, [U.sato, U.tanaka, U.suzuki, U.yamada]);
   }
-  await up('calendar_events', 'demo_ev_allday', { mailbox_id: MB.team, source: 'local', title: '創立記念日', all_day: true, start_at: day(5), end_at: day(6), created_by_id: U.admin });
+  await up('calendar_events', 'demo_ev_allday', { source: 'local', title: '創立記念日', all_day: true, start_at: day(5), end_at: day(6), owner_user_id: U.admin, created_by_id: U.admin });
+  await attend('demo_ev_allday', [U.sato, U.tanaka, U.suzuki, U.yamada]);
   const todos = [
-    ['A社への見積書を送る', -1, U.sato, null, '最新の単価表を使うこと'], ['月次レポートの確認', 0, U.admin, null, null], ['展示会の備品を発注', 0, null, null, null],
-    ['来月のシフトを調整', 3, U.sato, null, null], ['契約書のひな形を更新', null, null, null, '法務の確認待ち'], ['請求書を送付', -2, U.sato, true, null],
+    ['A社への見積書を送る', -1, U.sato, null, '最新の単価表を使うこと'], ['月次レポートの確認', 0, U.admin, null, null], ['展示会の備品を発注', 0, U.sato, null, null],
+    ['来月のシフトを調整', 3, U.sato, null, null], ['契約書のひな形を更新', null, U.admin, null, '法務の確認待ち'], ['請求書を送付', -2, U.sato, true, null],
   ];
   for (const [i, [title, due, assignee_id, done, description]] of todos.entries()) {
-    await up('todos', `demo_todo_${i + 1}`, { mailbox_id: MB.team, title, description, due_date: due === null ? null : day(due), assignee_id, created_by_id: U.admin, done_at: done ? new Date() : null, done_by_id: done ? U.sato : null });
+    await up('todos', `demo_todo_${i + 1}`, { title, description, due_date: due === null ? null : day(due), assignee_id, created_by_id: U.admin, done_at: done ? new Date() : null, done_by_id: done ? U.sato : null });
   }
 }
 

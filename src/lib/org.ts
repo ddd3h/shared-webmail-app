@@ -2,8 +2,8 @@
 
 // ---- permissions a position can grant ----
 export const ORG_CAPABILITIES = {
-  approve_requests: { label: '部下の経費・出張を承認する', hint: '部署長になっている部署（配下を含む）のメンバーの申請を承認・却下できます' },
-  evaluate: { label: '部下の人事評価をする', hint: '部署長になっている部署のメンバーの評価者になります' },
+  approve_requests: { label: '部下の経費・出張を承認する', hint: 'この役職で所属している部署（配下の部署を含む）のメンバーの申請を承認・却下できます' },
+  evaluate: { label: '部下の人事評価をする', hint: 'この役職で所属している部署のメンバー（自分より下の役職）の評価者になります' },
   hr_admin: { label: '人事評価を運用する', hint: '評価期間の作成・開始・確定と、全員の結果の閲覧ができます（部署に関係なく全社）' },
 } as const;
 export type Capability = keyof typeof ORG_CAPABILITIES;
@@ -19,7 +19,9 @@ export const DEFAULT_POSITIONS: { name: string; level: number; permissions: Capa
 ];
 
 // ---- tree ----
-export type Unit = { id: string; parent_id: string | null; head_user_id: string | null };
+export type Unit = { id: string; parent_id: string | null };
+/** One person in one 部署: `level` is the 役職's 序列 there (0 without a 役職), `caps` what that 役職 allows. */
+export type Membership = { user_id: string; unit_id: string; level: number; caps: Capability[] };
 
 /** Would making `newParentId` the parent of `unitId` create a loop (or make a unit its own parent)? */
 export function wouldCreateCycle(units: Unit[], unitId: string, newParentId: string | null): boolean {
@@ -45,21 +47,40 @@ export function withDescendants(units: Unit[], rootIds: string[]): Set<string> {
   return out;
 }
 
-/** Units this person heads, with all units below them: where their permissions apply. */
-export function scopeOf(units: Unit[], userId: string): Set<string> {
-  return withDescendants(units, units.filter(u => u.head_user_id === userId).map(u => u.id));
+/** A unit and the units above it, nearest first. */
+export function ancestorsOf(units: Unit[], unitId: string): string[] {
+  const byId = new Map(units.map(u => [u.id, u]));
+  const out: string[] = [];
+  for (let cur = byId.get(unitId), hops = 0; cur && hops <= units.length; cur = cur.parent_id ? byId.get(cur.parent_id) : undefined, hops++) out.push(cur.id);
+  return out;
+}
+
+/** Where `cap` applies to this person: the 部署 in which their 役職 grants it, and everything below those 部署. */
+export function scopeFor(units: Unit[], memberships: Membership[], userId: string, cap: Capability): Set<string> {
+  return withDescendants(units, memberships.filter(m => m.user_id === userId && m.caps.includes(cap)).map(m => m.unit_id));
+}
+
+/** Everybody who holds `cap` in the 部署 `unitId` or above it (their permission reaches this 部署). */
+export function holdersOver(units: Unit[], memberships: Membership[], unitId: string, cap: Capability): string[] {
+  const chain = new Set(ancestorsOf(units, unitId));
+  return [...new Set(memberships.filter(m => chain.has(m.unit_id) && m.caps.includes(cap)).map(m => m.user_id))];
 }
 
 /**
- * Who evaluates `user`: the head of their unit; if they are the head themselves (or the unit has none), the head of the
- * next unit up, and so on. Heads for whom `eligible` is false are skipped. Null when nobody qualifies.
+ * Who evaluates `subject` in the 部署 `subject.unit_id`: the person there with the 役職 just above theirs that may evaluate (the lowest 序列
+ * above the subject's). Without one, the top evaluator of the 部署 above, and so on up. People for whom `eligible` is false are skipped.
+ * Null when nobody qualifies.
  */
-export function evaluatorFor(units: Unit[], user: { id: string; unit_id: string | null }, eligible: (userId: string) => boolean = () => true): string | null {
-  const byId = new Map(units.map(u => [u.id, u]));
-  for (let cur = user.unit_id ? byId.get(user.unit_id) : undefined, hops = 0; cur && hops <= units.length; cur = cur.parent_id ? byId.get(cur.parent_id) : undefined, hops++) {
-    if (cur.head_user_id && cur.head_user_id !== user.id && eligible(cur.head_user_id)) return cur.head_user_id;
-  }
-  return null;
+export function evaluatorFor(units: Unit[], memberships: Membership[], subject: { id: string; unit_id: string | null; level: number }, eligible: (userId: string) => boolean = () => true): string | null {
+  if (!subject.unit_id) return null;
+  const pick = (unitId: string, own: boolean): string | null => {
+    const found = memberships.filter(m => m.unit_id === unitId && m.user_id !== subject.id && m.caps.includes('evaluate') && eligible(m.user_id) && (!own || m.level > subject.level));
+    if (found.length === 0) return null;
+    // in their own 部署: the nearest above (lowest 序列); higher up: the top one. Ties are settled by id so the answer never changes between runs.
+    found.sort((a, b) => (own ? a.level - b.level : b.level - a.level) || a.user_id.localeCompare(b.user_id));
+    return found[0].user_id;
+  };
+  return ancestorsOf(units, subject.unit_id).reduce<string | null>((got, id, i) => got ?? pick(id, i === 0), null);
 }
 
 // ---- evaluation ----

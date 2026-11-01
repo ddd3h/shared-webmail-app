@@ -58,10 +58,11 @@ const used = (g.__usedResumeChallenges ??= new Map<string, number>());
 
 export const issueChallenge = (ip: string) => sealShort('device-resume', { n: randomBytes(16).toString('hex'), ip }, CHALLENGE_TTL_MS);
 
-/** True once for a genuine, unexpired challenge that was asked for from this same address. */
-export async function consumeChallenge(token: unknown, ip: string): Promise<boolean> {
+/** True once for a genuine, unexpired challenge. It is not tied to an address: the installed app is judged by its key, and may
+ *  change network (VPN, Wi-Fi to mobile) between asking and answering. */
+export async function consumeChallenge(token: unknown): Promise<boolean> {
   const note = await unsealShort<{ n: string; ip: string }>('device-resume', token);
-  if (!note || note.ip !== ip) return false;
+  if (!note) return false;
   const now = Date.now();
   for (const [n, at] of used) if (now - at > CHALLENGE_TTL_MS * 2) used.delete(n);
   if (used.has(note.n)) return false;
@@ -105,8 +106,7 @@ export async function checkResume(req: NextRequest, ip: string, body: { challeng
   });
   if (!device?.public_key || !device.key_id) return { ok: false as const, reason: 'no_device' as const };
   if (device.user.locked_at) return { ok: false as const, reason: 'locked' as const, device };
-  if (!(await consumeChallenge(body.challenge, ip))) return { ok: false as const, reason: 'bad_challenge' as const, device };
-  if (deviceFingerprint(req.headers.get('user-agent')) !== device.device_fp) return { ok: false as const, reason: 'fingerprint' as const, device };
+  if (!(await consumeChallenge(body.challenge))) return { ok: false as const, reason: 'bad_challenge' as const, device };
   if (!(await verifyDeviceSignature(device.public_key, resumeMessage(device.key_id, body.challenge as string), body.signature))) return { ok: false as const, reason: 'signature' as const, device };
   return { ok: true as const, device, user: device.user };
 }

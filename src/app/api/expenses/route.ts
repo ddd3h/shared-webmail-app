@@ -13,12 +13,14 @@ import { isMileageError, resolveMileage } from '@/lib/mileage-server';
 import { loadSchedules, planOf } from '@/lib/pay-schedule-server';
 import { googleTransitLink, yahooTransitLink } from '@/lib/transit';
 import { MAX_ADDRESS_LENGTH, mapsLink, metersToKm } from '@/lib/mileage';
+import { resolveUnit } from '@/lib/org-server';
 
 const include = {
   user: { select: { id: true, name: true, worker_type: true, home_address: true } },
   reviewer: { select: { name: true } },
   payslip: { select: { id: true, pay_month: true, title: true, status: true } },
   trip: { select: { id: true, destination: true, start_date: true, end_date: true } },
+  unit: { select: { id: true, name: true } },
   receipts: { select: { id: true, filename: true, content_type: true, size: true }, orderBy: { created_at: 'asc' as const } },
 };
 
@@ -53,6 +55,7 @@ function serialize(c: any, schedules: Awaited<ReturnType<typeof loadSchedules>>[
       yahoo_url: c.transit_from && c.transit_to ? yahooTransitLink({ from: c.transit_from, to: c.transit_to, date: c.expense_date.toISOString().slice(0, 10) }) : null,
       google_url: c.transit_from && c.transit_to ? googleTransitLink({ from: c.transit_from, to: c.transit_to, date: c.expense_date.toISOString().slice(0, 10) }) : null,
     } : null,
+    unit: c.unit ?? null,   // the 部署 claimed for (its approvers decide)
     receipts: c.receipts,
     created_at: c.created_at,
   };
@@ -114,6 +117,7 @@ const fieldsSchema = z.object({
   payment_method: z.enum(['personal', 'company']),
   description: z.string().trim().max(2000).optional(),
   trip_id: z.string().min(1).optional(),
+  unit_id: z.string().min(1).optional(),   // the 部署 claimed for: one of the person's own (a person in several has to choose)
   destination: z.string().trim().min(1).max(MAX_ADDRESS_LENGTH).optional(),
   origin: z.string().trim().max(MAX_ADDRESS_LENGTH).optional(), // where the trip started, when not from home
   transit_from: z.string().trim().max(MAX_ADDRESS_LENGTH).optional(),   // 交通費 by public transport: where from / to, and the route that was shown
@@ -131,7 +135,7 @@ export async function POST(req: NextRequest) {
 
   let fd: FormData;
   try { fd = await req.formData(); } catch { return NextResponse.json({ error: 'file_too_large' }, { status: 413 }); }
-  const parsed = fieldsSchema.safeParse(Object.fromEntries(['expense_date', 'category', 'title', 'amount', 'payment_method', 'description', 'trip_id', 'destination', 'origin', 'manual_one_way_km', 'transit_from', 'transit_to', 'transit_summary'].map(k => [k, fd.get(k) || undefined])));
+  const parsed = fieldsSchema.safeParse(Object.fromEntries(['expense_date', 'category', 'title', 'amount', 'payment_method', 'description', 'trip_id', 'unit_id', 'destination', 'origin', 'manual_one_way_km', 'transit_from', 'transit_to', 'transit_summary'].map(k => [k, fd.get(k) || undefined])));
   if (!parsed.success) return NextResponse.json({ error: 'invalid_body' }, { status: 400 });
   const files = fd.getAll('file').filter(f => f instanceof File && (f as File).size > 0) as File[];
   if (files.length > MAX_RECEIPTS) return NextResponse.json({ error: 'too_many_files' }, { status: 400 });
@@ -149,12 +153,14 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'invalid_body' }, { status: 400 });
   }
   if (d.trip_id && !(await checkTripLink(actor.id, d.trip_id))) return NextResponse.json({ error: 'invalid_trip' }, { status: 400 });
+  const unit = await resolveUnit(actor.id, d.unit_id);
+  if (!unit.ok) return NextResponse.json({ error: unit.error }, { status: 400 });
   const saved = await saveUploadedFiles(files);
   try {
     const row = await prisma.expense_claims.create({
       data: {
         user_id: actor.id, expense_date: toDbDate(d.expense_date), category: d.category, title: d.title,
-        amount: mileage ? mileage.amount : d.amount!, payment_method: mileage ? 'personal' : d.payment_method, description: d.description || null, trip_id: d.trip_id ?? null,
+        amount: mileage ? mileage.amount : d.amount!, payment_method: mileage ? 'personal' : d.payment_method, description: d.description || null, trip_id: d.trip_id ?? null, unit_id: unit.unit_id,
         ...(d.category === '交通費' && (d.transit_from || d.transit_to) ? { transit_from: d.transit_from || null, transit_to: d.transit_to || null, transit_summary: d.transit_summary || null } : {}),
         ...(mileage ? { mileage_origin: mileage.origin, mileage_destination: mileage.destination, mileage_distance_m: mileage.distance_m, mileage_rate: mileage.rate, mileage_source: mileage.source } : {}),
         receipts: { create: saved },

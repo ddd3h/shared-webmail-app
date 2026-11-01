@@ -21,6 +21,8 @@ export default async function globalSetup() {
   await db.app_settings.upsert({ where: { key: 'SECURITY_REQUIRE_2FA' }, create: { key: 'SECURITY_REQUIRE_2FA', value: 'off' }, update: { value: 'off' } });
   // the saved sessions are used for many minutes by API clients that never touch a keyboard, so the idle logout is off by default; e2e/idle-logout.spec.ts turns it on
   await db.app_settings.upsert({ where: { key: 'SECURITY_IDLE_MINUTES' }, create: { key: 'SECURITY_IDLE_MINUTES', value: '0' }, update: { value: '0' } });
+  // the saved sessions are hours old by the end of a run, and API clients cannot type a password: the "prove it again" for high-risk actions is off by default; e2e/reauth.spec.ts turns it on
+  await db.app_settings.upsert({ where: { key: 'SECURITY_REAUTH_MINUTES' }, create: { key: 'SECURITY_REAUTH_MINUTES', value: '0' }, update: { value: '0' } });
   await db.app_settings.upsert({ where: { key: 'SECURITY_DEVICE_BINDING' }, create: { key: 'SECURITY_DEVICE_BINDING', value: 'off' }, update: { value: 'off' } });
 
   // the own-car claims search routes at a stand-in service (MAPS_API_URL); e2e/mileage.spec.ts switches the key off for its own tests

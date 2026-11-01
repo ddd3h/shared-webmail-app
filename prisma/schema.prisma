@@ -122,12 +122,9 @@ model users {
   withholding_class      String   @default("ko") // 源泉徴収（所得税）の税額表: 'ko' = 甲欄 (主たる給与), 'otsu' = 乙欄 (従たる給与)
   bank_account               user_bank_accounts?      @relation("bank_owner")
   year_end_declarations      year_end_declarations[]  @relation("year_end_owner")
+  org_memberships            org_memberships[]
+  unit_designations          org_unit_designations[]
   year_end_confirmed         year_end_declarations[]  @relation("year_end_confirmer")
-  org_unit_id                String?
-  position_id                String?
-  org_unit                   org_units?               @relation("unit_members", fields: [org_unit_id], references: [id], onDelete: SetNull)
-  position                   org_positions?           @relation(fields: [position_id], references: [id], onDelete: SetNull)
-  headed_units               org_units[]              @relation("unit_head")
   evaluations_received       evaluations[]            @relation("eval_subject")
   evaluations_to_do          evaluations[]            @relation("eval_evaluator")
   bank_accounts_verified     user_bank_accounts[]     @relation("bank_verifier")
@@ -140,6 +137,7 @@ model users {
   scheduled_sends            scheduled_sends[]
   calendar_events_created    calendar_events[]        @relation("calendar_event_creator")
   calendar_events_owned      calendar_events[]        @relation("calendar_event_owner")
+  calendar_event_attendances calendar_event_attendees[]
   todos_created              todos[]                  @relation("todo_creator")
   todos_assigned             todos[]                  @relation("todo_assignee")
   todos_done                 todos[]                  @relation("todo_done_by")
@@ -172,9 +170,6 @@ model mailboxes {
   sync_state  mailbox_sync_states?
   drafts      drafts[]
   scheduled_sends scheduled_sends[]
-  calendar_events calendar_events[]
-  calendar_google_links calendar_google_links[]
-  todos todos[]
 }
 
 model mailbox_credentials {
@@ -656,6 +651,8 @@ model sessions {
   last_activity_at DateTime @default(now())
   // the last time the person themself did something (keys, taps; sent by the page) - background requests do not move it. Idle logout reads this.
   last_input_at    DateTime @default(now())
+  // the last time the person proved who they are again (password, and the code) inside this session: high-risk actions need it to be recent
+  reauth_at        DateTime?
   created_at       DateTime @default(now())
 
   user users @relation(fields: [user_id], references: [id], onDelete: Cascade)
@@ -730,13 +727,12 @@ model scheduled_send_attachments {
   scheduled_send scheduled_sends @relation(fields: [scheduled_send_id], references: [id], onDelete: Cascade)
 }
 
-// Google Calendar linked to a mailbox's shared calendar (read-only import).
+// A person's Google Calendar, linked to their own calendar here (read-only import).
 // display_mode 'busy_only' hides titles/details: only `busy_label` is shown
 // and the real summary is never stored.
 model calendar_google_links {
   id                 String    @id @default(cuid())
-  mailbox_id         String
-  linked_by_user_id  String
+  linked_by_user_id  String    // whose calendar the imported events go into
   encrypted_token    String
   google_calendar_id String?
   name               String    @default("Googleカレンダー")
@@ -748,19 +744,18 @@ model calendar_google_links {
   created_at         DateTime  @default(now())
   updated_at         DateTime  @updatedAt
 
-  mailbox   mailboxes         @relation(fields: [mailbox_id], references: [id], onDelete: Cascade)
   linked_by users             @relation(fields: [linked_by_user_id], references: [id], onDelete: Cascade)
   events    calendar_events[]
 
-  @@index([mailbox_id])
+  @@index([linked_by_user_id])
 }
 
-// Events of a mailbox's shared calendar. source 'local' = created in this app,
-// 'google' = imported copy of a Google event (title_override is the team's own
-// name for it and survives re-syncs).
+// A calendar event. Every person has one calendar: the events they own and the ones they attend.
+// The owner (who made it) and the attendees (other people of the company) each see it in their own calendar.
+// source 'local' = created in this app, 'google' = imported copy of a Google event of the owner
+// (title_override is the owner's own name for it and survives re-syncs).
 model calendar_events {
   id              String    @id @default(cuid())
-  mailbox_id      String
   source          String    @default("local") // 'local' | 'google'
   link_id         String?
   google_event_id String?
@@ -772,42 +767,51 @@ model calendar_events {
   start_at        DateTime
   end_at          DateTime
   created_by_id   String?
-  owner_user_id   String?   // whose schedule this is; null = whole team
+  owner_user_id   String    // whose calendar it is
   created_at      DateTime  @default(now())
   updated_at      DateTime  @updatedAt
 
-  mailbox mailboxes              @relation(fields: [mailbox_id], references: [id], onDelete: Cascade)
-  link    calendar_google_links? @relation(fields: [link_id], references: [id], onDelete: Cascade)
-  creator users?                 @relation("calendar_event_creator", fields: [created_by_id], references: [id], onDelete: SetNull)
-  owner   users?                 @relation("calendar_event_owner", fields: [owner_user_id], references: [id], onDelete: SetNull)
+  link      calendar_google_links?    @relation(fields: [link_id], references: [id], onDelete: Cascade)
+  creator   users?                    @relation("calendar_event_creator", fields: [created_by_id], references: [id], onDelete: SetNull)
+  owner     users                     @relation("calendar_event_owner", fields: [owner_user_id], references: [id], onDelete: Cascade)
+  attendees calendar_event_attendees[]
 
   @@unique([link_id, google_event_id])
-  @@index([mailbox_id, start_at])
-  @@index([owner_user_id])
+  @@index([owner_user_id, start_at])
 }
 
-// A to-do shared by the people of a mailbox's team. They see it with the calendar (it shows on its due date);
-// the same permissions apply: view = can_view, edit = can_reply. assignee null = the whole team.
+// The people (besides the owner) who take part in an event: it shows in their calendar too.
+model calendar_event_attendees {
+  event_id   String
+  user_id    String
+  created_at DateTime @default(now())
+
+  event calendar_events @relation(fields: [event_id], references: [id], onDelete: Cascade)
+  user  users           @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@id([event_id, user_id])
+  @@index([user_id])
+}
+
+// A to-do on a person's own list (assignee = whose list it is). Somebody may add one to another person's list: creator says who.
+// It shows on the person's calendar on its due date. People who share a mailbox can see each other's lists through it.
 model todos {
   id            String    @id @default(cuid())
-  mailbox_id    String
   title         String
   description   String?
   due_date      DateTime? @db.Date // Japan-local date, no time
-  assignee_id   String?
+  assignee_id   String
   done_at       DateTime?
   done_by_id    String?
   created_by_id String?
   created_at    DateTime  @default(now())
   updated_at    DateTime  @updatedAt
 
-  mailbox  mailboxes @relation(fields: [mailbox_id], references: [id], onDelete: Cascade)
-  assignee users?    @relation("todo_assignee", fields: [assignee_id], references: [id], onDelete: SetNull)
-  done_by  users?    @relation("todo_done_by", fields: [done_by_id], references: [id], onDelete: SetNull)
-  creator  users?    @relation("todo_creator", fields: [created_by_id], references: [id], onDelete: SetNull)
+  assignee users  @relation("todo_assignee", fields: [assignee_id], references: [id], onDelete: Cascade)
+  done_by  users? @relation("todo_done_by", fields: [done_by_id], references: [id], onDelete: SetNull)
+  creator  users? @relation("todo_creator", fields: [created_by_id], references: [id], onDelete: SetNull)
 
-  @@index([mailbox_id, due_date])
-  @@index([assignee_id])
+  @@index([assignee_id, due_date])
 }
 
 // One row per employee per day (work_date is the Japan-local date). Times are UTC instants.
@@ -912,6 +916,7 @@ model expense_claims {
   payslip_id       String?   // set when the reimbursement was merged into a pay statement
   batch_id         String?   // the 全銀 transfer file this reimbursement was put into (a monthly file; see transfer-server.ts)
   trip_id          String?   // the approved business trip this expense belongs to
+  unit_id          String?   // the 部署 the person claims for (chosen when applying; its approvers decide). null = not chosen (older claims, or a person in no 部署)
   // own-car claims (category 自家用車): what the amount was worked out from, kept as it was on the day (the rate and the home address may change later)
   mileage_origin     String?
   mileage_destination String?
@@ -931,6 +936,7 @@ model expense_claims {
   payslip      payslips?         @relation(fields: [payslip_id], references: [id], onDelete: SetNull)
   batch        transfer_batches? @relation(fields: [batch_id], references: [id], onDelete: SetNull)
   trip         business_trips?   @relation(fields: [trip_id], references: [id], onDelete: SetNull)
+  unit         org_units?        @relation(fields: [unit_id], references: [id], onDelete: SetNull)
   receipts     expense_receipts[]
 
   @@index([user_id, expense_date])
@@ -938,6 +944,7 @@ model expense_claims {
   @@index([payslip_id])
   @@index([trip_id])
   @@index([batch_id])
+  @@index([unit_id])
 }
 
 model expense_receipts {
@@ -1069,6 +1076,7 @@ model payment_requests {
   paid_by_id       String?
   paid_note        String?
   batch_id         String?   // the 全銀 transfer file this request was put into
+  approved_account_fp String? // a fingerprint of the payee's bank details at the moment of approval: paying to details that changed since is refused (re-confirmed by an admin)
   created_at       DateTime  @default(now())
   updated_at       DateTime  @updatedAt
 
@@ -1149,6 +1157,7 @@ model freee_exports {
   paid_date     DateTime  @db.Date
   description   String
   freee_deal_id Int?
+  receipt_map   Json?     // 証憑 already uploaded to freee for this movement: { "receipt:<id>" | "doc:<id>": freee receipt id } (a retry does not upload them twice)
   error         String?
   attempts      Int       @default(0)
   sent_at       DateTime?
@@ -1184,20 +1193,23 @@ model transfer_batches {
 
 
 // ---- 組織 ----
-// 部署・チーム。親子でツリーになる。head_user_id が部署長（部下の承認・評価の担当）。
+// 部署・チーム。親子でツリーになる。所属する人と役職は org_memberships（役職の権限は、その部署と配下の部署に効く）。
 model org_units {
   id           String   @id @default(cuid())
   name         String
   parent_id    String?
-  head_user_id String?
   sort         Int      @default(0)
+  pos_x        Float?   // where the 部署 sits on the org diagram (組織図); null = placed automatically
+  pos_y        Float?
   created_at   DateTime @default(now())
   updated_at   DateTime @updatedAt
 
   parent   org_units?  @relation("unit_tree", fields: [parent_id], references: [id], onDelete: SetNull)
   children org_units[] @relation("unit_tree")
-  head     users?      @relation("unit_head", fields: [head_user_id], references: [id], onDelete: SetNull)
-  members  users[]     @relation("unit_members")
+  members     org_memberships[]
+  evaluations evaluations[]
+  expense_claims expense_claims[]
+  designations org_unit_designations[]
 
   @@index([parent_id])
 }
@@ -1211,7 +1223,7 @@ model org_positions {
   created_at  DateTime @default(now())
   updated_at  DateTime @updatedAt
 
-  members users[]
+  members org_memberships[]
 }
 
 // ---- 人事評価 ----
@@ -1246,12 +1258,13 @@ model eval_criteria {
   @@index([cycle_id])
 }
 
-// 1人1期間につき1つ。自己評価 → 上長評価 → 人事が確定（確定すると本人に公開）。
+// 1人・1期間・1部署につき1つ（部署が複数なら、評価票も部署ごと）。自己評価 → 上長評価 → 人事が確定（確定すると本人に公開）。
 model evaluations {
   id                   String    @id @default(cuid())
   cycle_id             String
   user_id              String
   evaluator_id         String?
+  unit_id              String? // the 部署 this form is for (one form per 部署 of the person, each with its own evaluator); null = no 部署
   self_comment         String?
   self_submitted_at    DateTime?
   manager_comment      String?
@@ -1267,9 +1280,10 @@ model evaluations {
   cycle     eval_cycles   @relation(fields: [cycle_id], references: [id], onDelete: Cascade)
   user      users         @relation("eval_subject", fields: [user_id], references: [id], onDelete: Cascade)
   evaluator users?        @relation("eval_evaluator", fields: [evaluator_id], references: [id], onDelete: SetNull)
+  unit      org_units?    @relation(fields: [unit_id], references: [id], onDelete: SetNull)
   scores    eval_scores[]
 
-  @@unique([cycle_id, user_id])
+  @@unique([cycle_id, user_id, unit_id])
   @@index([evaluator_id])
 }
 
@@ -1393,6 +1407,38 @@ model year_end_declarations {
 
   @@unique([user_id, year])
   @@index([year, status])
+}
+
+// 部署ごとに指定する人。kind='expense' は経費の承認者（指定がある部署の経費は、この人たちと管理者だけが承認する）、
+// kind='evaluation' は人事評価の評価者（評価の開始時に、指定順の先頭の人が評価者になる）。指定がなければ、役職の権限で決まる。
+model org_unit_designations {
+  unit_id    String
+  user_id    String
+  kind       String   // 'expense' | 'evaluation'
+  created_at DateTime @default(now())
+
+  unit org_units @relation(fields: [unit_id], references: [id], onDelete: Cascade)
+  user users     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@id([unit_id, user_id, kind])
+  @@index([user_id])
+}
+
+// Who belongs to which 部署, with which 役職 there (a person may be in several 部署, with a different 役職 in each: 班長 here, 部長 there).
+// The 役職's permissions (承認・評価) apply inside that 部署 and the 部署 below it. position_id null = a member without a 役職.
+model org_memberships {
+  user_id     String
+  unit_id     String
+  position_id String?
+  created_at  DateTime @default(now())
+
+  user     users           @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  unit     org_units       @relation(fields: [unit_id], references: [id], onDelete: Cascade)
+  position org_positions?  @relation(fields: [position_id], references: [id], onDelete: SetNull)
+
+  @@id([user_id, unit_id])
+  @@index([unit_id])
+  @@index([position_id])
 }
 
 // オートフロー: 期限に合わせて自動で送るDM。送る前にこの表に1行作って「送った」ことにする（同じ宛先・同じ段階を二度送らない）。

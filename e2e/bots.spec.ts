@@ -50,7 +50,7 @@ test.describe('ロボットの接続を断る', () => {
   });
 
   test('定期処理（/api/cron）は、鍵があればスクリプトでも呼べる', async ({ anon }) => {
-    const res = await anon.get('/api/cron/embeddings', { headers: { 'user-agent': 'curl/8.5.0', authorization: 'Bearer e2e-cron-secret' } });
+    const res = await anon.get('/api/cron/embeddings', { headers: { 'user-agent': 'curl/8.5.0', authorization: 'Bearer e2e-cron-secret-0123456789' } });
     expect(res.status()).toBe(200);
     expect((await anon.get('/api/cron/embeddings', as('curl/8.5.0'))).status()).toBe(401);
   });

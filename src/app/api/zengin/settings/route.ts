@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { recentAuthOrResponse } from '@/lib/reauth';
 import { adminActor, financeActor, forbidden } from '@/lib/finance-guard';
 import { logAudit } from '@/lib/audit';
 import { isAdmin } from '@/lib/work-auth';
@@ -17,6 +18,7 @@ export async function GET() {
 export async function PUT(req: NextRequest) {
   const actor = await adminActor();
   if (!actor) return forbidden();
+  { const stale = await recentAuthOrResponse(); if (stale) return stale; } // high-risk: a recent proof of who is asking (lib/reauth.ts)
   const parsed = zenginSettingsSchema.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) return NextResponse.json({ error: 'invalid_body', fields: parsed.error.issues.map(i => i.path[0]) }, { status: 400 });
   await saveZenginSettings(parsed.data, actor.id);

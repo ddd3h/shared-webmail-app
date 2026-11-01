@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { recentAuthOrResponse } from '@/lib/reauth';
 import { prisma } from '@/lib/db';
 import { getSession, requireAuth } from '@/lib/auth';
 import { hashPassword } from '@/lib/password';
@@ -17,6 +18,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 
   const actor = await prisma.users.findUnique({ where: { id: session.userId } });
   if (actor?.role !== 'admin') return NextResponse.json({ error: 'forbidden' }, { status: 403 });
+  { const stale = await recentAuthOrResponse(); if (stale) return stale; } // high-risk: a recent proof of who is asking (lib/reauth.ts)
 
   const schema = z.object({
     name: z.string().min(1).optional(),
@@ -85,6 +87,7 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
 
   const actor = await prisma.users.findUnique({ where: { id: session.userId } });
   if (actor?.role !== 'admin') return NextResponse.json({ error: 'forbidden' }, { status: 403 });
+  { const stale = await recentAuthOrResponse(); if (stale) return stale; } // high-risk: a recent proof of who is asking (lib/reauth.ts)
 
   if (id === session.userId) {
     return NextResponse.json({ error: 'cannot_delete_self' }, { status: 400 });

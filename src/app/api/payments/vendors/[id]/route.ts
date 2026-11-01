@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { recentAuthOrResponse } from '@/lib/reauth';
 import { z } from 'zod';
 import { prisma } from '@/lib/db';
 import { getSession, requireAuth } from '@/lib/auth';
@@ -35,6 +36,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   const { id } = await params;
   const actor = await adminOnly();
   if (!actor) return NextResponse.json({ error: 'forbidden' }, { status: 403 });
+  { const stale = await recentAuthOrResponse(); if (stale) return stale; } // high-risk: a recent proof of who is asking (lib/reauth.ts)
   const parsed = schema.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) return NextResponse.json({ error: 'invalid_body' }, { status: 400 });
   const d = parsed.data;

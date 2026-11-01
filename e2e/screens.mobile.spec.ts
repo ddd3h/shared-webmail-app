@@ -40,19 +40,20 @@ test.describe('スマホ: 勤怠', () => {
 test.describe('スマホ: 長い画面は項目ごとに折りたたむ', () => {
   test.use({ storageState: AUTH.admin });
 
-  test('セキュリティ: 項目は閉じていて、タップで開く。上の数字は見えたまま', async ({ page }) => {
+  test('セキュリティ: 項目はタップで閉じて開く。上の数字は見えたまま', async ({ page }) => {
     await page.goto('/admin/security');
     await expect(page.getByText('ログイン失敗（24時間）')).toBeVisible();
     await page.getByRole('tab', { name: 'アカウントと端末' }).click();
-    const login = page.getByRole('region', { name: 'ログイン方法' });
-    const header = login.getByRole('button', { name: /ログイン方法/ });
-    await expect(header).toHaveAttribute('aria-expanded', 'false');
-    await expect(login.getByRole('listitem').first()).toBeHidden();
-    await header.click();
+    const login = page.getByRole('region', { name: 'ユーザーとログイン方法' });
+    const header = login.getByRole('button', { name: /ユーザーとログイン方法/ });
+    // ユーザーとログイン方法は最初から開いている。タップで閉じて、もう一度タップで開く
     await expect(header).toHaveAttribute('aria-expanded', 'true');
     await expect(login.getByRole('listitem').first()).toBeVisible();
     await header.click();
+    await expect(header).toHaveAttribute('aria-expanded', 'false');
     await expect(login.getByRole('listitem').first()).toBeHidden();
+    await header.click();
+    await expect(login.getByRole('listitem').first()).toBeVisible();
     expect(await hasHorizontalOverflow(page)).toBe(false);
   });
 

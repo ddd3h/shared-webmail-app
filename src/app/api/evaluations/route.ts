@@ -18,13 +18,13 @@ export async function GET(req: NextRequest) {
   const who = scope === 'mine' ? { user_id: ctx.actor.id } : scope === 'team' ? { evaluator_id: ctx.actor.id } : {};
   const rows = await prisma.evaluations.findMany({
     where: { ...who, cycle: { status: { not: 'draft' } }, ...(sp.get('cycle_id') ? { cycle_id: sp.get('cycle_id')! } : {}) },
-    orderBy: [{ cycle: { period_start: 'desc' } }, { user: { name: 'asc' } }],
-    include: { cycle: { select: { id: true, name: true, status: true } }, user: { select: { id: true, name: true } }, evaluator: { select: { id: true, name: true } } },
+    orderBy: [{ cycle: { period_start: 'desc' } }, { user: { name: 'asc' } }, { unit: { name: 'asc' } }],
+    include: { cycle: { select: { id: true, name: true, status: true } }, user: { select: { id: true, name: true } }, evaluator: { select: { id: true, name: true } }, unit: { select: { id: true, name: true } } },
     take: 500,
   });
   return NextResponse.json({
     items: rows.map(e => ({
-      id: e.id, cycle: e.cycle, user: e.user, evaluator: e.evaluator, stage: stageOf(e),
+      id: e.id, cycle: e.cycle, user: e.user, unit: e.unit, evaluator: e.evaluator, stage: stageOf(e),
       // the result is only shown once final (HR always sees it)
       grade: e.finalized_at || (scope === 'all' && ctx.hr) ? e.grade : null, score: e.finalized_at || (scope === 'all' && ctx.hr) ? e.score : null,
     })),

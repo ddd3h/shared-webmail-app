@@ -57,7 +57,7 @@ export default function EvaluationForm({ id, onClose, onChanged }: { id: string;
   if (!d) return <Modal title="人事評価" onClose={onClose}><p className="text-sm text-gray-400">{msg?.text ?? '読み込み中…'}</p></Modal>;
   const preview = totalScore(d.criteria, d.criteria.map(c => ({ criterion_id: c.id, manager_score: side === 'manager' ? draft[c.id]?.score ?? null : c.manager_score })));
   return (
-    <Modal title={`${d.user.name} さん ・ ${d.cycle.name}`} onClose={onClose}>
+    <Modal title={`${d.user.name} さん ・ ${d.cycle.name}${d.unit ? ` ・ ${d.unit.name}` : ''}`} onClose={onClose}>
       <div className="space-y-4">
         <div className="flex flex-wrap items-center gap-2 text-xs text-gray-500">
           <span className={`rounded-full px-2 py-0.5 font-medium ${STAGE_STYLE[d.stage]}`}>{STAGE_LABEL[d.stage]}</span>

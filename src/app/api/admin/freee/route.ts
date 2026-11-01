@@ -15,7 +15,7 @@ export async function GET() {
   return NextResponse.json({
     client_id: c.clientId, has_secret: c.hasSecret, connected: c.connected, ready: freeeReady(c),
     company: c.companyId ? { id: c.companyId, name: c.companyName } : null, walletable: c.walletable,
-    account_map: c.map, auto_sync: c.autoSync, sync_from: c.syncFrom, redirect_uri: freeeRedirectUri(),
+    account_map: c.map, auto_sync: c.autoSync, send_receipts: c.sendReceipts, sync_from: c.syncFrom, redirect_uri: freeeRedirectUri(),
     kinds: MAP_KINDS, expense_categories: EXPENSE_CATEGORIES,
   });
 }
@@ -27,6 +27,7 @@ const schema = z.object({
   walletable: z.object({ id: z.number().int().positive(), type: z.enum(['bank_account', 'credit_card', 'wallet']), name: z.string().max(200).optional() }).nullable().optional(),
   account_map: accountMapSchema.optional(),
   auto_sync: z.boolean().optional(),
+  send_receipts: z.boolean().optional(),   // send the 証憑 (receipts, invoices) with each deal
   sync_from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
 });
 
@@ -65,6 +66,7 @@ export async function PUT(req: NextRequest) {
     if (d.auto_sync && !freeeReady(await loadFreeeConfig())) return NextResponse.json({ error: 'not_ready' }, { status: 409 }); // turn it on only when it can work
     await setSetting('FREEE_AUTO_SYNC', d.auto_sync ? 'on' : 'off', false, actor.id);
   }
+  if (d.send_receipts !== undefined) await setSetting('FREEE_SEND_RECEIPTS', d.send_receipts ? 'on' : 'off', false, actor.id);
   await logAudit({ actorUserId: actor.id, actionType: 'freee_settings_update', targetType: 'app_settings', metadata: { fields: Object.keys(d).filter(k => k !== 'client_secret'), secret_changed: !!d.client_secret } });
   return NextResponse.json({ ok: true });
 }

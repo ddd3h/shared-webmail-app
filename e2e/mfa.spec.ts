@@ -6,6 +6,7 @@ import { deleteAccountsWithPrefix, newAccount as newAccountIn } from './helpers/
 import { mm } from './helpers/mattermost-mock';
 import { clearNotifications, resetSecurity } from './helpers/seed';
 import { fakeIp, freshContext } from './helpers/ui';
+import { refreshSavedLogins } from './helpers/auth';
 import { base32Decode, codeForStep, stepAt } from '../src/lib/totp';
 
 test.describe.configure({ mode: 'serial' });
@@ -16,7 +17,7 @@ const setRule = (on: boolean, trustDays?: number) => adminApi.put('/api/admin/se
 
 test.beforeAll(async ({ playwright }) => { adminApi = await playwright.request.newContext({ baseURL: BASE_URL, storageState: AUTH.admin }); });
 test.beforeEach(async () => { await resetSecurity(); await clearNotifications(); await mm.reset(); expect((await setRule(true, 30)).status()).toBe(200); });
-test.afterAll(async () => { await resetSecurity(); await deleteAccountsWithPrefix('mfa'); await adminApi.dispose(); });
+test.afterAll(async () => { await resetSecurity(); await deleteAccountsWithPrefix('mfa'); await adminApi.dispose(); await refreshSavedLogins(); }); // (turning the second step on ends the sessions of people without one: the saved test logins too)
 
 const opened: APIRequestContext[] = [];
 test.afterEach(async () => { await Promise.all(opened.splice(0).map(c => c.dispose())); });
@@ -502,7 +503,7 @@ test.describe('画面', () => {
       const name = `一覧確認${acct.id.slice(-6)}`; // the other test accounts are all called 試験用
       await db.users.update({ where: { id: acct.id }, data: { name } });
       await page.goto('/admin/security#accounts');
-      const list = page.getByLabel('ログイン方法', { exact: true });
+      const list = page.getByLabel('ユーザーとログイン方法', { exact: true });
       await expect(list.getByText('2段階認証 有効').first()).toBeVisible();
       await expect(list.getByText('2段階認証 未設定').first()).toBeVisible();
       page.once('dialog', d => d.accept());

@@ -15,6 +15,40 @@ export async function canViewMailbox(userId: string, mailboxId: string) {
   return !!m;
 }
 
+/** Mailboxes a person may look at, as a query condition (the same rule as canViewMailbox). */
+export const viewableMailboxWhere = (userId: string) => ({
+  OR: [{ type: 'personal' as const, owner_user_id: userId }, { permissions: { some: { user_id: userId, can_view: true } } }],
+});
+
+/** Of the thread ids a client names, the ones in mailboxes the person may look at. A client's list of ids is never trusted as it is. */
+export async function viewableThreadIds(userId: string, ids: unknown): Promise<string[]> {
+  if (!Array.isArray(ids)) return [];
+  const wanted = [...new Set(ids.filter((i): i is string => typeof i === 'string' && i.length > 0 && i.length < 100))].slice(0, 20000);
+  if (wanted.length === 0) return [];
+  const rows = await prisma.threads.findMany({ where: { id: { in: wanted }, mailbox: viewableMailboxWhere(userId) }, select: { id: true } });
+  return rows.map(r => r.id);
+}
+
+/** Is a draft that names this mailbox / thread one the person may make? The mailbox they write from has to be one they may reply from, and the thread
+ *  has to be one they may look at, in that mailbox. (Otherwise a draft could be planted into a team's mailbox, where its members would see it.) */
+export async function draftTargetOk(userId: string, mailboxId: unknown, threadId: unknown): Promise<boolean> {
+  if (mailboxId !== undefined && mailboxId !== null && mailboxId !== '') {
+    if (typeof mailboxId !== 'string' || !(await canReplyMailbox(userId, mailboxId))) return false;
+  }
+  if (threadId !== undefined && threadId !== null && threadId !== '') {
+    if (typeof threadId !== 'string') return false;
+    const t = await prisma.threads.findFirst({ where: { id: threadId, mailbox: viewableMailboxWhere(userId) }, select: { mailbox_id: true } });
+    if (!t) return false;
+    if (typeof mailboxId === 'string' && mailboxId && t.mailbox_id !== mailboxId) return false;
+  }
+  return true;
+}
+
+/** May the person look at this thread (is it in a mailbox they may look at)? */
+export async function canViewThread(userId: string, threadId: string): Promise<boolean> {
+  return (await viewableThreadIds(userId, [threadId])).length === 1;
+}
+
 export async function canReplyMailbox(userId: string, mailboxId: string) {
   const m = await prisma.mailboxes.findFirst({ where: { id: mailboxId } });
   if (!m) return false;
@@ -31,22 +65,31 @@ export async function canAssignMailbox(userId: string, mailboxId: string) {
   return !!perm;
 }
 
-// Shared calendar permissions piggyback on the mailbox permissions:
-//   view   = can_view   (see the calendar)
-//   edit   = can_reply  (create/edit/delete events, rename imported events)
-//   manage = can_assign (link/unlink Google calendars, change display settings)
+// Calendars and to-dos belong to people. A shared mailbox only decides whose calendars you may look at:
+// the people who can view that mailbox (members of the team) can look at each other's calendars and to-do lists.
 export const canViewCalendar = canViewMailbox;
-export const canEditCalendar = canReplyMailbox;
-export const canManageCalendar = canAssignMailbox;
 
-// A Google link belongs to the person who linked it: they can change it as long as
-// they can still edit the calendar; managers can change anyone's.
-export async function canManageCalendarLink(userId: string, link: { mailbox_id: string; linked_by_user_id: string }) {
-  if (await canManageCalendar(userId, link.mailbox_id)) return true;
-  return link.linked_by_user_id === userId && (await canEditCalendar(userId, link.mailbox_id));
+/** True when both people can view some shared mailbox: that is what lets them look at each other's calendar and give each other to-dos. */
+export async function sharesMailbox(userId: string, otherId: string): Promise<boolean> {
+  if (userId === otherId) return true;
+  const rows = await prisma.mailbox_permissions.groupBy({ by: ['mailbox_id'], where: { user_id: { in: [userId, otherId] }, can_view: true }, _count: { user_id: true } });
+  return rows.some(r => r._count.user_id === 2);
 }
 
-// People whose schedules can be shown on a mailbox's calendar: everyone who can view it.
+/** People who can view some mailbox that `userId` can view too (and the person themselves): whose lists a to-do may be put on. */
+export async function listTeammates(userId: string) {
+  const mine = await prisma.mailbox_permissions.findMany({ where: { user_id: userId, can_view: true }, select: { mailbox_id: true } });
+  const others = mine.length === 0 ? [] : await prisma.mailbox_permissions.findMany({ where: { mailbox_id: { in: mine.map(m => m.mailbox_id) }, can_view: true }, select: { user_id: true } });
+  const ids = new Set([userId, ...others.map(o => o.user_id)]);
+  return prisma.users.findMany({ where: { id: { in: [...ids] }, locked_at: null }, select: { id: true, name: true }, orderBy: [{ created_at: 'asc' }, { id: 'asc' }] });
+}
+
+/** Everybody a person may add to an event or hand a to-do to: the people of the company (not locked). */
+export async function listPeople() {
+  return prisma.users.findMany({ where: { locked_at: null }, select: { id: true, name: true }, orderBy: [{ created_at: 'asc' }, { id: 'asc' }] });
+}
+
+// The members of a shared mailbox: everyone who can view it. Their calendars and to-do lists are what the mailbox shows.
 export async function listCalendarMembers(mailboxId: string) {
   const mb = await prisma.mailboxes.findUnique({
     where: { id: mailboxId },

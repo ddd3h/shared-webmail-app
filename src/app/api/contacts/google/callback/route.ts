@@ -16,6 +16,13 @@ export async function GET(req: NextRequest) {
     const url = new URL(req.url);
     const code = url.searchParams.get('code');
     const error = url.searchParams.get('error');
+    // the answer must be to a login this person started: the random value they were given comes back with it
+    const state = url.searchParams.get('state');
+    if (!state || state !== req.cookies.get('gcontacts_oauth_state')?.value) {
+      const res = NextResponse.redirect(`${appUrl}/admin/settings?google_error=invalid_state`);
+      res.cookies.delete({ name: 'gcontacts_oauth_state', path: '/api/contacts/google' });
+      return res;
+    }
 
     if (error || !code) {
       console.error('[Google OAuth callback] error param:', error);
@@ -55,7 +62,9 @@ export async function GET(req: NextRequest) {
       update: { encrypted_token: encryptedToken }
     });
 
-    return NextResponse.redirect(`${appUrl}/admin/settings?google_linked=1`);
+    const done = NextResponse.redirect(`${appUrl}/admin/settings?google_linked=1`);
+    done.cookies.delete({ name: 'gcontacts_oauth_state', path: '/api/contacts/google' });
+    return done;
   } catch (err) {
     console.error('[Google OAuth callback] unexpected error:', err);
     return NextResponse.redirect(`${appUrl}/admin/settings?google_error=internal_error`);

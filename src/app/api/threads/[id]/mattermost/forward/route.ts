@@ -3,12 +3,14 @@ import { getSession, requireAuth } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { queues } from '@/lib/queue';
 import { logAudit } from '@/lib/audit';
+import { canViewThread } from '@/lib/rbac';
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const session = await getSession();
   requireAuth(session);
   const { channel_id, message_id } = await req.json().catch(() => ({}));
+  if (!(await canViewThread(session!.userId, id))) return NextResponse.json({ error: 'not_found' }, { status: 404 });
   const thread = await prisma.threads.findUnique({ where: { id } });
   if (!thread) return NextResponse.json({ error: 'not_found' }, { status: 404 });
   await queues.mattermost.add({ name: 'mm_forward', data: { userId: session!.userId, threadId: thread.id, type: 'forward' } });

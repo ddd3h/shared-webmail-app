@@ -1,3 +1,5 @@
+import { mkdir, writeFile } from 'fs/promises';
+import path from 'path';
 import type { APIRequestContext } from '@playwright/test';
 import { test, expect } from './fixtures';
 import { AUTH, USERS, type Role } from './helpers/constants';
@@ -360,5 +362,118 @@ test.describe('画面', () => {
     await expect(log).toContainText('¥150,000');
     await expect(log).toContainText('freeeの取引ID');
     await keiri.close();
+  });
+});
+
+test.describe('証憑（領収書・請求書）も一緒に送る', () => {
+  const STORAGE = path.join(process.cwd(), 'storage', 'attachments');
+  /** A receipt of a claim: the file is written where the app keeps its files, and the row points at it. */
+  async function addReceipt(claimId: string, filename: string, o: { missing?: boolean } = {}) {
+    const key = path.join('storage', 'attachments', `e2e-freee-${Date.now()}-${Math.random().toString(36).slice(2, 8)}${path.extname(filename)}`);
+    if (!o.missing) { await mkdir(STORAGE, { recursive: true }); await writeFile(path.join(process.cwd(), key), Buffer.from(`%PDF-1.4 e2e ${filename}`)); }
+    return db.expense_receipts.create({ data: { claim_id: claimId, filename, content_type: filename.endsWith('.pdf') ? 'application/pdf' : 'image/png', size: 20, storage_key: key } });
+  }
+  async function addInvoice(requestId: string, filename: string) {
+    const key = path.join('storage', 'attachments', `e2e-freee-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.pdf`);
+    await mkdir(STORAGE, { recursive: true }); await writeFile(path.join(process.cwd(), key), Buffer.from(`%PDF-1.4 e2e ${filename}`));
+    return db.payment_documents.create({ data: { request_id: requestId, filename, content_type: 'application/pdf', size: 20, storage_key: key } });
+  }
+  test.afterEach(async () => { await db.payment_documents.deleteMany({}); });
+
+  test('経費の領収書が、freeeの証憑（ファイルボックス）に入り、取引に紐づく。取引の日付・会社・説明も付く', async ({ as }) => {
+    await setUp(as);
+    const claim = await makeClaim({ role: 'tanaka', status: 'paid', amount: 1200, category: '交通費', title: 'A社訪問' });
+    await addReceipt(claim.id, '切符.png'); await addReceipt(claim.id, '領収書.pdf');
+    expect(await (await sync(as)).json()).toMatchObject({ sent: 1, failed: 0 });
+    const { deals, receipts } = await mm.freee.state();
+    expect(receipts.map((r: { filename: string }) => r.filename).sort()).toEqual(['切符.png', '領収書.pdf']);
+    expect(receipts[0]).toMatchObject({ company_id: 111, issue_date: jstDate(0) });
+    expect(receipts[0].description).toContain('A社訪問');
+    expect(deals).toHaveLength(1);
+    expect([...deals[0].receipt_ids].sort()).toEqual(receipts.map((r: { id: number }) => r.id).sort());
+    const row = await db.freee_exports.findFirstOrThrow();
+    expect(Object.keys(row.receipt_map as object)).toHaveLength(2);
+    expect((await (await (await as('keiri')).get('/api/freee/exports')).json()).items[0].receipts).toBe(2);
+  });
+
+  test('給与明細に合算された経費の領収書と、振込申請の請求書も、その取引に紐づく。領収書のない取引には何も付かない', async ({ as }) => {
+    await setUp(as);
+    const slip = await makePayslip({ role: 'sato', status: 'paid', payDate: jstDate(0), items: [{ kind: 'earning', label: '基本給', amount: 100000 }] });
+    const merged = await makeClaim({ role: 'sato', status: 'paid', amount: 3000, category: '交通費', payslipId: slip.id });
+    await addReceipt(merged.id, '合算された領収書.png');
+    const vendor = await makeVendor({ name: '株式会社テスト商事', verified: true });
+    const payment = await makePayment({ vendorId: vendor.id, status: 'paid', amount: 55000, due: jstDate(0) });
+    await addInvoice(payment.id, '請求書.pdf');
+    await makeClaim({ role: 'tanaka', status: 'paid', amount: 800, category: '会議費' });          // no receipt
+    expect(await (await sync(as)).json()).toMatchObject({ sent: 3, failed: 0 });
+    const { deals, receipts } = await mm.freee.state();
+    expect(receipts.map((r: { filename: string }) => r.filename).sort()).toEqual(['合算された領収書.png', '請求書.pdf']);
+    expect(deals.filter((d: { receipt_ids?: number[] }) => d.receipt_ids?.length).length).toBe(2);
+    expect(deals.filter((d: { receipt_ids?: number[] }) => !d.receipt_ids).length).toBe(1);
+  });
+
+  test('証憑を送らない設定にすると、取引だけ送る。初めは「送る」', async ({ as }) => {
+    const admin = await setUp(as);
+    expect((await (await admin.get('/api/admin/freee')).json()).send_receipts).toBe(true);
+    expect((await admin.put('/api/admin/freee', { data: { send_receipts: false } })).status()).toBe(200);
+    expect((await (await admin.get('/api/admin/freee')).json()).send_receipts).toBe(false);
+    const claim = await makeClaim({ role: 'tanaka', status: 'paid', amount: 1200 });
+    await addReceipt(claim.id, '領収書.png');
+    expect(await (await sync(as)).json()).toMatchObject({ sent: 1 });
+    const { deals, receipts } = await mm.freee.state();
+    expect(receipts).toHaveLength(0);
+    expect(deals[0].receipt_ids).toBeUndefined();
+    expect((await (await as('keiri')).put('/api/admin/freee', { data: { send_receipts: true } })).status()).toBe(403);
+  });
+
+  test('証憑を送れなかったら、取引は作らず失敗として残る。直ったら再送でき、送れていた分は二重に送らない', async ({ as }) => {
+    await setUp(as);
+    const claim = await makeClaim({ role: 'tanaka', status: 'paid', amount: 1200 });
+    await addReceipt(claim.id, '1枚目.png'); await addReceipt(claim.id, '2枚目.png');
+    await mm.freee.fail('receipt_second');                                         // the first goes in, the second is refused
+    expect(await (await sync(as)).json()).toMatchObject({ sent: 0, failed: 1 });
+    let row = await db.freee_exports.findFirstOrThrow();
+    expect(row).toMatchObject({ status: 'failed', freee_deal_id: null });
+    expect(row.error).toContain('証憑「');
+    expect(row.error).toContain('を送れませんでした');
+    expect(Object.keys(row.receipt_map as object)).toHaveLength(1);
+    expect((await mm.freee.state()).deals).toHaveLength(0);                        // no deal without its 証憑
+    await mm.freee.fail(null);
+    expect(await (await sync(as)).json()).toMatchObject({ sent: 1, failed: 0 });
+    const { deals, receipts } = await mm.freee.state();
+    expect(receipts).toHaveLength(2);                                              // the first one was not uploaded again
+    expect(deals[0].receipt_ids).toHaveLength(2);
+    row = await db.freee_exports.findFirstOrThrow();
+    expect(row.status).toBe('sent');
+  });
+
+  test('ディスクに無くなっていた証憑は飛ばして、取引は送る', async ({ as }) => {
+    await setUp(as);
+    const claim = await makeClaim({ role: 'tanaka', status: 'paid', amount: 1200 });
+    await addReceipt(claim.id, 'ある.png'); await addReceipt(claim.id, '消えた.png', { missing: true });
+    expect(await (await sync(as)).json()).toMatchObject({ sent: 1, failed: 0 });
+    const { deals, receipts } = await mm.freee.state();
+    expect(receipts.map((r: { filename: string }) => r.filename)).toEqual(['ある.png']);
+    expect(deals[0].receipt_ids).toHaveLength(1);
+  });
+
+  test('画面: 管理のfreeeの設定に「証憑も一緒に送る」があり、振込データの履歴に紐づけた件数が出る', async ({ browser, as }) => {
+    const admin = await setUp(as);
+    const claim = await makeClaim({ role: 'tanaka', status: 'paid', amount: 1200, title: '履歴に出る経費' });
+    await addReceipt(claim.id, '領収書.png');
+    await sync(as);
+    const ctx = await browser.newContext({ storageState: AUTH.admin, locale: 'ja-JP' });
+    const page = await ctx.newPage();
+    await page.goto('/admin/settings');
+    const box = page.getByLabel('証憑（領収書・請求書）も一緒に送る', { exact: false });
+    await expect(box).toBeChecked();
+    await box.click();                                                             // controlled by the saved value: it changes once the save is back
+    await expect(page.getByText('証憑は送りません（取引だけ送ります）')).toBeVisible();
+    await expect(box).not.toBeChecked();
+    expect((await (await admin.get('/api/admin/freee')).json()).send_receipts).toBe(false);
+    await page.goto('/transfers');
+    await page.getByRole('button', { name: 'freee連携' }).click();
+    await expect(page.getByText('証憑 1件を紐づけ')).toBeVisible();
+    await ctx.close();
   });
 });

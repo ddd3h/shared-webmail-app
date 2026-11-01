@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { recentAuthOrResponse } from '@/lib/reauth';
 import { z } from 'zod';
 import { prisma } from '@/lib/db';
 import { revokeUserSessions } from '@/lib/auth';
@@ -13,6 +14,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const { id } = await params;
   const actor = await adminActor();
   if (!actor) return forbidden();
+  { const stale = await recentAuthOrResponse(); if (stale) return stale; } // high-risk: a recent proof of who is asking (lib/reauth.ts)
   const parsed = schema.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) return NextResponse.json({ error: 'invalid_body' }, { status: 400 });
   const target = await prisma.users.findUnique({ where: { id }, select: { id: true, email: true, role: true } });

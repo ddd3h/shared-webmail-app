@@ -4,7 +4,7 @@ import { prisma } from '@/lib/db';
 import { getSession, requireAuth } from '@/lib/auth';
 import { logAudit } from '@/lib/audit';
 import { getActor } from '@/lib/work-auth';
-import { canReviewUser } from '@/lib/org-server';
+import { canReviewRequest } from '@/lib/org-server';
 import { notifyExpenseReviewed } from '@/lib/work-notify';
 
 const schema = z.object({
@@ -12,7 +12,7 @@ const schema = z.object({
   comment: z.string().trim().max(1000).optional(),
 });
 
-// POST /api/expenses/:id/review - approve or reject a pending claim (admins, or the head of the applicant's unit).
+// POST /api/expenses/:id/review - approve or reject a pending claim (admins, or approvers of the 部署 the claim is for).
 // With more than one admin, nobody approves their own claim.
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -27,8 +27,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   const claim = await prisma.expense_claims.findUnique({ where: { id } });
   if (!claim) return NextResponse.json({ error: 'not_found' }, { status: 404 });
-  // admins, or a unit head whose 役職 allows approving the applicant's requests
-  if (!(await canReviewUser(actor, claim.user_id))) return NextResponse.json({ error: 'forbidden' }, { status: 403 });
+  // admins, or somebody whose 役職 allows approving in the 部署 the claim was made for
+  if (!(await canReviewRequest(actor, claim))) return NextResponse.json({ error: 'forbidden' }, { status: 403 });
   if (claim.status !== 'pending') return NextResponse.json({ error: 'not_pending' }, { status: 409 });
   if (claim.user_id === actor.id && (await prisma.users.count({ where: { role: 'admin' } })) > 1) {
     return NextResponse.json({ error: 'self_approval' }, { status: 403 });
