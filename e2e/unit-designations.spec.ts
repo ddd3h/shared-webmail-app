@@ -1,7 +1,7 @@
 import { test, expect } from './fixtures';
 import { AUTH, USERS } from './helpers/constants';
 import { db } from './helpers/db';
-import { buildOrg, openCycle } from './helpers/org';
+import { buildOrg, openCycle, putMemberships } from './helpers/org';
 import { postClaim } from './helpers/factories';
 import { clearNotifications, resetOrg } from './helpers/seed';
 
@@ -12,7 +12,7 @@ test.afterAll(async () => { await resetOrg(); });
 test.beforeEach(async () => { await resetOrg(); await clearNotifications(); });
 
 type As = (r: any) => Promise<import('@playwright/test').APIRequestContext>;
-const designate = async (as: As, who: 'admin' | 'keiri' | 'sato', unit: string, kind: 'expense' | 'evaluation', roles: ('sato' | 'tanaka' | 'suzuki')[]) =>
+const designate = async (as: As, who: 'admin' | 'keiri' | 'sato', unit: string, kind: 'expense' | 'evaluation', roles: ('sato' | 'tanaka' | 'suzuki' | 'yamada')[]) =>
   (await as(who)).put(`/api/org/units/${unit}/designations`, { data: { kind, user_ids: roles.map(r => USERS[r].id) } });
 const review = (c: Promise<import('@playwright/test').APIRequestContext>, id: string) => c.then(x => x.post(`/api/expenses/${id}/review`, { data: { action: 'approve', comment: 'ok' } }));
 const claimOf = async (as: As, unit: string) => (await (await postClaim(await as('tanaka'), { unit_id: unit })).json()).id as string;
@@ -149,6 +149,83 @@ test.describe('画面', () => {
     await page.goto('/org');
     await expect(page.getByRole('button', { name: '組織図' })).toBeVisible().catch(() => {});
     await expect(page.getByRole('button', { name: '承認者・評価者' })).toHaveCount(0);
+    await ctx.close();
+  });
+});
+
+// 部門の下に、チームがいくつもある場合。営業部 ── 第1チーム（田中）・第2チーム（鈴木）。
+test.describe('部門の下のチーム', () => {
+  const buildTeams = async (as: As) => {
+    const org = await buildOrg(as);
+    const admin = await as('admin');
+    const team = async (name: string) => (await (await admin.post('/api/org/units', { data: { name, parent_id: org.sales } })).json()).id as string;
+    const team1 = await team('第1チーム');
+    const team2 = await team('第2チーム');
+    const member = org.positions['メンバー'];
+    await putMemberships(admin, USERS.tanaka.id, [{ unit_id: team1, position_id: member }]);
+    await putMemberships(admin, USERS.suzuki.id, [{ unit_id: team2, position_id: member }]);
+    return { ...org, team1, team2 };
+  };
+
+  test('部門に指定した経費の承認者は、配下のチームの経費も承認する。課長は承認できなくなる', async ({ as }) => {
+    const t = await buildTeams(as);
+    await postClaim(await as('tanaka'), { unit_id: t.team1 }); // 指定の前は、営業部の課長（佐藤）が配下のチームの経費も承認できる
+    expect((await review(as('sato'), await claimOf(as, t.team1))).status()).toBe(200);
+    await designate(as, 'admin', t.sales, 'expense', ['yamada']);
+    const id = await claimOf(as, t.team1);
+    expect((await review(as('sato'), id)).status()).toBe(403);
+    expect((await review(as('suzuki'), id)).status()).toBe(403); // 別のチームの人
+    expect((await review(as('yamada'), id)).status()).toBe(200);
+    expect((await review(as('yamada'), await claimOf(as, t.team1))).status()).toBe(200);
+  });
+
+  test('チーム自身で指定すると、そちらが優先される（ほかのチームは部門の指定のまま）', async ({ as }) => {
+    const t = await buildTeams(as);
+    await designate(as, 'admin', t.sales, 'expense', ['yamada']);
+    await designate(as, 'admin', t.team1, 'expense', ['sato']);
+    const id = await claimOf(as, t.team1);
+    expect((await review(as('yamada'), id)).status()).toBe(403);
+    expect((await review(as('sato'), id)).status()).toBe(200);
+    // 第2チームの経費は部門の指定（山田）のまま。第2チームの鈴木が申請する
+    const other = (await (await postClaim(await as('suzuki'), { unit_id: t.team2 })).json()).id as string;
+    expect((await review(as('sato'), other)).status()).toBe(403);
+    expect((await review(as('yamada'), other)).status()).toBe(200);
+  });
+
+  test('承認待ちの一覧・メニューも、部門の指定が配下のチームに効く。部署名は「部門 / チーム」で出る', async ({ as }) => {
+    const t = await buildTeams(as);
+    await designate(as, 'admin', t.sales, 'expense', ['yamada']);
+    await postClaim(await as('tanaka'), { unit_id: t.team1, title: 'チームの経費' });
+    const list = async (who: 'sato' | 'yamada') => ((await (await (await as(who)).get('/api/approvals')).json()).expenses ?? []) as { title: string; unit: { name: string } }[];
+    expect((await list('sato')).map(e => e.title)).not.toContain('チームの経費');
+    const row = (await list('yamada')).find(e => e.title === 'チームの経費')!;
+    expect(row.unit.name).toBe('本社 / 営業部 / 第1チーム');
+    expect((await (await (await as('yamada')).get('/api/work/me')).json()).can_approve).toBe(true);
+    const mine = (await (await (await as('tanaka')).get('/api/expenses')).json()).items.find((e: { title: string }) => e.title === 'チームの経費');
+    expect(mine.unit.name).toBe('本社 / 営業部 / 第1チーム');
+    expect((await (await (await as('tanaka')).get('/api/profile/units')).json()).units[0].name).toBe('本社 / 営業部 / 第1チーム');
+  });
+
+  test('評価者も、部門の指定が配下のチームのメンバーに効く。チーム自身の指定が優先', async ({ as }) => {
+    const t = await buildTeams(as);
+    await designate(as, 'admin', t.sales, 'evaluation', ['yamada']);
+    await designate(as, 'admin', t.team2, 'evaluation', ['sato']);
+    const cycle = await openCycle(await as('keiri'));
+    const evaluatorOf = async (role: 'tanaka' | 'suzuki') => (await db.evaluations.findFirstOrThrow({ where: { cycle_id: cycle, user_id: USERS[role].id } })).evaluator_id;
+    expect(await evaluatorOf('tanaka')).toBe(USERS.yamada.id); // 第1チーム: 営業部の指定
+    expect(await evaluatorOf('suzuki')).toBe(USERS.sato.id); // 第2チーム: 自分のチームの指定
+  });
+
+  test('画面: 指定のないチームには、どの部署の指定に従うかが出る', async ({ browser, as }) => {
+    const t = await buildTeams(as);
+    await designate(as, 'admin', t.sales, 'expense', ['yamada']);
+    const ctx = await browser.newContext({ storageState: AUTH.keiri });
+    const page = await ctx.newPage();
+    await page.goto('/org');
+    await page.getByRole('button', { name: '承認者・評価者' }).click();
+    const team = page.getByRole('listitem', { name: '第1チーム' });
+    await expect(team.getByTestId('designation-expense').getByTestId('designation-inherited')).toContainText('「営業部」の指定に従う: 山田');
+    await expect(team.getByTestId('designation-evaluation')).toContainText('指定なし');
     await ctx.close();
   });
 });

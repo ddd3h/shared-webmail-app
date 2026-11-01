@@ -1,7 +1,7 @@
 // DB side of the organisation: who has which permission, and for whom.
 // A person belongs to 部署 with a 役職 in each (org_memberships). The permissions of a 役職 apply inside the 部署 it is held in, and below it.
 import { prisma } from '@/lib/db';
-import { holdersOver, scopeFor, withDescendants, type Capability, type Membership, type Unit, isCapability } from '@/lib/org';
+import { effectiveDesignees, holdersOver, scopeFor, unitPath, withDescendants, type Capability, type Membership, type Unit, isCapability } from '@/lib/org';
 
 export type OrgUser = { id: string; role: string };
 type Loaded = { units: Unit[]; memberships: Membership[]; capsOf: (userId: string) => Capability[] };
@@ -63,10 +63,19 @@ export async function unitsInScope(actor: OrgUser, cap: Capability): Promise<Set
   return scopeFor(units, mine.map(toMembership), actor.id, cap);
 }
 
-/** The 部署 a person may claim for: the ones they belong to. */
+/** The 部署 a person may claim for: the ones they belong to. A team under a 部門 is named with its path (「営業部 / 第1チーム」). */
 export async function unitsOf(userId: string): Promise<{ id: string; name: string; position: string | null }[]> {
-  const rows = await prisma.org_memberships.findMany({ where: { user_id: userId }, select: { unit: { select: { id: true, name: true, sort: true } }, position: { select: { name: true } } } });
-  return rows.sort((a, b) => a.unit.sort - b.unit.sort || a.unit.name.localeCompare(b.unit.name)).map(r => ({ id: r.unit.id, name: r.unit.name, position: r.position?.name ?? null }));
+  const [all, rows] = await Promise.all([
+    prisma.org_units.findMany({ select: { id: true, parent_id: true, name: true } }),
+    prisma.org_memberships.findMany({ where: { user_id: userId }, select: { unit: { select: { id: true, name: true, sort: true } }, position: { select: { name: true } } } }),
+  ]);
+  return rows.sort((a, b) => a.unit.sort - b.unit.sort || a.unit.name.localeCompare(b.unit.name)).map(r => ({ id: r.unit.id, name: unitPath(all, r.unit.id), position: r.position?.name ?? null }));
+}
+
+/** unit id → its path name (「営業部 / 第1チーム」), for showing which 部署 a request or evaluation is for. */
+export async function unitPaths(): Promise<Map<string, string>> {
+  const all = await prisma.org_units.findMany({ select: { id: true, parent_id: true, name: true } });
+  return new Map(all.map(u => [u.id, unitPath(all, u.id)]));
 }
 
 /** Which 部署 a request is for: the one named (it must be one of the person's), the only one they have, or "not chosen" when they have none.
@@ -108,18 +117,29 @@ export async function canReviewUser(actor: OrgUser, targetUserId: string): Promi
 // ---- 部署ごとに指定する人（経費の承認者・評価者） ----
 export type DesignationKind = 'expense' | 'evaluation';
 
-/** The people a 部署 named for `kind`, in the order they were named. Empty = nobody named: the 役職 permissions decide. */
+/** For every 部署 that has somebody named for `kind`, on it or on the 部署 above it (the nearest one counts: a team follows its 部門 until it names
+ *  its own people): the people, in the order they were named, and the 部署 they were named on. */
+export async function effectiveDesignations(kind: DesignationKind): Promise<Map<string, { user_ids: string[]; from: string }>> {
+  const [units, rows] = await Promise.all([
+    loadUnits(),
+    prisma.org_unit_designations.findMany({ where: { kind }, orderBy: [{ created_at: 'asc' }, { user_id: 'asc' }], select: { unit_id: true, user_id: true } }),
+  ]);
+  const direct = new Map<string, string[]>();
+  for (const r of rows) direct.set(r.unit_id, [...(direct.get(r.unit_id) ?? []), r.user_id]);
+  return effectiveDesignees(units, direct);
+}
+
+/** The people who decide for a 部署 — named on it, or on the nearest 部署 above it. Empty = nobody named: the 役職 permissions decide. */
 export async function designatedIds(unitId: string, kind: DesignationKind): Promise<string[]> {
-  const rows = await prisma.org_unit_designations.findMany({ where: { unit_id: unitId, kind }, orderBy: [{ created_at: 'asc' }, { user_id: 'asc' }], select: { user_id: true } });
-  return rows.map(r => r.user_id);
+  return (await effectiveDesignations(kind)).get(unitId)?.user_ids ?? [];
 }
-/** The 部署 where `userId` is named for `kind`. */
+/** The 部署 where `userId` decides for `kind`: the ones they are named on and the teams below them that name nobody of their own. */
 export async function designatedUnitsOf(userId: string, kind: DesignationKind): Promise<string[]> {
-  return (await prisma.org_unit_designations.findMany({ where: { user_id: userId, kind }, select: { unit_id: true } })).map(r => r.unit_id);
+  return [...(await effectiveDesignations(kind))].filter(([, v]) => v.user_ids.includes(userId)).map(([unit]) => unit);
 }
-/** Every 部署 that named somebody for `kind`. */
+/** Every 部署 that has somebody named for `kind` (on it, or above it). */
 export async function unitsWithDesignees(kind: DesignationKind): Promise<string[]> {
-  return (await prisma.org_unit_designations.findMany({ where: { kind }, select: { unit_id: true }, distinct: ['unit_id'] })).map(r => r.unit_id);
+  return [...(await effectiveDesignations(kind)).keys()];
 }
 
 /** 役員: their requests are approved by other 役員 (and admins), never by the head of a 部署. */

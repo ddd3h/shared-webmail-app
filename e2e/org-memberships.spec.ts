@@ -102,11 +102,11 @@ test.describe('人事評価は部署ごと（評価者も部署ごと）', () =>
     await putMemberships(await as('admin'), USERS.tanaka.id, [{ unit_id: org.sales, position_id: org.positions['メンバー'] }, { unit_id: org.dev, position_id: org.positions['チームリーダー'] }]);
     const cycle = await openCycle(await as('keiri'));
     const mine = await forms(as, cycle, USERS.tanaka.id);
-    expect(mine.map(f => [f.unit?.name, f.evaluator?.name]).sort()).toEqual([['営業部', '佐藤'], ['開発部', '山田']]);
+    expect(mine.map(f => [f.unit?.name, f.evaluator?.name]).sort()).toEqual([['本社 / 営業部', '佐藤'], ['本社 / 開発部', '山田']]);
     // ...and each evaluator sees only the form of their own 部署
     const team = async (r: 'sato' | 'yamada') => ((await (await (await as(r)).get(`/api/evaluations?scope=team&cycle_id=${cycle}`)).json()).items as { user: { name: string }; unit: { name: string } }[]).filter(i => i.user.name === '田中').map(i => i.unit.name);
-    expect(await team('sato')).toEqual(['営業部']);
-    expect(await team('yamada')).toEqual(['開発部']);
+    expect(await team('sato')).toEqual(['本社 / 営業部']);
+    expect(await team('yamada')).toEqual(['本社 / 開発部']);
   });
 
   test('本人には2枚とも見える（自己評価も部署ごと）。1部署の人は1枚、どの部署にもいない人は評価者なしの1枚', async ({ as }) => {
@@ -114,7 +114,7 @@ test.describe('人事評価は部署ごと（評価者も部署ごと）', () =>
     await putMemberships(await as('admin'), USERS.tanaka.id, [{ unit_id: org.sales, position_id: org.positions['メンバー'] }, { unit_id: org.dev, position_id: org.positions['メンバー'] }]);
     const cycle = await openCycle(await as('keiri'));
     const mine = ((await (await (await as('tanaka')).get(`/api/evaluations?scope=mine&cycle_id=${cycle}`)).json()).items) as { unit: { name: string } }[];
-    expect(mine.map(f => f.unit.name).sort()).toEqual(['営業部', '開発部']);
+    expect(mine.map(f => f.unit.name).sort()).toEqual(['本社 / 営業部', '本社 / 開発部']);
     expect(await forms(as, cycle, USERS.suzuki.id)).toHaveLength(1);
     const guest = await forms(as, cycle, USERS.guest.id);
     expect(guest).toHaveLength(1);
@@ -173,7 +173,7 @@ test.describe('経費申請で、所属する部門を選ぶ', () => {
     expect(ok.status()).toBe(201);
     expect((await db.expense_claims.findUniqueOrThrow({ where: { id: (await ok.json()).id } })).unit_id).toBe(org.dev);
     const mine = (await (await c.get('/api/expenses')).json()).items[0];
-    expect(mine.unit).toMatchObject({ id: org.dev, name: '開発部' });
+    expect(mine.unit).toMatchObject({ id: org.dev, name: '本社 / 開発部' });
     const bad = await apply(c, { unit_id: org.headquarters });                 // 本社には所属していない
     expect(bad.status()).toBe(400);
     expect((await bad.json()).error).toBe('invalid_unit');
@@ -199,13 +199,13 @@ test.describe('経費申請で、所属する部門を選ぶ', () => {
     const c = await as('tanaka');
     const forDev = await (await apply(c, { unit_id: org.dev, title: '開発部の経費' })).json();
     const list = async (r: 'sato' | 'yamada') => (await (await (await as(r)).get('/api/approvals')).json()).expenses.map((e: { title: string; unit: { name: string } }) => `${e.title}/${e.unit.name}`);
-    expect(await list('yamada')).toEqual(['開発部の経費/開発部']);
+    expect(await list('yamada')).toEqual(['開発部の経費/本社 / 開発部']);
     expect(await list('sato')).toEqual([]);                                      // 営業部の課長には出ない
     expect((await review(as('sato'), forDev.id)).status()).toBe(403);
     expect((await review(as('yamada'), forDev.id)).status()).toBe(200);
     const posts = await mm.waitFor(p => p.message.includes('開発部の経費'));
     expect(posts.map(p => p.to).sort()).toEqual(['mm-admin', 'mm-admin2', 'mm-yamada']);   // 営業部の佐藤には届かない
-    expect(posts[0].message).toContain('部門: 開発部');
+    expect(posts[0].message).toContain('部門: 本社 / 開発部');
   });
 
   test('部門を後から変えられる（承認前・却下後）。変えると、承認者も変わる', async ({ as }) => {
@@ -231,22 +231,22 @@ test.describe('経費申請で、所属する部門を選ぶ', () => {
     await page.getByRole('button', { name: '＋ 経費を申請' }).click();
     const sel = page.getByLabel('部門', { exact: true });
     await expect(sel).toBeVisible();
-    await expect(sel.locator('option')).toHaveText(['営業部（メンバー）', '開発部（メンバー）']);
+    await expect(sel.locator('option')).toHaveText(['本社 / 営業部（メンバー）', '本社 / 開発部（メンバー）']);
     await expect(page.getByText('選んだ部門の承認者が承認します')).toBeVisible();
-    await sel.selectOption({ label: '開発部（メンバー）' });
+    await sel.selectOption({ label: '本社 / 開発部（メンバー）' });
     await page.getByPlaceholder(/A社訪問/).fill('開発部の交通費');
     await page.locator('input[type=number]').first().fill('800');
     await page.getByRole('button', { name: '申請する' }).click();
     await expect(page.getByText('申請しました')).toBeVisible();
     expect((await db.expense_claims.findFirstOrThrow({ where: { user_id: USERS.tanaka.id } })).unit_id).toBe(org.dev);
     await page.getByRole('button', { name: /開発部の交通費/ }).click();
-    await expect(page.getByText('部門: 開発部（この部門の承認者が承認します）')).toBeVisible();
+    await expect(page.getByText('部門: 本社 / 開発部（この部門の承認者が承認します）')).toBeVisible();
     await ctx.close();
     // the approver sees which 部門 it is for
     const yctx = await browser.newContext({ storageState: AUTH.yamada, locale: 'ja-JP' });
     const yp = await yctx.newPage();
     await yp.goto('/approvals');
-    await expect(yp.getByText('田中 ・ 開発部')).toBeVisible();
+    await expect(yp.getByText('田中 ・ 本社 / 開発部')).toBeVisible();
     await yctx.close();
   });
 });

@@ -1,6 +1,7 @@
 'use client';
 import { useState } from 'react';
 import { Modal, Notice, api, btn, btnPrimary, inp } from '@/components/work/ui';
+import { unitPath } from '@/lib/org';
 import { flattenTree, type OrgData, type OrgUnit } from './types';
 import { membersOfUnit, putMemberships } from './memberships';
 
@@ -105,7 +106,7 @@ export default function UnitsPanel({ data, onChanged }: { data: OrgData; onChang
             <div><label className="text-xs text-gray-600">親の部署</label>
               <select className={inp} value={draft.parent_id} onChange={e => setDraft({ ...draft, parent_id: e.target.value })}>
                 <option value="">（なし：最上位）</option>
-                {data.units.filter(u => u.id !== draft.id && !blocked(draft.id).has(u.id)).map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                {data.units.filter(u => u.id !== draft.id && !blocked(draft.id).has(u.id)).map(u => <option key={u.id} value={u.id}>{unitPath(data.units, u.id)}</option>)}
               </select></div>
           </div>
           <div className="flex justify-end gap-2 pt-4"><button className={btn} onClick={() => setDraft(null)}>閉じる</button><button className={btnPrimary} disabled={!draft.name.trim()} onClick={save}>保存</button></div>

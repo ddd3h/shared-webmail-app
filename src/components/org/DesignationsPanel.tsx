@@ -1,12 +1,13 @@
 'use client';
 import { useState } from 'react';
 import { Notice, api, inp } from '@/components/work/ui';
+import { effectiveDesignees } from '@/lib/org';
 import { flattenTree, type OrgData } from './types';
 
 type Kind = 'expense' | 'evaluation';
 const KINDS: { k: Kind; label: string; none: string; help: string }[] = [
-  { k: 'expense', label: '経費の承認者', none: '指定なし（役職の権限で決まる）', help: '指定すると、この部署の経費は、指定した人（と管理者）だけが承認します' },
-  { k: 'evaluation', label: '評価者', none: '指定なし（役職で決まる）', help: '指定すると、評価の開始時に、この部署のメンバーの評価者になります（複数のときは上の人。本人の評価は次の人）' },
+  { k: 'expense', label: '経費の承認者', none: '指定なし（役職の権限で決まる）', help: '指定した人（と管理者）だけが承認します' },
+  { k: 'evaluation', label: '評価者', none: '指定なし（役職で決まる）', help: '評価の開始時に、メンバーの評価者になります（複数のときは上の人。本人の評価は次の人）' },
 ];
 
 // 部署ごとに、経費の承認者と評価者を指定する（管理者・人事）。指定がなければ、役職の権限で決まる。
@@ -15,6 +16,9 @@ export default function DesignationsPanel({ data, onChanged }: { data: OrgData; 
   const [pick, setPick] = useState<Record<string, string>>({});
   const tree = flattenTree(data.units);
   const named = (unitId: string, kind: Kind) => (data.designations ?? []).filter(d => d.unit_id === unitId && d.kind === kind).map(d => d.user_id);
+  // 指定のない部署（チーム）は、上の部署の指定に従う。どの部署の指定かを見せる
+  const inherited = (kind: Kind) => effectiveDesignees(data.units, new Map(data.units.map(u => [u.id, named(u.id, kind)])));
+  const unitName = (id: string) => data.units.find(u => u.id === id)?.name ?? '';
   const nameOf = (id: string) => data.members.find(m => m.id === id)?.name ?? '（不明）';
 
   async function save(unitId: string, kind: Kind, ids: string[]) {
@@ -25,7 +29,7 @@ export default function DesignationsPanel({ data, onChanged }: { data: OrgData; 
 
   return (
     <div className="space-y-3">
-      <p className="text-xs text-gray-500">部署ごとに、経費を承認する人と、人事評価の評価者を決めます。指定しない部署は、役職の権限（承認・評価）で決まります。管理者と人事が設定できます。</p>
+      <p className="text-xs text-gray-500">部署ごとに、経費を承認する人と、人事評価の評価者を決めます。指定しない部署は、役職の権限（承認・評価）で決まります。部門に指定すると、その下のチームにも効きます（チーム自身で指定すると、そちらが優先されます）。管理者と人事が設定できます。</p>
       <Notice msg={msg} />
       {tree.length === 0 && <p className="text-sm text-gray-400">部署がありません</p>}
       <ul className="space-y-2">
@@ -34,12 +38,18 @@ export default function DesignationsPanel({ data, onChanged }: { data: OrgData; 
             <div className="text-sm font-semibold text-gray-900">{unit.name}</div>
             {KINDS.map(({ k, label, none, help }) => {
               const ids = named(unit.id, k);
+              const up = ids.length === 0 ? inherited(k).get(unit.id) : undefined; // 上の部署の指定を引き継ぐ
               const key = `${unit.id}:${k}`;
               return (
                 <div key={k} className="space-y-1.5" data-testid={`designation-${k}`}>
                   <div className="text-xs font-medium text-gray-700">{label}<span className="ml-2 font-normal text-gray-400">{help}</span></div>
                   <div className="flex flex-wrap items-center gap-1.5">
-                    {ids.length === 0 && <span className="text-xs text-gray-500">{none}</span>}
+                    {ids.length === 0 && !up && <span className="text-xs text-gray-500">{none}</span>}
+                    {up && (
+                      <span className="text-xs text-gray-600" data-testid="designation-inherited">
+                        「{unitName(up.from)}」の指定に従う: {up.user_ids.map(nameOf).join('、')}
+                      </span>
+                    )}
                     {ids.map((id, i) => (
                       <span key={id} className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2.5 py-1 text-xs text-blue-800">
                         {k === 'evaluation' && ids.length > 1 && <span className="text-blue-400">{i + 1}.</span>}{nameOf(id)}

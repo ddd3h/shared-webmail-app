@@ -55,6 +55,26 @@ export function ancestorsOf(units: Unit[], unitId: string): string[] {
   return out;
 }
 
+/** The 部署 and its parents as one label, top first: 「営業部 / 第1チーム」. Teams of different 部門 often share a name, so this tells them apart. */
+export function unitPath(units: (Unit & { name: string })[], unitId: string): string {
+  const byId = new Map(units.map(u => [u.id, u]));
+  return ancestorsOf(units, unitId).reverse().map(id => byId.get(id)?.name ?? '').filter(Boolean).join(' / ');
+}
+
+/**
+ * Who is named for a 部署, counting the 部署 above it: a 部署 uses its own list; one without a list uses the nearest 部署 above that has one
+ * (a team follows its 部門 until it names its own people). `direct` holds the lists named on each 部署 itself. Units where nobody is named
+ * anywhere above are left out. `from` says which 部署 the list was named on.
+ */
+export function effectiveDesignees(units: Unit[], direct: Map<string, string[]>): Map<string, { user_ids: string[]; from: string }> {
+  const out = new Map<string, { user_ids: string[]; from: string }>();
+  for (const u of units) {
+    const owner = ancestorsOf(units, u.id).find(id => (direct.get(id) ?? []).length > 0);
+    if (owner) out.set(u.id, { user_ids: direct.get(owner)!, from: owner });
+  }
+  return out;
+}
+
 /** Where `cap` applies to this person: the 部署 in which their 役職 grants it, and everything below those 部署. */
 export function scopeFor(units: Unit[], memberships: Membership[], userId: string, cap: Capability): Set<string> {
   return withDescendants(units, memberships.filter(m => m.user_id === userId && m.caps.includes(cap)).map(m => m.unit_id));

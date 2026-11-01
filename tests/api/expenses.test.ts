@@ -17,6 +17,7 @@ vi.mock('@/lib/trip-server', () => ({ checkTripLink: vi.fn() }));
 vi.mock('@/lib/pay-schedule-server', () => ({ loadSchedules: vi.fn(async () => ({ schedules: {}, custom: new Set() })), planOf: vi.fn(() => ({ period: '2026-10', closing_date: '2026-10-31', deadline: '2026-11-05', pay_date: '2026-11-25', late: false })) }));
 vi.mock('@/lib/work-auth', () => ({ getActor: vi.fn(), isAdmin: (a: any) => a.role === 'admin', isFinance: (a: any) => a.role === 'admin' || !!a.is_accounting }));
 vi.mock('@/lib/org-server', () => ({
+  unitPaths: vi.fn(async () => new Map<string, string>()),
   canReviewRequest: vi.fn(async (a: any) => a.role === 'admin'),
   // the 部署 of a claim: the one named, else none (these tests are not about 部署)
   resolveUnit: vi.fn(async (_userId: string, requested?: string | null) => ({ ok: true, unit_id: requested ?? null })),

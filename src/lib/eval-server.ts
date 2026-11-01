@@ -3,7 +3,7 @@ import { prisma } from '@/lib/db';
 import { getSession, requireAuth } from '@/lib/auth';
 import { getActor, type Actor } from '@/lib/work-auth';
 import { evaluatorFor, isValidScore } from '@/lib/org';
-import { designatedUnitsOf, hasCapability, loadOrg } from '@/lib/org-server';
+import { designatedUnitsOf, effectiveDesignations, hasCapability, loadOrg } from '@/lib/org-server';
 
 export type EvalContext = { actor: Actor; hr: boolean };
 
@@ -115,8 +115,7 @@ export async function openCycle(cycleId: string): Promise<{ created: number; wit
   const key = (userId: string, unitId: string | null) => `${userId}|${unitId ?? ''}`;
   const done = new Set(existing.map(e => key(e.user_id, e.unit_id)));
   const eligible = (id: string) => capsOf(id).includes('evaluate');
-  const designees = new Map<string, string[]>();
-  for (const d of await prisma.org_unit_designations.findMany({ where: { kind: 'evaluation' }, orderBy: [{ created_at: 'asc' }, { user_id: 'asc' }], select: { unit_id: true, user_id: true } })) designees.set(d.unit_id, [...(designees.get(d.unit_id) ?? []), d.user_id]);
+  const designees = new Map([...(await effectiveDesignations('evaluation'))].map(([unit, v]) => [unit, v.user_ids])); // a team follows its 部門's evaluators until it names its own
   const rows: { cycle_id: string; user_id: string; unit_id: string | null; evaluator_id: string | null }[] = [];
   for (const u of users) {
     const mine = memberships.filter(m => m.user_id === u.id);

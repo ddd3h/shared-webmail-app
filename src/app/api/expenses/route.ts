@@ -13,7 +13,7 @@ import { isMileageError, resolveMileage } from '@/lib/mileage-server';
 import { loadSchedules, planOf } from '@/lib/pay-schedule-server';
 import { googleTransitLink, yahooTransitLink } from '@/lib/transit';
 import { MAX_ADDRESS_LENGTH, mapsLink, metersToKm } from '@/lib/mileage';
-import { resolveUnit } from '@/lib/org-server';
+import { resolveUnit, unitPaths } from '@/lib/org-server';
 
 const include = {
   user: { select: { id: true, name: true, worker_type: true, home_address: true } },
@@ -24,7 +24,7 @@ const include = {
   receipts: { select: { id: true, filename: true, content_type: true, size: true }, orderBy: { created_at: 'asc' as const } },
 };
 
-function serialize(c: any, schedules: Awaited<ReturnType<typeof loadSchedules>>['schedules']) {
+function serialize(c: any, schedules: Awaited<ReturnType<typeof loadSchedules>>['schedules'], paths: Map<string, string>) {
   // when a claim still waiting or approved (and not yet in a pay statement) will be paid back, by the 締め日・振込日 of the claimant's kind of worker
   const open = c.payment_method === 'personal' && !c.payslip_id && (c.status === 'pending' || c.status === 'approved');
   return {
@@ -55,7 +55,7 @@ function serialize(c: any, schedules: Awaited<ReturnType<typeof loadSchedules>>[
       yahoo_url: c.transit_from && c.transit_to ? yahooTransitLink({ from: c.transit_from, to: c.transit_to, date: c.expense_date.toISOString().slice(0, 10) }) : null,
       google_url: c.transit_from && c.transit_to ? googleTransitLink({ from: c.transit_from, to: c.transit_to, date: c.expense_date.toISOString().slice(0, 10) }) : null,
     } : null,
-    unit: c.unit ?? null,   // the 部署 claimed for (its approvers decide)
+    unit: c.unit ? { id: c.unit.id, name: paths.get(c.unit.id) ?? c.unit.name } : null,   // the 部署 claimed for (its approvers decide), named with its 部門 (「営業部 / 第1チーム」)
     receipts: c.receipts,
     created_at: c.created_at,
   };
@@ -89,10 +89,11 @@ export async function GET(req: NextRequest) {
   else if (status === 'owed') { filter.status = 'approved'; filter.payment_method = 'personal'; }
   else if (status) filter.status = status;
 
-  const [rows, scoped, { schedules }] = await Promise.all([
+  const [rows, scoped, { schedules }, paths] = await Promise.all([
     prisma.expense_claims.findMany({ where: filter, include, orderBy: [{ expense_date: 'desc' }, { created_at: 'desc' }], take: 500 }),
     prisma.expense_claims.findMany({ where: scope, select: { status: true, payment_method: true, amount: true, payslip_id: true, user_id: true, user: { select: { name: true } } } }),
     loadSchedules(),
+    unitPaths(),
   ]);
 
   let byUser: { user_id: string; name: string; count: number; amount: number }[] | undefined;
@@ -105,7 +106,7 @@ export async function GET(req: NextRequest) {
     }
     byUser = [...map.values()].sort((a, b) => b.amount - a.amount);
   }
-  return NextResponse.json({ items: rows.map(c => serialize(c, schedules)), summary: summarize(scoped), to_reimburse_by_user: byUser });
+  return NextResponse.json({ items: rows.map(c => serialize(c, schedules, paths)), summary: summarize(scoped), to_reimburse_by_user: byUser });
 }
 
 const fieldsSchema = z.object({

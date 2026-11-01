@@ -10,7 +10,7 @@ vi.mock('@/lib/db', () => ({
 }));
 const send = vi.fn();
 const approvers = vi.fn(async (_userId: string): Promise<{ id: string; email: string }[]> => []);
-vi.mock('@/lib/org-server', () => ({ approversOf: (id: string) => approvers(id) }));
+vi.mock('@/lib/org-server', () => ({ approversOf: (id: string) => approvers(id), unitPaths: async () => new Map<string, string>() }));
 vi.mock('@/lib/mattermost-dm', async () => {
   const actual = await vi.importActual<typeof import('@/lib/mattermost-dm')>('@/lib/mattermost-dm');
   return { mmText: actual.mmText, sendDirectMessage: (...a: any[]) => send(...a) };

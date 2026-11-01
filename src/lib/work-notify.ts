@@ -4,7 +4,7 @@ import { prisma } from '@/lib/db';
 import { transferSlotFor, transferSlotLabel } from '@/lib/transfer-days';
 import { mmText, sendDirectMessage } from '@/lib/mattermost-dm';
 import { PAYMENT_LABEL, type PaymentMethod } from '@/lib/expense';
-import { approversOf } from '@/lib/org-server';
+import { approversOf, unitPaths } from '@/lib/org-server';
 
 const appUrl = () => (process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000').replace(/\/$/, '');
 const yen = (n: number) => `¥${n.toLocaleString('ja-JP')}`;
@@ -36,7 +36,7 @@ export function notifyExpenseSubmitted(claimId: string, resubmitted = false) {
       `🧾 **経費申請が${resubmitted ? '再申請されました' : '届きました'}**\n\n` +
       `**${mmText(c.user.name, 40)}** さん ・ **${yen(c.amount)}** ・ ${mmText(c.category, 20)}（${PAYMENT_LABEL[c.payment_method as PaymentMethod]}）\n` +
       `件名: ${mmText(c.title, 100)}\n` +
-      (c.unit ? `部門: ${mmText(c.unit.name, 40)}\n` : '') + '\n' +
+      (c.unit_id ? `部門: ${mmText((await unitPaths()).get(c.unit_id) ?? c.unit?.name ?? '', 60)}\n` : '') + '\n' +
       `承認・却下: ${appUrl()}/approvals`;
     await dmAll(await reviewersOf(c.user_id, c.unit_id), msg, 'expense_submitted');
   });

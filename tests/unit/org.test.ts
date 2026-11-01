@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { ancestorsOf, evaluatorFor, gradeFor, holdersOver, isValidScore, scopeFor, totalScore, wouldCreateCycle, withDescendants, type Capability, type Membership, type Unit } from '@/lib/org';
+import { ancestorsOf, effectiveDesignees, evaluatorFor, gradeFor, holdersOver, isValidScore, scopeFor, totalScore, unitPath, wouldCreateCycle, withDescendants, type Capability, type Membership, type Unit } from '@/lib/org';
 
 //  root ── sales ── sales-a
 //       └─ dev
@@ -109,5 +109,36 @@ describe('総合点と等級', () => {
   it('点数は1〜5の整数だけ', () => {
     for (const ok of [1, 2, 3, 4, 5]) expect(isValidScore(ok)).toBe(true);
     for (const bad of [0, 6, 2.5, -1, '3', null, undefined, NaN]) expect(isValidScore(bad)).toBe(false);
+  });
+});
+
+describe('部門の下のチーム: 承認者・評価者の指定は下に引き継ぐ', () => {
+  //  hq ── sales ── team1
+  //            └─── team2 ── sub
+  const tree = [
+    { id: 'hq', parent_id: null, name: '本社' }, { id: 'sales', parent_id: 'hq', name: '営業部' },
+    { id: 'team1', parent_id: 'sales', name: '第1チーム' }, { id: 'team2', parent_id: 'sales', name: '第2チーム' }, { id: 'sub', parent_id: 'team2', name: 'A班' },
+  ];
+  it('指定のない部署は、一番近い上の部署の指定に従う', () => {
+    const got = effectiveDesignees(tree, new Map([['sales', ['u1', 'u2']]]));
+    expect(got.get('sales')).toEqual({ user_ids: ['u1', 'u2'], from: 'sales' });
+    expect(got.get('team1')).toEqual({ user_ids: ['u1', 'u2'], from: 'sales' });
+    expect(got.get('sub')).toEqual({ user_ids: ['u1', 'u2'], from: 'sales' });
+    expect(got.has('hq')).toBe(false); // 上には引き継がない
+  });
+  it('チーム自身で指定すると、そちらが優先される（その下の班もそちらに従う）', () => {
+    const got = effectiveDesignees(tree, new Map([['sales', ['u1']], ['team2', ['u9']]]));
+    expect(got.get('team1')!.user_ids).toEqual(['u1']);
+    expect(got.get('team2')).toEqual({ user_ids: ['u9'], from: 'team2' });
+    expect(got.get('sub')).toEqual({ user_ids: ['u9'], from: 'team2' });
+  });
+  it('どこにも指定がなければ、何も返さない（役職の権限で決まる）', () => {
+    expect(effectiveDesignees(tree, new Map()).size).toBe(0);
+    expect(effectiveDesignees(tree, new Map([['team1', []]])).size).toBe(0);
+  });
+  it('名前は「部門 / チーム」の形（同じ名前のチームが別の部門にあっても見分けられる）', () => {
+    expect(unitPath(tree, 'team1')).toBe('本社 / 営業部 / 第1チーム');
+    expect(unitPath(tree, 'hq')).toBe('本社');
+    expect(unitPath(tree, 'sub')).toBe('本社 / 営業部 / 第2チーム / A班');
   });
 });
