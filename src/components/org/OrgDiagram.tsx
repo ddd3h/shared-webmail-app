@@ -11,7 +11,7 @@ import { NODE_WIDTH, autoLayout, positionsFor } from '@/lib/org-layout';
 import type { OrgData } from './types';
 import { membersOfUnit } from './memberships';
 
-type UnitNodeData = { name: string; people: { id: string; name: string; position: string | null }[]; editable: boolean };
+type UnitNodeData = { name: string; parent: string | null; people: { id: string; name: string; position: string | null }[]; editable: boolean };
 type UnitNode = Node<UnitNodeData, 'unit'>;
 type CutEdgeData = { editable: boolean; onCut: (unitId: string) => void };
 const MAX_SHOWN = 6;
@@ -27,6 +27,7 @@ function UnitCard({ data }: NodeProps<UnitNode>) {
         <h3 className="truncate text-sm font-semibold text-gray-900">{data.name}</h3>
         <span className="shrink-0 text-xs text-gray-400">{data.people.length}人</span>
       </div>
+      {data.parent && <p className="truncate border-b border-gray-100 px-3 py-0.5 text-[11px] text-gray-400" title={`${data.parent}の下`}>{data.parent}の下</p>}
       <ul className="space-y-0.5 px-3 py-2">
         {shown.map(p => (
           <li key={p.id} className="flex items-center gap-1 text-xs text-gray-700">
@@ -75,7 +76,7 @@ function Diagram({ data, editable, onChanged }: { data: OrgData; editable: boole
     return data.units.map(u => ({
       id: u.id, type: 'unit' as const, position: pos[u.id], draggable: editable,
       data: {
-        name: u.name, editable,
+        name: u.name, editable, parent: data.units.find(p => p.id === u.parent_id)?.name ?? null,
         people: membersOfUnit(data, u.id).map(({ member, position_id }) => ({ id: member.id, name: member.name, position: positionName(position_id)})),
       },
     }));

@@ -7,6 +7,8 @@ export const NODE_WIDTH = 230;
 export const COL_GAP = 40;   // between neighbours
 export const ROW_GAP = 150;  // from the bottom of a row to the top of the next one (a node is at most NODE_HEIGHT tall)
 export const NODE_HEIGHT = 190;
+export const GRID_COLS = 4;      // 配下に、さらに下を持たないチームが GRID_COLS より多いときは、折り返して並べる（1行に並べると、図が小さくなって読めない）
+export const GRID_ROW_GAP = 40;  // 折り返した段どうしの間
 
 /**
  * A tidy tree: children side by side under their parent, the parent centred over them; several top units sit side by side.
@@ -14,7 +16,7 @@ export const NODE_HEIGHT = 190;
  */
 export function autoLayout(units: LayoutUnit[]): Record<string, Point> {
   const byId = new Map(units.map(u => [u.id, u]));
-  const order = (a: LayoutUnit, b: LayoutUnit) => (a.sort ?? 0) - (b.sort ?? 0) || (a.name ?? '').localeCompare(b.name ?? '') || a.id.localeCompare(b.id);
+  const order = (a: LayoutUnit, b: LayoutUnit) => (a.sort ?? 0) - (b.sort ?? 0) || (a.name ?? '').localeCompare(b.name ?? '', 'ja', { numeric: true }) || a.id.localeCompare(b.id);
   const children = new Map<string | null, LayoutUnit[]>();
   const placed = new Set<string>();
   // a unit whose parent is missing, or that is in a loop, counts as a top unit
@@ -32,10 +34,25 @@ export function autoLayout(units: LayoutUnit[]): Record<string, Point> {
     if (placed.has(u.id)) return cursor;
     placed.add(u.id);
     const kids = children.get(u.id) ?? [];
+    // 下を持たない子（チームなど）が多いときは、GRID_COLS 列に折り返したかたまりにする。下を持つ子は、これまでどおり横に並べる
+    const isLeaf = (k: LayoutUnit) => (children.get(k.id) ?? []).length === 0;
+    const leaves = kids.filter(isLeaf);
+    const wrap = leaves.length > GRID_COLS;
+    const branches = wrap ? kids.filter(k => !isLeaf(k)) : kids;
     let x: number;
     if (kids.length === 0) { x = cursor; cursor += 1; }
     else {
-      const xs = kids.map(k => place(k, depth + 1));
+      const xs = branches.map(k => place(k, depth + 1));
+      if (wrap) {
+        const left = cursor;
+        leaves.forEach((k, i) => {
+          placed.add(k.id);
+          out[k.id] = { x: Math.round((left + (i % GRID_COLS)) * slot), y: (depth + 1) * (NODE_HEIGHT + ROW_GAP) + Math.floor(i / GRID_COLS) * (NODE_HEIGHT + GRID_ROW_GAP) };
+        });
+        const cols = Math.min(GRID_COLS, leaves.length);
+        xs.push(left, left + cols - 1);
+        cursor += cols;
+      }
       x = (Math.min(...xs) + Math.max(...xs)) / 2;
     }
     out[u.id] = { x: Math.round(x * slot), y: depth * (NODE_HEIGHT + ROW_GAP) };
@@ -44,10 +61,10 @@ export function autoLayout(units: LayoutUnit[]): Record<string, Point> {
   for (const top of children.get(null) ?? []) { place(top, 0); }
   // units in a loop that nothing above reaches: put each one on its own, below everything
   let extra = 0;
-  for (const u of units) if (!placed.has(u.id)) { placed.add(u.id); out[u.id] = { x: Math.round(extra++ * slot), y: (maxDepth(out) + 1) * (NODE_HEIGHT + ROW_GAP) }; }
+  const bottom = Math.max(-NODE_HEIGHT - ROW_GAP, ...Object.values(out).map(p => p.y));
+  for (const u of units) if (!placed.has(u.id)) { placed.add(u.id); out[u.id] = { x: Math.round(extra++ * slot), y: bottom + NODE_HEIGHT + ROW_GAP }; }
   return out;
 }
-const maxDepth = (pos: Record<string, Point>) => Math.max(0, ...Object.values(pos).map(p => Math.round(p.y / (NODE_HEIGHT + ROW_GAP))));
 
 /** Where each unit is drawn: the saved place, or the automatic one for units that have none yet. */
 export function positionsFor(units: (LayoutUnit & { pos_x?: number | null; pos_y?: number | null })[]): Record<string, Point> {

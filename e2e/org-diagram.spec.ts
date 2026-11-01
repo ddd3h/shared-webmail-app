@@ -41,6 +41,23 @@ test.describe('組織図を、図として自由に動かす（管理者）', ()
     await expect(node(page, org.dev)).toContainText('山田部長');
   });
 
+  test('部門の下にチームがたくさんあっても、折り返して並ぶので読める。カードには「どの部門の下か」が出て、数字の順に並ぶ', async ({ page, as }) => {
+    const admin = await as('admin');
+    const ids: string[] = [];
+    for (const n of [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]) ids.push((await (await admin.post('/api/org/units', { data: { name: `第${n}チーム`, parent_id: org.sales } })).json()).id);
+    await openDiagram(page);
+    await expect(page.locator('.react-flow__node')).toHaveCount(3 + 12);
+    await expect(node(page, ids[0])).toContainText('営業部の下');
+    const boxes = await Promise.all(ids.map(async id => (await node(page, id).boundingBox())!));
+    expect(new Set(boxes.map(b => Math.round(b.y))).size).toBe(3);                    // 12チーム = 4列 × 3段
+    for (let i = 0; i < boxes.length; i++) for (let j = i + 1; j < boxes.length; j++) {
+      const a = boxes[i], b = boxes[j];
+      expect(a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height).toBe(false); // 重ならない
+    }
+    expect(boxes[1].x).toBeGreaterThan(boxes[0].x);                                    // 第1 → 第2 → ... の順
+    expect(boxes[9].y).toBeGreaterThan(boxes[0].y);                                    // 第10チームは3段目
+  });
+
   test('カードをドラッグすると、好きな場所に動き、位置が保存される。再読み込みしても同じ場所。線は自動でついてくる', async ({ page }) => {
     await openDiagram(page);
     expect((await unit(org.dev)).pos_x).toBeNull();
