@@ -291,6 +291,19 @@ test.describe('画面', () => {
   test.describe('システム管理者', () => {
     test.use({ storageState: AUTH.admin });
 
+    test('部署の「＋ 配下に追加」で、その部署の下にチームをつくれる。親は選んだ部署に決まっている', async ({ page }) => {
+      const parent = await db.org_units.create({ data: { id: 'u_parent_x', name: '営業本部' } });
+      await page.goto('/org');
+      await page.getByRole('button', { name: '部署', exact: true }).click();
+      await page.getByRole('button', { name: '営業本部の配下に部署を追加' }).click();
+      await expect(page.locator('select').filter({ hasText: '（なし：最上位）' })).toHaveValue(parent.id);
+      await page.getByPlaceholder('営業部').fill('第3チーム');
+      await page.getByRole('button', { name: '保存' }).click();
+      await expect(page.getByText('保存しました')).toBeVisible();
+      expect(await db.org_units.findFirst({ where: { name: '第3チーム' } })).toMatchObject({ parent_id: parent.id });
+      await db.org_units.deleteMany({ where: { name: { in: ['第3チーム', '営業本部'] } } });
+    });
+
     test('部署を追加し、役職を作り、メンバーを配置できる', async ({ page }) => {
       await page.goto('/org');
       await page.getByRole('button', { name: '部署', exact: true }).click();

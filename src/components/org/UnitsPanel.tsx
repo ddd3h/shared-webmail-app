@@ -53,7 +53,7 @@ export default function UnitsPanel({ data, onChanged }: { data: OrgData; onChang
   return (
     <div className="space-y-3">
       <div className="flex items-center gap-3">
-        <p className="flex-1 text-xs text-gray-500">部署は自由につくれます（会社 → 部 → 課 のように親子にもできます）。部署ごとにメンバーと役職を入れます。同じ人を複数の部署に、部署ごとに別の役職で入れられます（この部署では班長、あの部署では部長）。承認・評価の担当は、各部署の役職の権限で決まります。</p>
+        <p className="flex-1 text-xs text-gray-500">部署は自由につくれます（会社 → 部 → チームのように親子にもできます。部署の「＋ 配下に追加」で、その下にチームをつくれます）。部署ごとにメンバーと役職を入れます。同じ人を複数の部署に、部署ごとに別の役職で入れられます（この部署では班長、あの部署では部長）。承認・評価の担当は、各部署の役職の権限で決まります。</p>
         <button className={btnPrimary} onClick={() => setDraft({ name: '', parent_id: '' })}>＋ 部署を追加</button>
       </div>
       <Notice msg={msg} />
@@ -67,6 +67,7 @@ export default function UnitsPanel({ data, onChanged }: { data: OrgData; onChang
             <li key={unit.id} aria-label={unit.name} style={{ marginLeft: `${Math.min(depth, 5) * 1.25}rem` }} className="rounded-xl border border-gray-200 bg-white p-3 space-y-2">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="flex-1 min-w-32 text-sm font-semibold text-gray-900">{unit.name}<span className="ml-2 text-xs font-normal text-gray-500">{people.length}人</span></span>
+                <button className="text-sm text-blue-600 hover:underline" aria-label={`${unit.name}の配下に部署を追加`} onClick={() => setDraft({ name: '', parent_id: unit.id })}>＋ 配下に追加</button>
                 <button className="text-sm text-blue-600 hover:underline" onClick={() => setDraft({ id: unit.id, name: unit.name, parent_id: unit.parent_id ?? '' })}>編集</button>
                 <button className="text-sm text-red-600 hover:underline" onClick={() => remove(unit)}>削除</button>
               </div>

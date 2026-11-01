@@ -5,13 +5,13 @@ import {
   type Connection, type Edge, type EdgeProps, type Node, type NodeProps,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { Notice, api, btn } from '@/components/work/ui';
+import { Modal, Notice, api, btn, btnPrimary, inp } from '@/components/work/ui';
 import { wouldCreateCycle } from '@/lib/org';
 import { NODE_WIDTH, autoLayout, positionsFor } from '@/lib/org-layout';
 import type { OrgData } from './types';
 import { membersOfUnit } from './memberships';
 
-type UnitNodeData = { name: string; parent: string | null; people: { id: string; name: string; position: string | null }[]; editable: boolean };
+type UnitNodeData = { id: string; onAdd: (unitId: string) => void; name: string; parent: string | null; people: { id: string; name: string; position: string | null }[]; editable: boolean };
 type UnitNode = Node<UnitNodeData, 'unit'>;
 type CutEdgeData = { editable: boolean; onCut: (unitId: string) => void };
 const MAX_SHOWN = 6;
@@ -38,6 +38,11 @@ function UnitCard({ data }: NodeProps<UnitNode>) {
         {data.people.length > MAX_SHOWN && <li className="text-xs text-gray-400">ほか {data.people.length - MAX_SHOWN}人</li>}
         {data.people.length === 0 && <li className="text-xs text-gray-400">（メンバーなし）</li>}
       </ul>
+      {data.editable && (
+        <div className="border-t border-gray-100 px-3 py-1">
+          <button type="button" className="nodrag text-[11px] text-blue-600 hover:underline" aria-label={`${data.name}の配下にチームを追加`} onClick={() => data.onAdd(data.id)}>＋ 配下に追加</button>
+        </div>
+      )}
       <Handle type="source" position={Position.Bottom} isConnectable={data.editable} className={data.editable ? '!h-3 !w-3 !bg-blue-500' : '!opacity-0'} aria-label={`${data.name}の下（子への線の出口）`} />
     </section>
   );
@@ -69,6 +74,7 @@ const edgeTypes = { org: OrgEdge };
 function Diagram({ data, editable, onChanged }: { data: OrgData; editable: boolean; onChanged: () => void }) {
   const [msg, setMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const flow = useReactFlow();
+  const [adding, setAdding] = useState<{ parent_id: string; name: string } | null>(null); // 「配下に追加」の入力
 
   const build = useCallback((): UnitNode[] => {
     const pos = positionsFor(data.units);
@@ -76,7 +82,7 @@ function Diagram({ data, editable, onChanged }: { data: OrgData; editable: boole
     return data.units.map(u => ({
       id: u.id, type: 'unit' as const, position: pos[u.id], draggable: editable,
       data: {
-        name: u.name, editable, parent: data.units.find(p => p.id === u.parent_id)?.name ?? null,
+        id: u.id, onAdd: id => setAdding({ parent_id: id, name: '' }), name: u.name, editable, parent: data.units.find(p => p.id === u.parent_id)?.name ?? null,
         people: membersOfUnit(data, u.id).map(({ member, position_id }) => ({ id: member.id, name: member.name, position: positionName(position_id)})),
       },
     }));
@@ -99,6 +105,12 @@ function Diagram({ data, editable, onChanged }: { data: OrgData; editable: boole
     const res = await api(`/api/org/units/${unitId}`, 'PUT', { name: unit.name, parent_id: parentId, sort: unit.sort });
     if (res.ok) { setMsg({ type: 'success', text: parentId ? `「${unit.name}」を「${data.units.find(u => u.id === parentId)?.name}」の下につなぎました` : `「${unit.name}」を一番上の部署にしました` }); onChanged(); }
     else fail('つなぎ直せませんでした');
+  }
+  async function addChild() {
+    if (!adding || !adding.name.trim()) return;
+    const res = await api('/api/org/units', 'POST', { name: adding.name.trim(), parent_id: adding.parent_id });
+    if (res.ok) { setMsg({ type: 'success', text: `「${adding.name.trim()}」を「${data.units.find(u => u.id === adding.parent_id)?.name}」の下につくりました` }); setAdding(null); onChanged(); }
+    else { setAdding(null); fail('追加できませんでした'); }
   }
   function cut(unitId: string) { void setParent(unitId, null); }
   function onConnect(c: Connection) {
@@ -134,9 +146,15 @@ function Diagram({ data, editable, onChanged }: { data: OrgData; editable: boole
           </Panel>
         </ReactFlow>
       </div>
+      {adding && (
+        <Modal title={`「${data.units.find(u => u.id === adding.parent_id)?.name}」の配下に追加`} onClose={() => setAdding(null)}>
+          <div><label className="text-xs text-gray-600">部署名（チーム名）</label><input className={inp} autoFocus placeholder="第1チーム" value={adding.name} onChange={e => setAdding({ ...adding, name: e.target.value })} onKeyDown={e => { if (e.key === 'Enter') void addChild(); }} /></div>
+          <div className="flex justify-end gap-2 pt-4"><button className={btn} onClick={() => setAdding(null)}>閉じる</button><button className={btnPrimary} disabled={!adding.name.trim()} onClick={() => void addChild()}>追加</button></div>
+        </Modal>
+      )}
       <p className="text-xs text-gray-500">
         {editable
-          ? '部署のカードをドラッグして、好きな場所に動かせます（線は自動でついてきます）。カードの下の青い丸から別のカードの上の丸へ線を引くと、そのカードが下の部署になります。線の真ん中の ✕ で外せます。拡大・縮小は左下のボタン（Ctrl＋ホイールでも）。'
+          ? '部署のカードをドラッグして、好きな場所に動かせます（線は自動でついてきます）。カードの下の青い丸から別のカードの上の丸へ線を引くと、そのカードが下の部署になります。線の真ん中の ✕ で外せます。カードの「＋ 配下に追加」で、その下にチームをつくれます。拡大・縮小は左下のボタン（Ctrl＋ホイールでも）。'
           : '部署のカードの位置は、システム管理者が決めます。背景をドラッグすると動かせ、左下のボタンで拡大・縮小できます。'}
       </p>
     </div>

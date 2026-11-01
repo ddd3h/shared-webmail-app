@@ -58,6 +58,18 @@ test.describe('組織図を、図として自由に動かす（管理者）', ()
     expect(boxes[9].y).toBeGreaterThan(boxes[0].y);                                    // 第10チームは3段目
   });
 
+  test('カードの「＋ 配下に追加」で、その部署の下にチームをつくれる（親はその部署に決まっている）', async ({ page }) => {
+    await openDiagram(page);
+    await node(page, org.sales).getByRole('button', { name: '営業部の配下にチームを追加' }).click();
+    await page.getByPlaceholder('第1チーム').fill('第1チーム');
+    await page.getByRole('button', { name: '追加', exact: true }).click();
+    await expect(page.getByText('「第1チーム」を「営業部」の下につくりました')).toBeVisible();
+    const made = await db.org_units.findFirstOrThrow({ where: { name: '第1チーム' } });
+    expect(made.parent_id).toBe(org.sales);
+    await expect(page.locator('.react-flow__node')).toHaveCount(4);
+    await expect(node(page, made.id)).toContainText('営業部の下');
+  });
+
   test('カードをドラッグすると、好きな場所に動き、位置が保存される。再読み込みしても同じ場所。線は自動でついてくる', async ({ page }) => {
     await openDiagram(page);
     expect((await unit(org.dev)).pos_x).toBeNull();
