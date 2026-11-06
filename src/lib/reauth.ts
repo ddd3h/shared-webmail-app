@@ -31,7 +31,7 @@ export function provedAt(s: Pick<Session, 'issuedAt' | 'reauthAt' | 'resumed'>):
 export const isRecent = (s: Pick<Session, 'issuedAt' | 'reauthAt' | 'resumed'>, minutes: number, now = Date.now()) => minutes <= 0 || now - provedAt(s) <= minutes * 60_000;
 
 export const recentLoginRequired = () => NextResponse.json(
-  { error: 'recent_login_required', message: 'この操作は、安全のため、パスワードを入れ直してから行います' }, { status: 403 },
+  { error: 'recent_login_required', message: 'この操作は、安全のため、本人確認（パスワード、パスキーの人はパスキー）をしてから行います' }, { status: 403 },
 );
 
 /** For a high-risk route, after the role check: null when it may go on, otherwise the answer to send (403 `recent_login_required`; the screen asks for the
