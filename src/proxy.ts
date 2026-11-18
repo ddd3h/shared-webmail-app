@@ -7,7 +7,7 @@ import { addStrike } from '@/lib/login-guard';
 import { originProblem } from '@/lib/origin-check';
 import { loadSecurityPolicy } from '@/lib/security-settings';
 import { recordSecurityEvent } from '@/lib/security-events';
-import { botAllowList, botBlockForcedOff, botKind } from '@/lib/bot-guard';
+import { BOT_KIND_LABEL, botAllowList, botBlockForcedOff, botKind } from '@/lib/bot-guard';
 import { judgeAuthenticated, judgeUnauthenticated, type Verdict } from '@/lib/sweep-guard';
 
 const PUBLIC_PATHS = ['/login', '/reset-password', '/api/auth/login', '/api/auth/mfa/', '/api/auth/logout', '/api/auth/resume', '/api/cron/', '/api/passkeys/auth-options', '/api/passkeys/auth'];
@@ -80,6 +80,8 @@ async function botRules(req: NextRequest, ip: string): Promise<NextResponse | nu
     botNoted.set(key, Date.now());
     await recordSecurityEvent({ type: 'bot_blocked', severity: 'info', ip, detail: { kind, ua: req.headers.get('user-agent')?.slice(0, 200) ?? null, path: req.nextUrl.pathname } });
   }
+  // The address of a robot is blocked too (an hour the first time, for good when it comes back).
+  await blockIp({ ip, reason: `自動ブロック: ロボットの接続（${BOT_KIND_LABEL[kind]}）`, minutes: AUTO_BLOCK_MINUTES, source: 'auto' });
   return denied(req, 403, 'bots_not_allowed');
 }
 

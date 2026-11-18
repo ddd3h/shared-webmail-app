@@ -20,16 +20,30 @@ export async function isIpBlocked(ip: string): Promise<boolean> {
   try { return matchesAny(ip, await activeRules()); } catch { return false; }
 }
 
+/** An automatic block of an address that was blocked automatically before (sweeping, or a robot) is permanent. */
+export const REPEAT_BLOCK_LABEL = '再発のため永久ブロック';
+
 export async function blockIp(o: { ip: string; reason: string; minutes?: number | null; source: 'manual' | 'auto'; byUserId?: string | null }): Promise<boolean> {
   if (!isValidRule(o.ip) || o.ip === 'unknown') return false;
   if (o.source === 'auto' && isLoopback(o.ip)) return false; // never lock out this machine itself
-  const expires_at = o.minutes ? new Date(Date.now() + o.minutes * 60_000) : null;
+  let minutes = o.minutes;
+  let reason = o.reason;
+  if (o.source === 'auto') {
+    // Still blocked: the same offence seen again while the block runs (requests in flight) is not a new offence.
+    const current = await prisma.ip_blocks.findUnique({ where: { ip: o.ip } });
+    if (current && (current.expires_at === null || current.expires_at > new Date())) return true;
+    const h = await prisma.ip_block_history.upsert({
+      where: { ip: o.ip }, create: { ip: o.ip, count: 1 }, update: { count: { increment: 1 }, last_at: new Date() },
+    });
+    if (h.count >= 2) { minutes = null; reason = `${REPEAT_BLOCK_LABEL}（${h.count}回目）: ${o.reason.replace(/^自動ブロック: /, '')}`; }
+  }
+  const expires_at = minutes ? new Date(Date.now() + minutes * 60_000) : null;
   await prisma.ip_blocks.upsert({
-    where: { ip: o.ip }, create: { ip: o.ip, reason: o.reason, source: o.source, expires_at, created_by_id: o.byUserId ?? null },
-    update: { reason: o.reason, expires_at, source: o.source },
+    where: { ip: o.ip }, create: { ip: o.ip, reason, source: o.source, expires_at, created_by_id: o.byUserId ?? null },
+    update: { reason, expires_at, source: o.source },
   });
   forget();
-  if (o.source === 'auto') await recordSecurityEvent({ type: 'ip_blocked', severity: 'alert', ip: o.ip, detail: { reason: o.reason, minutes: o.minutes } });
+  if (o.source === 'auto') await recordSecurityEvent({ type: 'ip_blocked', severity: 'alert', ip: o.ip, detail: { reason, minutes, permanent: minutes === null } });
   return true;
 }
 

@@ -1373,6 +1373,13 @@ model ip_blocks {
   @@index([expires_at])
 }
 
+// How many times an address has been blocked automatically (kept after the block ends or an admin lifts it): the second time is permanent.
+model ip_block_history {
+  ip        String   @id
+  count     Int      @default(0)
+  last_at   DateTime @default(now())
+}
+
 // Things worth a human's attention: attacks noticed, accounts locked, logins from new places. severity: info | warn | alert
 model security_events {
   id         String   @id @default(cuid())

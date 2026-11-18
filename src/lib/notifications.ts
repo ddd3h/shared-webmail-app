@@ -6,6 +6,10 @@ import { prisma } from '@/lib/db';
 
 export type NewNotification = { userId: string; type: string; title: string; body: string; url: string; priority?: 'low' | 'normal' | 'high' };
 
+/** New-mail rows are kept (the push worker reads them) but are not shown on the bell or in the list: mail has its own place. */
+export const MAIL_EVENT_TYPES = ['new_message', 'thread_updated'];
+const notMail = { event_type: { notIn: MAIL_EVENT_TYPES } };
+
 const TITLE_MAX = 120;
 const BODY_MAX = 400;
 
@@ -64,7 +68,7 @@ export type NotificationItem = { id: string; type: string; title: string; body: 
 export async function listNotifications(userId: string, o: { limit?: number; before?: Date; unreadOnly?: boolean } = {}) {
   const limit = Math.min(Math.max(o.limit ?? 30, 1), 100);
   const rows = await prisma.notification_events.findMany({
-    where: { user_id: userId, ...(o.before ? { created_at: { lt: o.before } } : {}), ...(o.unreadOnly ? { read_at: null } : {}) },
+    where: { user_id: userId, ...notMail, ...(o.before ? { created_at: { lt: o.before } } : {}), ...(o.unreadOnly ? { read_at: null } : {}) },
     orderBy: [{ created_at: 'desc' }, { id: 'desc' }],
     take: limit + 1,
   });
@@ -73,13 +77,13 @@ export async function listNotifications(userId: string, o: { limit?: number; bef
   return { items, next: rows.length > limit ? page[page.length - 1].created_at : null };
 }
 
-export const unreadNotificationCount = (userId: string) => prisma.notification_events.count({ where: { user_id: userId, read_at: null } });
+export const unreadNotificationCount = (userId: string) => prisma.notification_events.count({ where: { user_id: userId, read_at: null, ...notMail } });
 
 /** Marks the given notifications (or all) of this person as read. Other people's rows are never touched. */
 export async function markNotificationsRead(userId: string, o: { ids?: string[]; all?: boolean }) {
   if (!o.all && !(o.ids && o.ids.length > 0)) return 0;
   const r = await prisma.notification_events.updateMany({
-    where: { user_id: userId, read_at: null, ...(o.all ? {} : { id: { in: o.ids } }) },
+    where: { user_id: userId, read_at: null, ...notMail, ...(o.all ? {} : { id: { in: o.ids } }) },
     data: { read_at: new Date() },
   });
   return r.count;
