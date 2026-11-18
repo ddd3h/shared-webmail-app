@@ -4,6 +4,7 @@ import { useSearchParams } from 'next/navigation';
 import FoldCard from '@/components/mobile/FoldCard';
 import MileageSettingsCard from '@/components/admin/MileageSettingsCard';
 import FreeeSettingsCard from '@/components/admin/FreeeSettingsCard';
+import MattermostChannelsCard from '@/components/admin/MattermostChannelsCard';
 import { pageNumbers } from '@/lib/pagination';
 
 const SPAM_PAGE_SIZE = 50;
@@ -601,6 +602,8 @@ function AdminSettingsContent({ tab }: { tab: AdminTab }) {
       {tab === 'system' && (
         <div className="space-y-6 max-w-2xl pb-20">
           <MileageSettingsCard />
+
+          <MattermostChannelsCard />
 
           <FreeeSettingsCard />
 

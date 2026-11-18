@@ -259,11 +259,14 @@ function ThreadDetailPageInner({ params }: Props) {
   const [mmChannelId, setMmChannelId] = useState('');
   const [showMmPanel, setShowMmPanel] = useState(false);
   const [showMoveModal, setShowMoveModal] = useState(false);
-  const [teamMailboxes, setTeamMailboxes] = useState<{ id: string; display_name: string; email_address: string }[]>([]);
+  const [teamMailboxes, setTeamMailboxes] = useState<{ id: string; display_name: string; email_address: string | null; viewable: boolean }[]>([]);
   const [moveTarget, setMoveTarget] = useState('');
   const [moving, setMoving] = useState(false);
   const [moveStep, setMoveStep] = useState<'idle' | 'transferring' | 'done'>('idle');
   const [discussPosting, setDiscussPosting] = useState(false);
+  const [discussOpen, setDiscussOpen] = useState(false);
+  const [discussChannels, setDiscussChannels] = useState<{ id: string; name: string; visibility: string }[]>([]);
+  const [discussChoice, setDiscussChoice] = useState(''); // '' = the mailbox's own channel
   const router = useRouter();
   const searchParams = useSearchParams();
   const backUrl = '/threads' + (searchParams.get('back') ?? '');
@@ -482,10 +485,10 @@ function ThreadDetailPageInner({ params }: Props) {
   }
 
   async function openMoveModal() {
-    const res = await fetch('/api/mailboxes').then(r => r.json()).catch(() => ({ items: [] }));
-    const team = (res.items || []).filter((m: any) => m.type === 'team');
+    const res = await fetch('/api/mailboxes/move-targets').then(r => r.json()).catch(() => ({ items: [] }));
+    const team = res.items || [];
     setTeamMailboxes(team);
-    setMoveTarget(team[0]?.id || '');
+    setMoveTarget((team.find((m: any) => m.viewable) ?? team[0])?.id || '');
     setShowMoveModal(true);
   }
 
@@ -518,14 +521,27 @@ function ThreadDetailPageInner({ params }: Props) {
     }
   }
 
+  // The button opens a list of the channels this person may post to (the admin registers them); it can be pressed again for another channel.
+  async function openDiscuss() {
+    const d = await fetch('/api/mattermost/channels').then(r => r.json()).catch(() => ({ items: [] }));
+    const items = d.items || [];
+    setDiscussChannels(items);
+    setDiscussChoice(data?.mailbox.mattermost_channel_id ? '' : (items[0]?.id ?? ''));
+    setDiscussOpen(true);
+  }
+
   async function postMattermostDiscuss() {
-    if (!data?.mailbox.mattermost_channel_id) {
-      flashMsg('error', 'このメールアカウントにはMattermostチャンネルが設定されていません');
+    if (!discussChoice && !data?.mailbox.mattermost_channel_id) {
+      flashMsg('error', '投稿先のチャンネルを選んでください');
       return;
     }
     setDiscussPosting(true);
-    const res = await fetch(`/api/threads/${id}/mattermost/discuss`, { method: 'POST' });
+    const res = await fetch(`/api/threads/${id}/mattermost/discuss`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(discussChoice ? { channel_ref_id: discussChoice } : {}),
+    });
     setDiscussPosting(false);
+    setDiscussOpen(false);
     if (res.ok) {
       const d = await res.json();
       flashMsg('success', 'Mattermostに投稿しました');
@@ -534,6 +550,7 @@ function ThreadDetailPageInner({ params }: Props) {
       const d = await res.json().catch(() => ({}));
       const errMap: Record<string, string> = {
         no_channel_configured: 'チャンネルIDが設定されていません',
+        channel_not_allowed: 'このチャンネルには投稿できません',
         mattermost_not_configured: 'Mattermost Bot Tokenが設定されていません',
         mattermost_api_error: 'Mattermost APIエラー',
       };
@@ -756,7 +773,7 @@ function ThreadDetailPageInner({ params }: Props) {
                 </button>
               )}
               {isTeam && (
-                <button onClick={postMattermostDiscuss} disabled={discussPosting} title="Mattermostで議論"
+                <button onClick={openDiscuss} disabled={discussPosting} title="Mattermostで議論"
                   className="inline-flex items-center gap-1 px-2 py-1 text-xs text-purple-600 hover:text-purple-700 hover:bg-purple-50 border border-purple-200 hover:border-purple-300 rounded-lg transition-colors disabled:opacity-50">
                   <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
                     <path d="M5.042 15.165a2.528 2.528 0 0 1-2.52 2.523A2.528 2.528 0 0 1 0 15.165a2.527 2.527 0 0 1 2.522-2.52h2.52v2.52zM6.313 15.165a2.527 2.527 0 0 1 2.521-2.52 2.527 2.527 0 0 1 2.521 2.52v6.313A2.528 2.528 0 0 1 8.834 24a2.528 2.528 0 0 1-2.521-2.522v-6.313zM8.834 5.042a2.528 2.528 0 0 1-2.521-2.52A2.528 2.528 0 0 1 8.834 0a2.528 2.528 0 0 1 2.521 2.522v2.52H8.834zM8.834 6.313a2.528 2.528 0 0 1 2.521 2.521 2.528 2.528 0 0 1-2.521 2.521H2.522A2.528 2.528 0 0 1 0 8.834a2.528 2.528 0 0 1 2.522-2.521h6.312zM18.956 8.834a2.528 2.528 0 0 1 2.522-2.521A2.528 2.528 0 0 1 24 8.834a2.528 2.528 0 0 1-2.522 2.521h-2.522V8.834zM17.688 8.834a2.528 2.528 0 0 1-2.523 2.521 2.527 2.527 0 0 1-2.52-2.521V2.522A2.527 2.527 0 0 1 15.165 0a2.528 2.528 0 0 1 2.523 2.522v6.312zM15.165 18.956a2.528 2.528 0 0 1 2.523 2.522A2.528 2.528 0 0 1 15.165 24a2.527 2.527 0 0 1-2.52-2.522v-2.522h2.52zM15.165 17.688a2.527 2.527 0 0 1-2.52-2.523 2.526 2.526 0 0 1 2.52-2.52h6.313A2.527 2.527 0 0 1 24 15.165a2.528 2.528 0 0 1-2.522 2.523h-6.313z"/>
@@ -820,7 +837,7 @@ function ThreadDetailPageInner({ params }: Props) {
                     </button>
                   )}
                   {isTeam && (
-                    <button onClick={postMattermostDiscuss} disabled={discussPosting}
+                    <button onClick={openDiscuss} disabled={discussPosting}
                       className="w-full text-left px-3 py-2.5 text-sm text-purple-700 hover:bg-purple-50 transition-colors flex items-center gap-2.5 disabled:opacity-50">
                       <svg className="w-4 h-4 shrink-0" fill="currentColor" viewBox="0 0 24 24">
                         <path d="M5.042 15.165a2.528 2.528 0 0 1-2.52 2.523A2.528 2.528 0 0 1 0 15.165a2.527 2.527 0 0 1 2.522-2.52h2.52v2.52zM6.313 15.165a2.527 2.527 0 0 1 2.521-2.52 2.527 2.527 0 0 1 2.521 2.52v6.313A2.528 2.528 0 0 1 8.834 24a2.528 2.528 0 0 1-2.521-2.522v-6.313zM8.834 5.042a2.528 2.528 0 0 1-2.521-2.52A2.528 2.528 0 0 1 8.834 0a2.528 2.528 0 0 1 2.521 2.522v2.52H8.834zM8.834 6.313a2.528 2.528 0 0 1 2.521 2.521 2.528 2.528 0 0 1-2.521 2.521H2.522A2.528 2.528 0 0 1 0 8.834a2.528 2.528 0 0 1 2.522-2.521h6.312zM18.956 8.834a2.528 2.528 0 0 1 2.522-2.521A2.528 2.528 0 0 1 24 8.834a2.528 2.528 0 0 1-2.522 2.521h-2.522V8.834zM17.688 8.834a2.528 2.528 0 0 1-2.523 2.521 2.527 2.527 0 0 1-2.52-2.521V2.522A2.527 2.527 0 0 1 15.165 0a2.528 2.528 0 0 1 2.523 2.522v6.312zM15.165 18.956a2.528 2.528 0 0 1 2.523 2.522A2.528 2.528 0 0 1 15.165 24a2.527 2.527 0 0 1-2.52-2.522v-2.522h2.52zM15.165 17.688a2.527 2.527 0 0 1-2.52-2.523 2.526 2.526 0 0 1 2.52-2.52h6.313A2.527 2.527 0 0 1 24 15.165a2.528 2.528 0 0 1-2.522 2.523h-6.313z"/>
@@ -871,6 +888,31 @@ function ThreadDetailPageInner({ params }: Props) {
       </div>
 
       {/* Mattermost channel link panel */}
+      {discussOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => setDiscussOpen(false)}>
+          <div role="dialog" aria-label="Mattermostで議論" className="w-full max-w-sm rounded-xl bg-white p-5 shadow-xl" onClick={e => e.stopPropagation()}>
+            <h3 className="text-base font-semibold text-gray-900">Mattermostで議論</h3>
+            <p className="mt-1 text-xs text-gray-500">このスレッドを投稿するチャンネルを選んでください。別のチャンネルにも、もう一度投稿できます。</p>
+            <div className="mt-3 space-y-1.5">
+              {data?.mailbox.mattermost_channel_id && (
+                <label className="flex items-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-sm"><input type="radio" name="mmch" checked={discussChoice === ''} onChange={() => setDiscussChoice('')} />このメールアカウントの既定のチャンネル</label>
+              )}
+              {discussChannels.map(c => (
+                <label key={c.id} className="flex items-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-sm">
+                  <input type="radio" name="mmch" checked={discussChoice === c.id} onChange={() => setDiscussChoice(c.id)} />
+                  <span className="flex-1 truncate">{c.name}</span>
+                  {c.visibility === 'private' && <span className="text-xs text-gray-400">非公開</span>}
+                </label>
+              ))}
+              {discussChannels.length === 0 && !data?.mailbox.mattermost_channel_id && <p className="text-sm text-red-600">投稿できるチャンネルがありません。管理者に登録を頼んでください</p>}
+            </div>
+            <div className="mt-4 flex justify-end gap-2">
+              <button onClick={() => setDiscussOpen(false)} className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-gray-700">キャンセル</button>
+              <button onClick={postMattermostDiscuss} disabled={discussPosting} className="rounded-lg bg-purple-600 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50">{discussPosting ? '投稿中…' : '投稿する'}</button>
+            </div>
+          </div>
+        </div>
+      )}
       {showMmPanel && (
         <div className="card p-3 mb-3 flex items-center gap-2 border-purple-200 bg-purple-50">
           <svg className="w-4 h-4 text-purple-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1226,12 +1268,15 @@ function ThreadDetailPageInner({ params }: Props) {
                       className="w-full bg-gray-800 border border-gray-600 text-white text-sm rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                     >
                       {teamMailboxes.map(m => (
-                        <option key={m.id} value={m.id}>{m.display_name} ({m.email_address})</option>
+                        <option key={m.id} value={m.id}>{m.display_name}{m.email_address ? ` (${m.email_address})` : ''}{m.viewable ? '' : '（メンバーではありません）'}</option>
                       ))}
                     </select>
                   )}
                 </div>
 
+                {teamMailboxes.find(m => m.id === moveTarget)?.viewable === false && (
+                  <p className="mb-4 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-300">あなたはこのメールボックスのメンバーではありません。移動すると、あなたはこのスレッドを見られなくなり、自分では元に戻せません。</p>
+                )}
                 <div className="flex gap-3">
                   <button
                     onClick={() => setShowMoveModal(false)}

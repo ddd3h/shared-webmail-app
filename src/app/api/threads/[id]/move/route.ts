@@ -5,7 +5,7 @@ import { logAudit } from '@/lib/audit';
 import { canViewMailbox } from '@/lib/rbac';
 
 // POST /api/threads/[id]/move
-// Moves a personal mailbox thread to a team mailbox.
+// Moves a personal mailbox thread to any team mailbox.
 // { target_mailbox_id: string }
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -31,8 +31,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const target = await prisma.mailboxes.findUnique({ where: { id: target_mailbox_id } });
   if (!target) return NextResponse.json({ error: 'target_not_found' }, { status: 404 });
   if (target.type !== 'team') return NextResponse.json({ error: 'target_not_team' }, { status: 400 });
-  // and only into a team mailbox they belong to (mail pushed into one they cannot see would be a way to plant content there)
-  if (!(await canViewMailbox(session!.userId, target_mailbox_id))) return NextResponse.json({ error: 'forbidden' }, { status: 403 });
+  // Any shared mailbox can be the target, also one the person is not a member of (they then cannot look at it afterwards:
+  // the screen says so before they confirm). It is recorded in the audit log.
 
   const messageIds = thread.messages.map(m => m.id);
 
@@ -54,7 +54,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     actionType: 'move_thread',
     targetType: 'threads',
     targetId: id,
-    metadata: { from_mailbox: thread.mailbox_id, to_mailbox: target_mailbox_id }
+    metadata: { from_mailbox: thread.mailbox_id, to_mailbox: target_mailbox_id, target_viewable: await canViewMailbox(session!.userId, target_mailbox_id) }
   });
 
   return NextResponse.json({ ok: true });

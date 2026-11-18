@@ -82,6 +82,7 @@ model users {
   hidden_team_mailboxes      hidden_team_mailboxes[]
   messages_sent              message_sends[]          @relation("sent_by_user")
   mattermost_links_created   mattermost_links[]       @relation("mm_link_created_by")
+  mattermost_channel_uses    mattermost_channel_users[] @relation("mm_channel_user")
   mattermost_notifications   mattermost_notifications[]
   mattermost_forwards        mattermost_forwards[]    @relation("mm_forwarded_by")
   push_subscriptions         push_subscriptions[]
@@ -383,6 +384,32 @@ model mattermost_links {
 
   thread     threads @relation(fields: [thread_id], references: [id])
   created_by users   @relation("mm_link_created_by", fields: [created_by_user_id], references: [id])
+}
+
+// Channels the "Mattermostで議論" button can post to, registered by the system admin.
+// visibility 'public' = anybody who can see the thread; 'private' = only the people listed (and admins).
+model mattermost_channels {
+  id         String   @id @default(cuid())
+  channel_id String   @unique // the Mattermost channel id
+  name       String
+  visibility String   @default("public") // 'public' | 'private'
+  sort_order Int      @default(0)
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  users mattermost_channel_users[]
+}
+
+model mattermost_channel_users {
+  channel_ref_id String
+  user_id        String
+  created_at     DateTime @default(now())
+
+  channel mattermost_channels @relation(fields: [channel_ref_id], references: [id], onDelete: Cascade)
+  user    users               @relation("mm_channel_user", fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@id([channel_ref_id, user_id])
+  @@index([user_id])
 }
 
 model mattermost_notifications {

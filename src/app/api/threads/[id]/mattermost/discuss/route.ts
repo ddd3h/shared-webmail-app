@@ -3,10 +3,12 @@ import { getSession, requireAuth } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { logAudit } from '@/lib/audit';
 import { canViewThread } from '@/lib/rbac';
+import { mattermostConfig, usableChannel } from '@/lib/mattermost-channels';
 
 // POST /api/threads/[id]/mattermost/discuss
-// Posts the thread summary to the mailbox's pre-configured Mattermost channel
-export async function POST(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+// Posts the thread summary to a Mattermost channel: one the admin registered and this person may use ({ channel_ref_id }),
+// or, without one, the mailbox's own channel. It can be pressed again to post to another channel.
+export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const session = await getSession();
   requireAuth(session);
@@ -23,20 +25,20 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
   if (!thread) return NextResponse.json({ error: 'not_found' }, { status: 404 });
   if (thread.mailbox.type !== 'team') return NextResponse.json({ error: 'personal_mailbox' }, { status: 400 });
 
-  const channelId = thread.mailbox.mattermost_channel_id;
+  const { channel_ref_id } = await req.json().catch(() => ({}));
+  let channelId = thread.mailbox.mattermost_channel_id;
+  if (channel_ref_id) {
+    // a channel only from the admin's list, and only when this person is allowed to use it
+    const ch = await usableChannel(session!.userId, session!.role, String(channel_ref_id));
+    if (!ch) return NextResponse.json({ error: 'channel_not_allowed' }, { status: 403 });
+    channelId = ch.channel_id;
+  }
   if (!channelId) return NextResponse.json({ error: 'no_channel_configured' }, { status: 400 });
 
-  // Fetch Mattermost config from app settings or environment
-  const settings = await prisma.app_settings.findMany({
-    where: { key: { in: ['MATTERMOST_BASE_URL', 'MATTERMOST_BOT_TOKEN'] } }
-  });
-  const baseUrl = settings.find(s => s.key === 'MATTERMOST_BASE_URL')?.value || process.env.MATTERMOST_BASE_URL;
-  const botToken = settings.find(s => s.key === 'MATTERMOST_BOT_TOKEN')?.value || process.env.MATTERMOST_BOT_TOKEN;
-
-  if (!baseUrl || !botToken) return NextResponse.json({ error: 'mattermost_not_configured' }, { status: 400 });
-
-  // Normalize base URL
-  const cleanBaseUrl = baseUrl.replace(/\/+$/, '');
+  const cfg = await mattermostConfig();
+  if (!cfg) return NextResponse.json({ error: 'mattermost_not_configured' }, { status: 400 });
+  const cleanBaseUrl = cfg.baseUrl;
+  const botToken = cfg.botToken;
 
   const firstMsg = thread.messages[0];
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3001';
