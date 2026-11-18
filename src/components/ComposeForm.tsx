@@ -160,16 +160,20 @@ export default function ComposeForm({
 
   const selectedMb = mailboxes.find(m => m.id === selectedMailbox);
   const isTeam = selectedMb?.type === 'team';
+  // Whether this draft is edited together (Yjs). It is fixed the first time the user changes From:
+  // switching the sender must not swap the editor between plain and collaborative, which empties the body.
+  const [lockedCollab, setLockedCollab] = useState<boolean | null>(null);
+  const collab = lockedCollab ?? isTeam;
 
   // For team replies, all participants must share ONE draft (= one Yjs room).
   // resolvedDraftId starts from the prop and, for team replies without one, is
   // filled by find-or-create below so everyone converges on the same draft id.
   const [resolvedDraftId, setResolvedDraftId] = useState<string | undefined>(draftId);
-  const draft = useDraft(resolvedDraftId, isTeam);
+  const draft = useDraft(resolvedDraftId, collab);
 
   // Ensure a single shared draft exists for this team reply, then adopt its id.
   useEffect(() => {
-    if (!isTeam || resolvedDraftId || mode !== 'reply' || !threadId || !selectedMailbox) return;
+    if (!collab || resolvedDraftId || mode !== 'reply' || !threadId || !selectedMailbox) return;
     let cancelled = false;
     fetch('/api/drafts', {
       method: 'POST',
@@ -180,7 +184,7 @@ export default function ComposeForm({
       .then(j => { if (!cancelled && j?.id) setResolvedDraftId(j.id); })
       .catch(() => {});
     return () => { cancelled = true; };
-  }, [isTeam, resolvedDraftId, mode, threadId, selectedMailbox]);
+  }, [collab, resolvedDraftId, mode, threadId, selectedMailbox]);
 
   const selectedSigUser = useMemo(
     () => replyUsers.find(u => u.signature === signature) ?? null,
@@ -271,7 +275,7 @@ export default function ComposeForm({
   // Uses module-level _yjsRooms ref-counting to survive StrictMode double-mount
   // and prevent "A Yjs Doc connected to room X already exists!" errors.
   useEffect(() => {
-    if (!isTeam || !draft.draftId) return;
+    if (!collab || !draft.draftId) return;
     const roomId = `webmail-draft-${draft.draftId}`;
     let destroyed = false;
 
@@ -316,7 +320,7 @@ export default function ComposeForm({
       setYdoc(null);
       setYjsProvider(null);
     };
-  }, [isTeam, draft.draftId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [collab, draft.draftId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Persist Yjs state to DB every 30s and on beforeunload
   useEffect(() => {
@@ -408,7 +412,7 @@ export default function ComposeForm({
       // race with the optimistic lock and cause 409s. Omit body when ydoc is active.
       html_body: ydoc ? undefined : editorRef.current?.getHTML(),
       text_body: ydoc ? undefined : editorRef.current?.getText(),
-      is_shared: isTeam,
+      is_shared: collab,
     };
   }
 
@@ -646,7 +650,13 @@ export default function ComposeForm({
         {mailboxes.length > 1 ? (
           <select
             value={selectedMailbox}
-            onChange={e => setSelectedMailbox(e.target.value)}
+            onChange={e => {
+              const next = e.target.value;
+              if (lockedCollab === null) setLockedCollab(isTeam);
+              setSelectedMailbox(next);
+              // keep the saved draft's sender in step (only when a draft exists: changing From alone creates nothing)
+              if (draft.draftId) draft.scheduleSave({ ...draftPayload(), mailbox_id: next });
+            }}
             className={!isModal ? 'flex-1 bg-transparent border-0 outline-hidden text-gray-700 cursor-pointer text-xs' : 'select flex-1 text-sm py-1'}
           >
             {mailboxes.map(mb => <option key={mb.id} value={mb.id}>{mb.display_name} &lt;{mb.email_address}&gt;</option>)}

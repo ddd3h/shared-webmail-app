@@ -35,12 +35,22 @@ export function useDraft(initialDraftId?: string, isShared?: boolean) {
   const mountedRef = useRef(true);
   const serverUpdatedAtRef = useRef<string | null>(null);
   const lastTypedAtRef = useRef<number>(0);
+  // Newest data asked for while a save was in flight (only the latest matters).
+  const queuedRef = useRef<DraftData | null>(null);
+  const saveNowRef = useRef<(d: DraftData) => Promise<string | null>>(async () => null);
 
   useEffect(() => {
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
       if (timerRef.current) clearTimeout(timerRef.current);
+      timerRef.current = null;
+      // Closing the composer inside the debounce window must not lose the last edit.
+      if (pendingRef.current) {
+        const data = pendingRef.current;
+        pendingRef.current = null;
+        void saveNowRef.current(data);
+      }
     };
   }, []);
 
@@ -104,16 +114,31 @@ export function useDraft(initialDraftId?: string, isShared?: boolean) {
   // Coalesces concurrent callers onto the in-flight save instead of dropping
   // them, so ensureDraftId() can await an id that a keystroke-triggered save is
   // still creating.
+  // While a save is in flight a newer request is queued (latest wins) and sent right after it, on the
+  // id the first save created: the newer text is never dropped, and a second POST can never start.
   const saveNow = useCallback((data: DraftData): Promise<string | null> => {
-    if (savingRef.current && savingPromiseRef.current) return savingPromiseRef.current;
+    if (savingRef.current && savingPromiseRef.current) {
+      queuedRef.current = data;
+      return savingPromiseRef.current;
+    }
     savingRef.current = true;
-    const promise = performSave(data).finally(() => {
+    const run = async (): Promise<string | null> => {
+      let id = await performSave(data);
+      while (queuedRef.current) {
+        const next = queuedRef.current;
+        queuedRef.current = null;
+        id = (await performSave(next)) ?? id;
+      }
+      return id;
+    };
+    const promise = run().finally(() => {
       savingRef.current = false;
       savingPromiseRef.current = null;
     });
     savingPromiseRef.current = promise;
     return promise;
   }, [performSave]);
+  saveNowRef.current = saveNow;
 
   // Returns a draft id that definitely exists server-side, creating the draft if
   // needed. Attachments upload to /api/drafts/[id]/attachments, so they can't be
@@ -144,6 +169,13 @@ export function useDraft(initialDraftId?: string, isShared?: boolean) {
   }, []);
 
   const deleteDraft = useCallback(async () => {
+    // Drop anything not saved yet, and wait for a save in flight: otherwise it could create the draft
+    // again right after we delete it (a draft left behind after sending).
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = null;
+    pendingRef.current = null;
+    queuedRef.current = null;
+    if (savingPromiseRef.current) await savingPromiseRef.current.catch(() => {});
     const id = draftIdRef.current;
     if (!id) return;
     await fetch(`/api/drafts/${id}`, { method: 'DELETE' }).catch(() => {});
