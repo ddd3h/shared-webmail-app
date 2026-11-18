@@ -240,6 +240,8 @@ export default function ComposeForm({
   const loadedDraftRef = useRef<string | null>(null);
   // true once the saved draft (and its saved Yjs state) has been read, or when there is none to read
   const [draftReady, setDraftReady] = useState(!resolvedDraftId);
+  // the signature of the person who made a shared draft: what it starts with, whoever opens it
+  const [creatorSig, setCreatorSig] = useState<string | null>(null);
   const ydocRef = useRef<typeof ydoc>(null);
   ydocRef.current = ydoc;
   const yjsStateRef = useRef<string | null>(null);
@@ -279,6 +281,7 @@ export default function ComposeForm({
         if (Array.isArray(d.attachments)) setSavedAtts(d.attachments);
         if (d.updated_at) draft.initServerTimestamp(d.updated_at);
 
+        if (typeof d.creator_signature === 'string' && d.creator_signature) setCreatorSig(d.creator_signature);
         yjsStateRef.current = d.yjs_state_b64 || null;
         if (d.html_body && !d.yjs_state_b64) {
           setEditorBody(d.html_body);
@@ -414,20 +417,20 @@ export default function ComposeForm({
     return () => meta.unobserve(apply);
   }, [ydoc, draft.draftId]);
 
-  // Seed the shared signature once — the first collaborator's signature wins,
-  // so everyone sees the same one instead of their own personal default.
-  // Only after what is already saved has arrived (the saved draft and the room's state): seeding earlier would put the
-  // newcomer's own signature in before the first author's, and the two would fight over the key.
+  // Seed the shared signature once, with the signature of the person who made the draft (shown as its author),
+  // so everyone sees the same one instead of their own personal default. A later change is shared through the same key.
+  // Only after what is already saved has arrived (the saved draft and the room's state), so nothing already chosen is overwritten.
   useEffect(() => {
-    if (!ydoc || !signature || !draftReady || !yjsProvider) return;
+    const initial = creatorSig ?? signature;
+    if (!ydoc || !initial || !draftReady || !yjsProvider) return;
     const meta = ydoc.getMap('meta');
-    const seed = () => { if (meta.get('signature') === undefined) meta.set('signature', signature); };
+    const seed = () => { if (meta.get('signature') === undefined) meta.set('signature', initial); };
     if (yjsProvider.synced) { seed(); return; }
     const t = setTimeout(seed, 3000); // collaboration server unreachable: use our own
     const onSync = () => { clearTimeout(t); seed(); };
     yjsProvider.once('sync', onSync);
     return () => { clearTimeout(t); yjsProvider.off('sync', onSync); };
-  }, [ydoc, yjsProvider, signature, draftReady]);
+  }, [ydoc, yjsProvider, signature, creatorSig, draftReady]);
 
   // Update signature locally AND broadcast to collaborators (shared drafts).
   function syncSignature(sig: string | null, visible: boolean) {

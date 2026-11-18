@@ -21,7 +21,11 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     select: { id: true, filename: true, content_type: true, size: true },
   });
 
-  const response: Record<string, unknown> = { ...draft, attachments };
+  // A shared draft starts with the signature of the person who made it (whoever opens it later), so say what that is.
+  const creator = draft.is_shared ? await prisma.users.findUnique({ where: { id: draft.user_id }, select: { name: true, email: true, signature: true } }) : null;
+  const creator_signature = creator ? (creator.signature ?? (creator.name ? `${creator.name}${creator.email ? '\n' + creator.email : ''}` : '')) : null;
+
+  const response: Record<string, unknown> = { ...draft, attachments, creator_signature };
   if (draft.yjs_state) {
     response.yjs_state_b64 = draft.yjs_state.toString('base64');
   }
