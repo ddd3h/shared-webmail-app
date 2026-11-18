@@ -160,10 +160,10 @@ export default function ComposeForm({
 
   const selectedMb = mailboxes.find(m => m.id === selectedMailbox);
   const isTeam = selectedMb?.type === 'team';
-  // Whether this draft is edited together (Yjs). It is fixed the first time the user changes From:
-  // switching the sender must not swap the editor between plain and collaborative, which empties the body.
-  const [lockedCollab, setLockedCollab] = useState<boolean | null>(null);
-  const collab = lockedCollab ?? isTeam;
+  // A shared mailbox is edited together (Yjs). Changing From can switch this on or off: the text typed so far is
+  // carried across the switch (carryRef) instead of being lost when the editor is rebuilt.
+  const collab = isTeam;
+  const carryRef = useRef<string | null>(null);
 
   // For team replies, all participants must share ONE draft (= one Yjs room).
   // resolvedDraftId starts from the prop and, for team replies without one, is
@@ -235,13 +235,31 @@ export default function ComposeForm({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [showSigPicker]);
 
-  // Load draft data when a draft id is known (prop or resolved shared draft)
+  // Load draft data once per draft id. It must not run again when the Yjs doc appears or goes away
+  // (From changed): that would overwrite what was typed since with the older saved copy.
+  const loadedDraftRef = useRef<string | null>(null);
+  const ydocRef = useRef<typeof ydoc>(null);
+  ydocRef.current = ydoc;
+  const yjsStateRef = useRef<string | null>(null);
+  const appliedDocRef = useRef<unknown>(null);
+
+  // Apply the saved Yjs state to the current doc, once per doc.
+  async function applyYjsState() {
+    const doc = ydocRef.current;
+    if (!doc || !yjsStateRef.current || appliedDocRef.current === doc) return;
+    appliedDocRef.current = doc;
+    const { Y } = await loadYjsLibs();
+    const binary = Uint8Array.from(atob(yjsStateRef.current), c => c.charCodeAt(0));
+    Y.applyUpdate(doc, binary);
+  }
+
   useEffect(() => {
-    if (!resolvedDraftId) return;
+    if (!resolvedDraftId || loadedDraftRef.current === resolvedDraftId) return;
+    loadedDraftRef.current = resolvedDraftId;
     fetch(`/api/drafts/${resolvedDraftId}`)
       .then(r => r.json())
       .then(async d => {
-        if (!d.id) return;
+        if (!d.id) { loadedDraftRef.current = null; return; }
         if (d.to_raw) setToChips(d.to_raw.split(/[,;]\s*/).map((s: string) => s.trim()).filter(Boolean));
         if (d.cc_raw) {
           const cc = d.cc_raw.split(/[,;]\s*/).map((s: string) => s.trim()).filter(Boolean);
@@ -258,18 +276,34 @@ export default function ComposeForm({
         if (Array.isArray(d.attachments)) setSavedAtts(d.attachments);
         if (d.updated_at) draft.initServerTimestamp(d.updated_at);
 
-        // Yjs state restore from DB
-        if (d.yjs_state_b64 && ydoc) {
-          const { Y } = await loadYjsLibs();
-          const binary = Uint8Array.from(atob(d.yjs_state_b64), c => c.charCodeAt(0));
-          Y.applyUpdate(ydoc, binary);
-        } else if (d.html_body && !ydoc) {
+        yjsStateRef.current = d.yjs_state_b64 || null;
+        if (d.html_body && !d.yjs_state_b64) {
           setEditorBody(d.html_body);
           richContentRef.current = d.html_body;
         }
+        await applyYjsState();
       })
-      .catch(() => {});
-  }, [resolvedDraftId, ydoc]); // eslint-disable-line react-hooks/exhaustive-deps
+      .catch(() => { loadedDraftRef.current = null; });
+  }, [resolvedDraftId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // A Yjs doc appeared after the draft was loaded (or From switched to a shared mailbox): restore its saved state, or,
+  // when switching a plain draft to shared, seed the empty shared doc with the text typed so far.
+  useEffect(() => {
+    if (!ydoc) return;
+    void applyYjsState();
+    const carry = carryRef.current;
+    if (!carry || !yjsProvider) return;
+    carryRef.current = null;
+    let done = false;
+    const seed = () => {
+      if (done) return;
+      done = true;
+      // wait until the editor for this doc exists; seed only if nobody wrote anything yet
+      setTimeout(() => { if (editorRef.current?.isEmpty()) editorRef.current.setHTML(carry); }, 0);
+    };
+    if (yjsProvider.synced) seed();
+    else { yjsProvider.once('sync', seed); setTimeout(seed, 2500); }
+  }, [ydoc, yjsProvider]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Initialize Yjs for shared team drafts once draftId is known.
   // Uses module-level _yjsRooms ref-counting to survive StrictMode double-mount
@@ -652,10 +686,24 @@ export default function ComposeForm({
             value={selectedMailbox}
             onChange={e => {
               const next = e.target.value;
-              if (lockedCollab === null) setLockedCollab(isTeam);
+              const nextTeam = mailboxes.find(m => m.id === next)?.type === 'team';
+              if (nextTeam !== isTeam) {
+                // The editor is rebuilt when collaboration starts or stops: keep what is typed.
+                const html = editorRef.current?.getHTML() ?? richContentRef.current;
+                carryRef.current = html;
+                richContentRef.current = html;
+                if (!nextTeam) setEditorBody(html); // plain editor starts from this
+              }
               setSelectedMailbox(next);
-              // keep the saved draft's sender in step (only when a draft exists: changing From alone creates nothing)
-              if (draft.draftId) draft.scheduleSave({ ...draftPayload(), mailbox_id: next });
+              // keep the saved draft's sender (and, when leaving a shared draft, its body) in step; only when a draft exists
+              if (draft.draftId) {
+                const leaving = isTeam && !nextTeam;
+                if (leaving) yjsStateRef.current = null; // the plain editor owns the body now
+                draft.scheduleSave({
+                  ...draftPayload(), mailbox_id: next, is_shared: nextTeam,
+                  ...(leaving ? { html_body: richContentRef.current, text_body: editorRef.current?.getText() } : {}),
+                });
+              }
             }}
             className={!isModal ? 'flex-1 bg-transparent border-0 outline-hidden text-gray-700 cursor-pointer text-xs' : 'select flex-1 text-sm py-1'}
           >
