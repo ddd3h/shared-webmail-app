@@ -259,7 +259,7 @@ function ThreadDetailPageInner({ params }: Props) {
   const [mmChannelId, setMmChannelId] = useState('');
   const [showMmPanel, setShowMmPanel] = useState(false);
   const [showMoveModal, setShowMoveModal] = useState(false);
-  const [teamMailboxes, setTeamMailboxes] = useState<{ id: string; display_name: string; email_address: string | null; viewable: boolean }[]>([]);
+  const [teamMailboxes, setTeamMailboxes] = useState<{ id: string; display_name: string; email_address: string }[]>([]);
   const [moveTarget, setMoveTarget] = useState('');
   const [moving, setMoving] = useState(false);
   const [moveStep, setMoveStep] = useState<'idle' | 'transferring' | 'done'>('idle');
@@ -485,10 +485,11 @@ function ThreadDetailPageInner({ params }: Props) {
   }
 
   async function openMoveModal() {
-    const res = await fetch('/api/mailboxes/move-targets').then(r => r.json()).catch(() => ({ items: [] }));
-    const team = res.items || [];
+    const res = await fetch('/api/mailboxes?mine=1').then(r => r.json()).catch(() => ({ items: [] }));
+    // team mailboxes the person is in, other than the one the thread is already in
+    const team = (res.items || []).filter((m: any) => m.type === 'team' && m.id !== data?.mailbox.id);
     setTeamMailboxes(team);
-    setMoveTarget((team.find((m: any) => m.viewable) ?? team[0])?.id || '');
+    setMoveTarget(team[0]?.id || '');
     setShowMoveModal(true);
   }
 
@@ -763,15 +764,13 @@ function ThreadDetailPageInner({ params }: Props) {
 
             {/* Desktop inline */}
             <div className="hidden sm:flex items-center gap-1.5">
-              {!isTeam && (
-                <button onClick={openMoveModal} title="チームメールに移動"
+                              <button onClick={openMoveModal} title="チームメールに移動"
                   className="inline-flex items-center gap-1 px-2 py-1 text-xs text-amber-600 hover:text-amber-700 hover:bg-amber-50 border border-amber-200 hover:border-amber-300 rounded-lg transition-colors">
                   <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
                   </svg>
                   移動
                 </button>
-              )}
               {isTeam && (
                 <button onClick={openDiscuss} disabled={discussPosting} title="Mattermostで議論"
                   className="inline-flex items-center gap-1 px-2 py-1 text-xs text-purple-600 hover:text-purple-700 hover:bg-purple-50 border border-purple-200 hover:border-purple-300 rounded-lg transition-colors disabled:opacity-50">
@@ -827,15 +826,13 @@ function ThreadDetailPageInner({ params }: Props) {
                 </button>
               }>
                 <div className="py-1 min-w-40">
-                  {!isTeam && (
-                    <button onClick={openMoveModal}
+                                      <button onClick={openMoveModal}
                       className="w-full text-left px-3 py-2.5 text-sm text-amber-700 hover:bg-amber-50 transition-colors flex items-center gap-2.5">
                       <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
                       </svg>
                       チームに移動
                     </button>
-                  )}
                   {isTeam && (
                     <button onClick={openDiscuss} disabled={discussPosting}
                       className="w-full text-left px-3 py-2.5 text-sm text-purple-700 hover:bg-purple-50 transition-colors flex items-center gap-2.5 disabled:opacity-50">
@@ -1249,12 +1246,12 @@ function ThreadDetailPageInner({ params }: Props) {
                   </div>
                   <div>
                     <h3 className="text-white font-semibold">チームメールに移動</h3>
-                    <p className="text-xs text-gray-400">個人メールから共有メールへ移行します</p>
+                    <p className="text-xs text-gray-400">別の共有メールボックスへ移します</p>
                   </div>
                 </div>
 
                 <p className="text-sm text-gray-300 mb-4">
-                  このメールスレッドをチームメールに移動すると、チームで共有・管理できるようになります。個人メールからは削除されます。
+                  {isTeam ? 'このメールスレッドを別のチームメールに移動すると、今のチームからは見えなくなり、移動先のチームで共有・管理されます。担当者が移動先を見られない場合は、担当は外れます。' : 'このメールスレッドをチームメールに移動すると、チームで共有・管理できるようになります。個人メールからは削除されます。'}
                 </p>
 
                 <div className="mb-5">
@@ -1268,15 +1265,12 @@ function ThreadDetailPageInner({ params }: Props) {
                       className="w-full bg-gray-800 border border-gray-600 text-white text-sm rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                     >
                       {teamMailboxes.map(m => (
-                        <option key={m.id} value={m.id}>{m.display_name}{m.email_address ? ` (${m.email_address})` : ''}{m.viewable ? '' : '（メンバーではありません）'}</option>
+                        <option key={m.id} value={m.id}>{m.display_name} ({m.email_address})</option>
                       ))}
                     </select>
                   )}
                 </div>
 
-                {teamMailboxes.find(m => m.id === moveTarget)?.viewable === false && (
-                  <p className="mb-4 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-300">あなたはこのメールボックスのメンバーではありません。移動すると、あなたはこのスレッドを見られなくなり、自分では元に戻せません。</p>
-                )}
                 <div className="flex gap-3">
                   <button
                     onClick={() => setShowMoveModal(false)}

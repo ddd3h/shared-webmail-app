@@ -67,17 +67,14 @@ test.describe('スレッド: 見られないメールボックスのスレッド
     expect(await db.mattermost_links.count({ where: { thread_id: tid } })).toBe(0);
   });
 
-  test('個人メールボックスのスレッドの移動は、持ち主だけ（管理者でも不可）。行き先は、どの共有メールボックスでもよい（入っていない所は、一覧で分かる）', async ({ as }) => {
+  test('個人メールボックスのスレッドの移動は、持ち主だけ（管理者でも不可）。行き先は、自分が入っているチームのメールボックスだけ', async ({ as }) => {
     const id = await personalThread();
     expect((await (await as('admin')).post(`/api/threads/${id}/move`, { data: { target_mailbox_id: MAILBOX_ID } })).status()).toBe(403);
     expect((await (await as('sato')).post(`/api/threads/${id}/move`, { data: { target_mailbox_id: 'mb_nowhere' } })).status()).toBe(404);
-    // suzuki is in no team: the list still names every shared mailbox, but shows the address only for the ones they are in
-    const targets = (await (await (await as('suzuki')).get('/api/mailboxes/move-targets')).json()).items as { id: string; viewable: boolean; email_address: string | null }[];
-    const sales = targets.find(t => t.id === MAILBOX_ID)!;
-    expect(sales.viewable).toBe(false);
-    expect(sales.email_address).toBeNull();
-    // a mailbox that is not shared (a personal one) is never a target
-    expect((await (await as('sato')).post(`/api/threads/${id}/move`, { data: { target_mailbox_id: PERSONAL } })).status()).toBe(400);
+    // suzuki is in no team: nothing of theirs can be pushed into the sales mailbox
+    await db.mailboxes.update({ where: { id: PERSONAL }, data: { owner_user_id: USERS.suzuki.id } });
+    expect((await (await as('suzuki')).post(`/api/threads/${id}/move`, { data: { target_mailbox_id: MAILBOX_ID } })).status()).toBe(403);
+    await db.mailboxes.update({ where: { id: PERSONAL }, data: { owner_user_id: USERS.sato.id } });
     expect((await (await as('sato')).post(`/api/threads/${id}/move`, { data: { target_mailbox_id: MAILBOX_ID } })).status()).toBe(200);
   });
 
