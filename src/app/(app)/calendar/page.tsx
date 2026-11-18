@@ -216,7 +216,7 @@ function CalendarView() {
     if (isGoogle) {
       res = await fetch(`/api/calendar/events/${draft.id}`, {
         method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title_override: draft.title.trim() || null }),
+        body: JSON.stringify({ title_override: draft.title.trim() || null, attendee_ids: draft.attendees }),
       });
     } else {
       const start = draft.all_day ? new Date(`${draft.start.slice(0, 10)}T00:00:00Z`) : new Date(draft.start);
@@ -240,6 +240,27 @@ function CalendarView() {
   }
 
   const inp = 'w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-hidden focus:ring-2 focus:ring-blue-500';
+
+  const attendeesField = draft && (
+    <div data-testid="attendees">
+      <label className="text-xs text-gray-600" htmlFor="event-attendee">参加者（それぞれのカレンダーにも入ります）</label>
+      <div className="mt-1 flex flex-wrap gap-1.5">
+        {draft.attendees.length === 0 && <span className="text-xs text-gray-400">参加者はいません</span>}
+        {draft.attendees.map(id => (
+          <span key={id} className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2.5 py-1 text-xs text-blue-800">
+            {everybody.find(p => p.id === id)?.name ?? '（不明）'}
+            {draft.canEdit && <button type="button" className="text-blue-400 hover:text-red-600" aria-label={`${everybody.find(p => p.id === id)?.name ?? ''}を参加者から外す`} onClick={() => setDraft({ ...draft, attendees: draft.attendees.filter(x => x !== id) })}>×</button>}
+          </span>
+        ))}
+      </div>
+      {draft.canEdit && (
+        <select id="event-attendee" className={`${inp} mt-1.5`} value="" onChange={e => e.target.value && setDraft({ ...draft, attendees: [...draft.attendees, e.target.value] })}>
+          <option value="">社内の人を選んで追加…</option>
+          {everybody.filter(p => p.id !== (draft.owner?.id ?? me) && !draft.attendees.includes(p.id)).map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+        </select>
+      )}
+    </div>
+  );
 
   return (
     <div className="space-y-3 md:space-y-4">
@@ -402,12 +423,13 @@ function CalendarView() {
         <Modal onClose={() => setDraft(null)} title={draft.source === 'google' ? 'Googleから取り込んだ予定' : draft.id ? (draft.canEdit ? '予定を編集' : '予定') : '予定を追加'}>
           {draft.source === 'google' ? (
             <div className="space-y-3">
-              <p className="text-xs text-gray-500">Googleの予定は読み取り専用です。このアプリ内での表示名だけ変更できます。</p>
+              <p className="text-xs text-gray-500">Googleの予定は読み取り専用です。このアプリ内での表示名と参加者だけ変更できます。参加者には、Googleから取り込む設定で見せている内容だけが見えます。</p>
               <div>
                 <label className="text-xs text-gray-600">表示名（空欄で元の表示に戻す）</label>
                 <input className={inp} value={draft.title} disabled={!draft.canEdit} placeholder={draft.original_title || '予定あり'} onChange={e => setDraft({ ...draft, title: e.target.value })} />
               </div>
               <p className="text-xs text-gray-500">誰の予定: {draft.owner?.name}</p>
+              {attendeesField}
               {draft.original_title && <p className="text-xs text-gray-500">元のタイトル: {draft.original_title}</p>}
               {draft.location && <p className="text-xs text-gray-500">場所: {draft.location}</p>}
               {draft.description && <p className="text-xs text-gray-500 whitespace-pre-wrap wrap-break-word">{draft.description}</p>}
@@ -425,24 +447,7 @@ function CalendarView() {
                 <div><label className="text-xs text-gray-600" htmlFor="event-end">終了</label><input id="event-end" className={inp} type={draft.all_day ? 'date' : 'datetime-local'} value={draft.end} min={draft.start} disabled={!draft.canEdit} onChange={e => setDraft({ ...draft, end: e.target.value })} /></div>
               </div>
               <input className={inp} placeholder="場所" value={draft.location} disabled={!draft.canEdit} onChange={e => setDraft({ ...draft, location: e.target.value })} />
-              <div data-testid="attendees">
-                <label className="text-xs text-gray-600" htmlFor="event-attendee">参加者（それぞれのカレンダーにも入ります）</label>
-                <div className="mt-1 flex flex-wrap gap-1.5">
-                  {draft.attendees.length === 0 && <span className="text-xs text-gray-400">参加者はいません</span>}
-                  {draft.attendees.map(id => (
-                    <span key={id} className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2.5 py-1 text-xs text-blue-800">
-                      {everybody.find(p => p.id === id)?.name ?? '（不明）'}
-                      {draft.canEdit && <button type="button" className="text-blue-400 hover:text-red-600" aria-label={`${everybody.find(p => p.id === id)?.name ?? ''}を参加者から外す`} onClick={() => setDraft({ ...draft, attendees: draft.attendees.filter(x => x !== id) })}>×</button>}
-                    </span>
-                  ))}
-                </div>
-                {draft.canEdit && (
-                  <select id="event-attendee" className={`${inp} mt-1.5`} value="" onChange={e => e.target.value && setDraft({ ...draft, attendees: [...draft.attendees, e.target.value] })}>
-                    <option value="">社内の人を選んで追加…</option>
-                    {everybody.filter(p => p.id !== (draft.owner?.id ?? me) && !draft.attendees.includes(p.id)).map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                  </select>
-                )}
-              </div>
+              {attendeesField}
               <textarea className={inp} rows={3} placeholder="メモ" value={draft.description} disabled={!draft.canEdit} onChange={e => setDraft({ ...draft, description: e.target.value })} />
             </div>
           )}

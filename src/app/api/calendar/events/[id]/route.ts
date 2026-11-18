@@ -16,7 +16,24 @@ const localSchema = z.object({
 });
 
 // Imported events can only be renamed on our side; null/"" restores the Google/"予定あり" name.
-const googleSchema = z.object({ title_override: z.string().trim().max(200).nullable() });
+// The owner may also add people of the company: it then shows in their calendar too (as much as the link shows).
+const googleSchema = z.object({
+  title_override: z.string().trim().max(200).nullable().optional(),
+  attendee_ids: z.array(z.string().min(1)).max(100).optional(),
+});
+
+/** Replace the attendees of an event; returns the people newly added, or null when somebody is not a person of the company. */
+async function setAttendees(ev: NonNullable<Awaited<ReturnType<typeof load>>>, ids: string[]): Promise<string[] | null> {
+  const next = await validAttendees(ids, ev.owner_user_id);
+  if (!next) return null;
+  const had = new Set(ev.attendees.map(a => a.user_id));
+  const added = next.filter(u => !had.has(u));
+  await prisma.$transaction([
+    prisma.calendar_event_attendees.deleteMany({ where: { event_id: ev.id, user_id: { notIn: next } } }),
+    ...added.map(user_id => prisma.calendar_event_attendees.create({ data: { event_id: ev.id, user_id } })),
+  ]);
+  return added;
+}
 
 async function load(id: string) {
   return prisma.calendar_events.findUnique({ where: { id }, include: { attendees: { select: { user_id: true } } } });
@@ -35,7 +52,15 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     if (ev.owner_user_id !== session.userId) return NextResponse.json({ error: 'forbidden' }, { status: 403 });
     const parsed = googleSchema.safeParse(body);
     if (!parsed.success) return NextResponse.json({ error: 'invalid_body' }, { status: 400 });
-    await prisma.calendar_events.update({ where: { id }, data: { title_override: parsed.data.title_override || null } });
+    const { title_override, attendee_ids } = parsed.data;
+    let added: string[] = [];
+    if (attendee_ids !== undefined) {
+      const a = await setAttendees(ev, attendee_ids);
+      if (!a) return NextResponse.json({ error: 'invalid_attendee' }, { status: 400 });
+      added = a;
+    }
+    if (title_override !== undefined) await prisma.calendar_events.update({ where: { id }, data: { title_override: title_override || null } });
+    if (added.length > 0) void notifyEventInvited(id, session.userId, added);
     return NextResponse.json({ ok: true });
   }
 
@@ -48,14 +73,9 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   if (end < start) return NextResponse.json({ error: 'invalid_body' }, { status: 400 });
   let added: string[] = [];
   if (attendee_ids !== undefined) {
-    const next = await validAttendees(attendee_ids, ev.owner_user_id);
-    if (!next) return NextResponse.json({ error: 'invalid_attendee' }, { status: 400 });
-    const had = new Set(ev.attendees.map(a => a.user_id));
-    added = next.filter(u => !had.has(u));
-    await prisma.$transaction([
-      prisma.calendar_event_attendees.deleteMany({ where: { event_id: id, user_id: { notIn: next } } }),
-      ...added.map(user_id => prisma.calendar_event_attendees.create({ data: { event_id: id, user_id } })),
-    ]);
+    const a = await setAttendees(ev, attendee_ids);
+    if (!a) return NextResponse.json({ error: 'invalid_attendee' }, { status: 400 });
+    added = a;
   }
   await prisma.calendar_events.update({
     where: { id },

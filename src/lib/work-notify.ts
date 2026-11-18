@@ -5,6 +5,7 @@ import { transferSlotFor, transferSlotLabel } from '@/lib/transfer-days';
 import { mmText, sendDirectMessage } from '@/lib/mattermost-dm';
 import { PAYMENT_LABEL, type PaymentMethod } from '@/lib/expense';
 import { approversOf } from '@/lib/org-server';
+import { displayTitle, canShowDetails } from '@/lib/calendar';
 
 const appUrl = () => (process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000').replace(/\/$/, '');
 const yen = (n: number) => `¥${n.toLocaleString('ja-JP')}`;
@@ -352,7 +353,7 @@ export function notifyTodoAssigned(todoId: string, byUserId: string) {
 // People were invited to an event -> each of them (it is in their calendar now)
 export function notifyEventInvited(eventId: string, byUserId: string, userIds: string[]) {
   return safely('event_invited', async () => {
-    const ev = await prisma.calendar_events.findUnique({ where: { id: eventId }, select: { title: true, all_day: true, start_at: true, end_at: true, location: true } });
+    const ev = await prisma.calendar_events.findUnique({ where: { id: eventId }, select: { source: true, title: true, title_override: true, link: { select: { display_mode: true, busy_label: true } }, all_day: true, start_at: true, end_at: true, location: true } });
     if (!ev) return;
     const [by, people] = await Promise.all([
       prisma.users.findUnique({ where: { id: byUserId }, select: { name: true } }),
@@ -360,7 +361,7 @@ export function notifyEventInvited(eventId: string, byUserId: string, userIds: s
     ]);
     const jst = (d: Date) => new Date(d.getTime() + (ev.all_day ? 0 : 9 * 3600_000)).toISOString();
     const when = ev.all_day ? `${jst(ev.start_at).slice(0, 10)}（終日）` : `${jst(ev.start_at).slice(0, 10)} ${jst(ev.start_at).slice(11, 16)}–${jst(ev.end_at).slice(11, 16)}`;
-    const msg = `📅 **予定に招待されました**\n\n${mmText(ev.title ?? '', 100)}\n日時: ${when}${ev.location ? `\n場所: ${mmText(ev.location, 80)}` : ''}\n招待した人: ${mmText(by?.name ?? '', 40)}\n\n${appUrl()}/calendar`;
+    const msg = `📅 **予定に招待されました**\n\n${mmText(displayTitle(ev), 100)}\n日時: ${when}${ev.location && canShowDetails(ev) ? `\n場所: ${mmText(ev.location, 80)}` : ''}\n招待した人: ${mmText(by?.name ?? '', 40)}\n\n${appUrl()}/calendar`;
     await Promise.all(people.map(u => sendDirectMessage(u.id, u.email, msg, 'event_invited')));
   });
 }
