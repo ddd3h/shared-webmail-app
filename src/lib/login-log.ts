@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/db';
+import { noteLoginFailureForLockdown } from '@/lib/lockdown';
 
 export async function logLoginAttempt(params: {
   userId?: string | null;
@@ -12,6 +13,7 @@ export async function logLoginAttempt(params: {
   country?: string | null;
   city?: string | null;
 }): Promise<void> {
+  if (!params.success) void noteLoginFailureForLockdown(params.ipAddress).catch(e => console.error('[lockdown]', e));
   try {
     await prisma.login_logs.create({
       data: {

@@ -8,6 +8,7 @@ import { originProblem } from '@/lib/origin-check';
 import { loadSecurityPolicy } from '@/lib/security-settings';
 import { recordSecurityEvent } from '@/lib/security-events';
 import { BOT_KIND_LABEL, botAllowList, botBlockForcedOff, botKind } from '@/lib/bot-guard';
+import { isLockedDown } from '@/lib/lockdown';
 import { judgeAuthenticated, judgeUnauthenticated, type Verdict } from '@/lib/sweep-guard';
 
 const PUBLIC_PATHS = ['/login', '/reset-password', '/api/auth/login', '/api/auth/mfa/', '/api/auth/logout', '/api/auth/resume', '/api/cron/', '/api/passkeys/auth-options', '/api/passkeys/auth'];
@@ -95,8 +96,12 @@ async function sweepResponse(req: NextRequest, ip: string, v: Extract<Verdict, {
   return denied(req, 429, 'too_many_requests', v.retryAfterSec);
 }
 
+/** Lockdown: every connection (pages, API, files, the scheduler's calls) is turned away until the admin lifts it on the server. */
+const shutOut = () => new NextResponse('ただいま安全のため、すべての接続を停止しています。しばらくしてからもう一度お試しください。', { status: 503, headers: { 'Retry-After': '3600', 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' } });
+
 export async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
+  if (await isLockedDown()) return shutOut();
   if (isStatic(pathname)) return NextResponse.next();
 
   const ip = clientIpFrom(name => req.headers.get(name));
