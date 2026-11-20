@@ -1,3 +1,4 @@
+import { emailEquals, sameEmail } from '@/lib/email-match';
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { logAudit } from '@/lib/audit';
@@ -38,8 +39,8 @@ async function refuse(a: Attempt, v: Extract<Verdict, { ok: false }>): Promise<N
     if (v.firstBlock) {
       void sendDosAlert(a.ip, v.scope === 'ip' ? 'login-ip' : 'login-email', v.retryAfterSec, v.scope === 'email' ? `対象メールアドレス: ${a.email}` : undefined);
       if (v.scope === 'email') {
-        const target = await prisma.users.findFirst({ where: { email: { equals: a.email, mode: 'insensitive' } }, select: { id: true } });
-        if (target) void notifyLoginLockout(target.id, a.ip);
+        const target = await prisma.users.findFirst({ where: { email: emailEquals(a.email) }, select: { id: true, email: true } });
+        if (target && sameEmail(target.email, a.email)) void notifyLoginLockout(target.id, a.ip);
       }
     }
   }
@@ -70,7 +71,8 @@ export async function POST(req: NextRequest) {
 
   // runs while the password is being checked (scrypt takes a while)
   const lookup = lookupIp(attempt.ip);
-  const user = await prisma.users.findFirst({ where: { email: { equals: email, mode: 'insensitive' } } });
+  const found = await prisma.users.findFirst({ where: { email: emailEquals(email) } });
+  const user = found && sameEmail(found.email, email) ? found : null;
   const passwordOk = await passwordMatches(password, user?.password_hash);
   const ipInfo = await raceTimeout(lookup, 500);
 

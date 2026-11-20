@@ -13,10 +13,12 @@ export async function GET(req: NextRequest) {
   // Batch exact-match lookup for a list of email addresses
   if (emailsParam) {
     const list = emailsParam.split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
-    const contacts = await prisma.contacts.findMany({
+    const wanted = new Set(list);
+    const rows = await prisma.contacts.findMany({
       where: { email: { in: list, mode: 'insensitive' } },
       select: { id: true, name: true, email: true },
     });
+    const contacts = rows.filter(c => wanted.has((c.email ?? '').toLowerCase()));
     return NextResponse.json({ contacts });
   }
 

@@ -25,7 +25,8 @@ module.exports = {
       env: {
         NODE_ENV: 'production',
         PORT: '3000',
-        HOSTNAME: '0.0.0.0',
+        // loopback only: nginx is the sole entry. A public :3000 lets callers forge X-Forwarded-For (loopback spoof) and skip every IP limit.
+        HOSTNAME: '127.0.0.1',
       },
     },
   ],
