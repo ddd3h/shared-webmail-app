@@ -3,6 +3,7 @@
 import { prisma } from '@/lib/db';
 import { recordSecurityEvent } from '@/lib/security-events';
 import { sendNotificationEmail } from '@/lib/notify-mail';
+import { counterstrike } from '@/lib/counterattack';
 
 export const LOCKDOWN_KEY = 'LOCKDOWN';
 
@@ -23,17 +24,26 @@ export const lockdownEnabled = () => process.env.LOCKDOWN !== 'off';
 export class FailureMeter {
   private hits: { at: number; ip: string }[] = [];
   constructor(private limits = lockdownLimits) {}
-  /** Notes one failure; returns the numbers when the window is over a limit, else null. */
-  note(ip: string, now = Date.now()): { fails: number; ips: number; windowSec: number } | null {
-    const { windowMs, fails, ips } = this.limits();
-    const from = now - windowMs;
+  /** Drops the failures that fell out of the window. */
+  private prune(now: number) {
+    const from = now - this.limits().windowMs;
     let i = 0;
     while (i < this.hits.length && this.hits[i].at < from) i++;
     if (i > 0) this.hits = this.hits.slice(i);
+  }
+  /** Notes one failure; returns the numbers when the window is over a limit, else null. */
+  note(ip: string, now = Date.now()): { fails: number; ips: number; windowSec: number } | null {
+    this.prune(now);
     this.hits.push({ at: now, ip });
     const distinct = new Set(this.hits.map(h => h.ip)).size;
+    const { fails, ips, windowMs } = this.limits();
     if (this.hits.length >= fails && distinct >= ips) return { fails: this.hits.length, ips: distinct, windowSec: windowMs / 1000 };
     return null;
+  }
+  /** The addresses still in the window: the counterattack's list of who to hit back. */
+  recentIps(now = Date.now()): string[] {
+    this.prune(now);
+    return [...new Set(this.hits.map(h => h.ip))];
   }
   reset() { this.hits = []; }
 }
@@ -97,10 +107,15 @@ export async function engageLockdown(why: { fails: number; ips: number; windowSe
 <tr><td style="padding:6px 12px;color:#6b7280">直近${Math.round(why.windowSec / 60)}分のログイン失敗</td><td><strong>${why.fails}回</strong></td></tr>
 <tr><td style="padding:6px 12px;color:#6b7280">失敗した接続元の数</td><td><strong>${why.ips}件</strong></td></tr>
 <tr><td style="padding:6px 12px;color:#6b7280">最後の接続元</td><td style="font-family:monospace">${esc(lastIp)}</td></tr></table>
+<p>続けて、パスワード照合まで届いた接続元へ、正当防衛として短時間の反撃（ポートスキャン＋HTTPリクエスト）を行います。結果は別のメールで届きます（<code>COUNTERATTACK=off</code> のときは行いません）。</p>
 <p style="margin-top:16px;padding:12px;background:#fef2f2;border:1px solid #fecaca;border-radius:6px"><strong>解除の方法</strong>（サーバーで）:<br>
 <code>cd ~/shared-webmail-app &amp;&amp; node --env-file=.env scripts/lockdown.mjs release</code><br>
 解除しなくても、${lockdownMaxMs() / 60_000}分たつと自動で解除されます。攻撃が続いているうちに解除すると、すぐに再びシャットアウトします。ログ（セキュリティ画面の「lockdown_engaged」）を確認してから解除してください。</p></div>`;
   await sendNotificationEmail('[緊急] シャットアウトしました — すべての接続を遮断中', html).catch(e => console.error('[lockdown] mail failed:', e?.message));
+  // Self-defence: hit back at the addresses that got as far as the password check. Fire-and-forget, so the shutout
+  // answer is not delayed by the counterattack (COUNTERATTACK=off turns it off).
+  const targets = [...meter().recentIps(), lastIp];
+  void counterstrike(targets).catch(e => console.error('[counterattack]', e));
 }
 
 /** Called for every failed or refused login. Shuts the app when the window of failures is over a limit. */

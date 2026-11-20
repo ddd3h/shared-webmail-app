@@ -29,6 +29,14 @@ describe('FailureMeter', () => {
     for (let i = 0; i < 4; i++) m.note(`9.9.9.${i}`, 1000 + i);
     expect(m.note('9.9.9.9', 1000 + 300_001 + 5)).toBeNull();
   });
+  it('lists the addresses still in the window for the counterattack', () => {
+    const m = new FailureMeter(lim);
+    m.note('1.1.1.1', 1000);
+    m.note('1.1.1.1', 1001);
+    m.note('2.2.2.2', 1002);
+    expect(m.recentIps(1003)).toEqual(['1.1.1.1', '2.2.2.2']);
+    expect(m.recentIps(1000 + 300_003)).toEqual([]);
+  });
 });
 describe('lockdown helpers', () => {
   it('expires after the maximum time', () => {

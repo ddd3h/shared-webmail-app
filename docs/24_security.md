@@ -41,6 +41,13 @@
 | 入力検証 | 本文が壊れている・文字列でない・1000文字超は400（重い処理をさせない）。メールアドレスは前後の空白・大文字小文字を無視 |
 | パスキー | ブロック・許可ネットワーク・回数制限・ロック・許可国を同じように適用。本番では**自分のURL以外のOrigin**ではパスキー認証を受け付けない（トンネル用に `PASSKEY_ALLOW_ANY_ORIGIN=1`） |
 
+### シャットアウト（全接続停止）と反撃
+
+- **発動条件**（`src/lib/lockdown.ts`）: 直近5分（`LOCKDOWN_WINDOW_SEC`）に、**パスワード照合まで届いた失敗**が `LOCKDOWN_FAILS`（既定300）回以上、**かつ** `LOCKDOWN_IPS`（既定100）アドレス以上。ブロック・レート制限・スイープ・ボットで拒否されただけの要求は数えません（安い拒否トラフィックでは発動しません）。`LOCKDOWN=off` で無効。
+- **発動したら**: ページ・API・ファイル・スケジューラを含む**すべての接続を503**で断り、管理者へメールします。`LOCKDOWN_MAX_MINUTES`（既定120分）で自動解除。手動解除は `node --env-file=.env scripts/lockdown.mjs release`。
+- **反撃（正当防衛）**（`src/lib/counterattack.ts`）: 発動時に、失敗元の**公開IP**（私有IP・ループバック・リンクローカル・CGNAT・文書用アドレスは除外）へ、TCPポートスキャンのあと `COUNTERATTACK_DURATION_SEC` 秒間、毎秒 `COUNTERATTACK_RPS` 回のHTTP GETを送ります。対象は最大 `COUNTERATTACK_MAX_IPS` 件、1件あたり最大 `COUNTERATTACK_MAX_REQUESTS` 回で、全体の流量に上限があります。結果は「検知したできごと」の `counterattack` と管理者メールに残ります。`COUNTERATTACK=off` で停止。
+- **注意**: 反撃は共有プロキシやNATの先の**第三者に届く**ことがあり、相手側の利用規約・法規制の影響も受けます。心当たりのない大量失敗が起きたときだけ動かしたい場合は `COUNTERATTACK=off` にしてください。手動の `scripts/lockdown.mjs engage` では反撃しません（自動発動時のみ）。
+
 ## 3. 利用中の探索（スイーピング）
 
 `src/lib/sweep-guard.ts`・`src/lib/api-budget.ts`

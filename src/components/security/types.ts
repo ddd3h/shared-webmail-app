@@ -18,6 +18,7 @@ export const EVENT_LABEL: Record<string, string> = {
   device_login_refused: 'アプリの自動ログイン（端末の鍵）を拒否',
   bot_blocked: 'ロボット（AI・クローラ・スクリプト）の接続を拒否',
   ip_unknown: '接続元のIPアドレスが分からないアクセスを拒否',
+  lockdown_engaged: 'シャットアウト（全接続停止）を発動', lockdown_active: 'シャットアウト中のアクセスを記録', lockdown_expired: 'シャットアウトを自動解除', counterattack: '攻撃元へ反撃（ポートスキャン＋HTTPリクエスト）',
   account_reset_all: '管理者がアカウントを全リセット（パスキー・2段階認証・パスワード）', password_login_refused: 'パスキー登録済みのアカウントへのパスワードログインを拒否',
   session_ip_mismatch: '別のIPアドレスからのセッション使用を検知し、セッションを終了',
   session_device_mismatch: 'Cookieの使い回しを疑い、セッションを終了',
