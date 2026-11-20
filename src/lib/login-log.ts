@@ -13,7 +13,7 @@ export async function logLoginAttempt(params: {
   country?: string | null;
   city?: string | null;
 }): Promise<void> {
-  if (!params.success) void noteLoginFailureForLockdown(params.ipAddress).catch(e => console.error('[lockdown]', e));
+  if (!params.success) void noteLoginFailureForLockdown(params.ipAddress, params.failureReason).catch(e => console.error('[lockdown]', e));
   try {
     await prisma.login_logs.create({
       data: {
