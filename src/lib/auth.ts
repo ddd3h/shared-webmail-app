@@ -219,9 +219,17 @@ export async function getSessionAtNewAddress(): Promise<{ session: Session; move
 export async function verifyRequestSession(req: NextRequest): Promise<Live | null> {
   const token = req.cookies.get(SESSION_COOKIE)?.value;
   if (!token) return null;
+  return liveFromToken(token, name => req.headers.get(name));
+}
+
+/**
+ * The session behind a raw `sid` cookie value, by the same rules as every request of the app (`get` reads a header of the request).
+ * For the collaboration server's sockets, which are not Next.js requests. `null` when the cookie is missing, forged or past its idle limit.
+ */
+export async function liveFromToken(token: string, get: (name: string) => string | null | undefined): Promise<Live | null> {
   const payload = await unsealToken(token);
   if (!payload || !payload.sessionId || !payload.userId || Date.now() > payload.expiresAt) return null;
-  return checkLive(payload, name => req.headers.get(name));
+  return checkLive(payload, get);
 }
 
 // For middleware (Edge-compatible — no DB)

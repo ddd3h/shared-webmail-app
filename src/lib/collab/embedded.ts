@@ -9,7 +9,8 @@ import http from 'node:http';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { WebSocketServer } from 'ws';
-import * as Iron from 'iron-webcrypto';
+import { liveFromToken } from '@/lib/auth';
+import { checkAccess } from '@/lib/draft-access';
 
 let started = false;
 
@@ -24,15 +25,12 @@ export function startEmbeddedCollab(projectRoot: string) {
   const utilsPath = path.join(projectRoot, 'node_modules', 'y-websocket', 'bin', 'utils.js');
   const { setupWSConnection } = require(utilsPath);
 
-  const HOST = process.env.HOST || '0.0.0.0';
+  // loopback only: nginx is the sole entry (wss://<host>/collab). A socket that reached the port directly could name any address
+  // in X-Forwarded-For and pass the session's address check.
+  const HOST = process.env.COLLAB_HOST || '127.0.0.1';
   const PORT = parseInt(process.env.COLLAB_PORT || '1234', 10);
 
   const SESSION_COOKIE = 'sid';
-  const secret = process.env.SESSION_SECRET || 'dev-secret-at-least-32-chars-long!!';
-  const password = { 1: { id: '1', secret } }; // mirror src/lib/auth.ts (keyed by '1')
-  const INACTIVITY_MS = 12 * 60 * 60 * 1000;   // keep in sync with src/lib/auth.ts
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const cryptoImpl: any = globalThis.crypto;
   const verbose = process.env.NODE_ENV !== 'production';
 
   function parseCookies(header?: string): Record<string, string> {
@@ -48,19 +46,32 @@ export function startEmbeddedCollab(projectRoot: string) {
     return out;
   }
 
-  async function verifySession(req: http.IncomingMessage) {
+  // The person behind the socket: the same cookie and the same rules as every request of the app (lib/auth.ts checkLive):
+  // the session still exists, the account is not locked, it is not idle or too old, and the socket comes from an address the
+  // session was proved from. A session held for a changed address may not join until the person confirms it in the app.
+  async function verifySession(req: http.IncomingMessage): Promise<{ userId: string } | null> {
     const token = parseCookies(req.headers.cookie)[SESSION_COOKIE];
     if (!token) return null;
-    try {
-      const session = await Iron.unseal(cryptoImpl, token, password, { ...Iron.defaults, ttl: 0 });
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const s = session as any;
-      if (!s) return null;
-      if (Date.now() - (s.lastActivity || 0) > INACTIVITY_MS) return null;
-      return s;
-    } catch {
-      return null;
-    }
+    // As Next.js does for the app's own requests (server/base-server.js): without an X-Forwarded-For, the address the request came
+    // from stands in for it. Through nginx the header is there; a direct connection can only come from this machine (loopback).
+    const header = (name: string) => {
+      const v = req.headers[name];
+      if (name === 'x-forwarded-for' && v === undefined) return req.socket.remoteAddress ?? null;
+      return Array.isArray(v) ? v.join(', ') : v ?? null;
+    };
+    const live = await liveFromToken(token, header).catch(() => null);
+    if (!live || !('session' in live) || live.moved) return null;
+    return { userId: live.session.userId };
+  }
+
+  // A room is one draft (`webmail-draft-<id>`): only the people who may edit that draft may join it.
+  // The room is the last part of the path: `/webmail-draft-<id>`, or `/collab/webmail-draft-<id>` when nginx passes the prefix on.
+  async function mayJoin(userId: string, url: string | undefined): Promise<boolean> {
+    const room = (url ?? '').split('?')[0].split('/').pop() ?? '';
+    const m = /^webmail-draft-([A-Za-z0-9_-]+)$/.exec(room);
+    if (!m) return false;
+    const { accessible } = await checkAccess(m[1], userId, true).catch(() => ({ accessible: false }));
+    return accessible;
   }
 
   const wss = new WebSocketServer({ noServer: true });
@@ -72,8 +83,8 @@ export function startEmbeddedCollab(projectRoot: string) {
   });
 
   server.on('upgrade', (req, socket, head) => {
-    verifySession(req).then((session) => {
-      if (!session) {
+    verifySession(req).then(async (session) => {
+      if (!session || !(await mayJoin(session.userId, req.url))) {
         socket.write('HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n');
         socket.destroy();
         return;

@@ -1,5 +1,7 @@
 export const PORT = Number(process.env.E2E_PORT || 3100);
 export const BASE_URL = `http://localhost:${PORT}`;
+// the collaboration server of the test server (shared drafts); not the default 1234, which a dev server may hold
+export const COLLAB_PORT = Number(process.env.E2E_COLLAB_PORT || PORT + 1);
 export const MM_PORT = Number(process.env.E2E_MM_PORT || 8065);
 export const MM_URL = `http://localhost:${MM_PORT}`;
 export const DATABASE_URL = process.env.E2E_DATABASE_URL || 'postgresql://postgres@localhost:5433/webmail_e2e?schema=public';

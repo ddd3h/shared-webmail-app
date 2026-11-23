@@ -16,20 +16,26 @@ const RichEditor = dynamic(() => import('./RichEditor'), { ssr: false });
 let YLib: typeof import('yjs') | null = null;
 let WebsocketProviderClass: (typeof import('y-websocket'))['WebsocketProvider'] | null = null;
 let IndexeddbPersistenceClass: (typeof import('y-indexeddb'))['IndexeddbPersistence'] | null = null;
+let AwarenessClass: (typeof import('y-protocols/awareness'))['Awareness'] | null = null;
 
 async function loadYjsLibs() {
   if (!YLib) {
-    const [yjs, websocket, indexeddb] = await Promise.all([
+    const [yjs, websocket, indexeddb, awareness] = await Promise.all([
       import('yjs'),
       import('y-websocket'),
       import('y-indexeddb'),
+      import('y-protocols/awareness'),
     ]);
     YLib = yjs;
     WebsocketProviderClass = websocket.WebsocketProvider;
     IndexeddbPersistenceClass = indexeddb.IndexeddbPersistence;
+    AwarenessClass = awareness.Awareness;
   }
-  return { Y: YLib!, WebsocketProvider: WebsocketProviderClass!, IndexeddbPersistence: IndexeddbPersistenceClass! };
+  return { Y: YLib!, WebsocketProvider: WebsocketProviderClass!, IndexeddbPersistence: IndexeddbPersistenceClass!, Awareness: AwarenessClass! };
 }
+
+type YDoc = import('yjs').Doc;
+type YAwareness = import('y-protocols/awareness').Awareness;
 
 // Central collaboration server URL (y-websocket). Resolution order:
 //   1. explicit NEXT_PUBLIC_COLLAB_WS_URL
@@ -44,16 +50,6 @@ const COLLAB_WS_URL = (() => {
   }
   return 'ws://localhost:1234';
 })();
-
-// Module-level room registry — prevents duplicate providers for the same room
-// within the same JS context (StrictMode double-mount, concurrent effects, etc.)
-type YjsRoom = {
-  doc: import('yjs').Doc;
-  provider: import('y-websocket').WebsocketProvider;
-  persistence: import('y-indexeddb').IndexeddbPersistence;
-  refs: number;
-};
-const _yjsRooms = new Map<string, YjsRoom>();
 
 export type ComposeMode = 'compose' | 'reply' | 'forward';
 
@@ -113,6 +109,7 @@ export default function ComposeForm({
   minBodyHeight,
 }: ComposeFormProps) {
   const [mailboxes, setMailboxes] = useState<Mailbox[]>([]);
+  const [mailboxesLoaded, setMailboxesLoaded] = useState(false);
   const [selectedMailbox, setSelectedMailbox] = useState(defaultMailboxId || '');
   const [toChips, setToChips] = useState<string[]>(initialTo);
   const [ccChips, setCcChips] = useState<string[]>(initialCc);
@@ -149,8 +146,12 @@ export default function ComposeForm({
   // bumpAttachmentRev()/the attRev effect for how collaborators stay aligned.
   const attRevRef = useRef(0);
 
-  // Yjs collaborative editing state (shared team drafts only)
-  const [ydoc, setYdoc] = useState<import('yjs').Doc | null>(null);
+  // Yjs collaborative editing state (shared team drafts only).
+  // The doc (and the presence of who is here) exists from the moment a shared mailbox is chosen, and the editor is bound to it from the start;
+  // the room on the collaboration server is joined later, once the draft has an id. The editor is never rebuilt when that happens,
+  // so nothing typed in between is lost and the caret stays where it is.
+  const [ydoc, setYdoc] = useState<YDoc | null>(null);
+  const [awareness, setAwareness] = useState<YAwareness | null>(null);
   const [yjsProvider, setYjsProvider] = useState<import('y-websocket').WebsocketProvider | null>(null);
   const [displayName, setDisplayName] = useState('ユーザー');
   const [userId, setUserId] = useState<string | undefined>(undefined);
@@ -164,6 +165,8 @@ export default function ComposeForm({
   // carried across the switch (carryRef) instead of being lost when the editor is rebuilt.
   const collab = isTeam;
   const carryRef = useRef<string | null>(null);
+  // the body of an old shared draft saved only as HTML (from before the body was kept in Yjs): put into the empty doc once
+  const legacySeedRef = useRef<string | null>(null);
 
   // For team replies, all participants must share ONE draft (= one Yjs room).
   // resolvedDraftId starts from the prop and, for team replies without one, is
@@ -200,7 +203,8 @@ export default function ComposeForm({
         setMailboxes(items);
         setSelectedMailbox(prev => prev || defaultMailboxId || items[0]?.id || '');
       })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => setMailboxesLoaded(true));
     fetch('/api/user/signature')
       .then(r => r.json())
       .then(d => {
@@ -240,21 +244,40 @@ export default function ComposeForm({
   const loadedDraftRef = useRef<string | null>(null);
   // true once the saved draft (and its saved Yjs state) has been read, or when there is none to read
   const [draftReady, setDraftReady] = useState(!resolvedDraftId);
+  // The editor appears once From is known (plain or shared editor) and, when an existing draft was opened, once it has been read.
+  // Latched: a draft id that turns up later (the shared reply's draft) must not take the editor away while someone is typing.
+  const [booted, setBooted] = useState(false);
+  useEffect(() => {
+    if (!booted && mailboxesLoaded && (!draftId || draftReady)) setBooted(true);
+  }, [booted, mailboxesLoaded, draftId, draftReady]);
+  // the shared editing library could not be loaded (a stale page after an update, a network error): a plain editor, saved as HTML
+  const [yjsFailed, setYjsFailed] = useState(false);
+  const sharedEditor = collab && !yjsFailed;
+  const editorReady = booted && (!sharedEditor || (!!ydoc && !!awareness));
+  // what a new shared doc starts with: the text carried over from the plain editor (From changed), an old draft's HTML body,
+  // or the body a new message starts with (a forwarded message) while there is no draft (no room) yet
+  const collabSeed = sharedEditor ? (carryRef.current ?? legacySeedRef.current ?? (!draft.draftId && initialBody ? initialBody : null)) : null;
   // the signature of the person who made a shared draft: what it starts with, whoever opens it
   const [creatorSig, setCreatorSig] = useState<string | null>(null);
   const ydocRef = useRef<typeof ydoc>(null);
   ydocRef.current = ydoc;
   const yjsStateRef = useRef<string | null>(null);
   const appliedDocRef = useRef<unknown>(null);
+  // a change made here that the server does not have yet, and the function that saves it soon (see the save effect)
+  const yjsUnsavedRef = useRef(false);
+  const scheduleYjsSaveRef = useRef<(() => void) | null>(null);
+  // how far the server's copy of the current doc is known to reach (a Yjs state vector): a save sends only what is newer,
+  // so a pasted picture is not sent again with every keystroke
+  const savedSVRef = useRef<{ draftId: string | null; sv: Uint8Array } | null>(null);
 
-  // Apply the saved Yjs state to the current doc, once per doc.
-  async function applyYjsState() {
-    const doc = ydocRef.current;
+  // Apply the saved Yjs state to a doc, once per doc. (A merge: whatever is already in the doc stays.)
+  function applyYjsState(Y: typeof import('yjs'), doc: YDoc | null) {
     if (!doc || !yjsStateRef.current || appliedDocRef.current === doc) return;
     appliedDocRef.current = doc;
-    const { Y } = await loadYjsLibs();
     const binary = Uint8Array.from(atob(yjsStateRef.current), c => c.charCodeAt(0));
     Y.applyUpdate(doc, binary);
+    // the server has at least this much: later saves send only what came after it
+    if (!savedSVRef.current) savedSVRef.current = { draftId: loadedDraftRef.current, sv: Y.encodeStateVectorFromUpdate(binary) };
   }
 
   useEffect(() => {
@@ -264,7 +287,7 @@ export default function ComposeForm({
     fetch(`/api/drafts/${resolvedDraftId}`)
       .then(r => r.json())
       .then(async d => {
-        if (!d.id) { loadedDraftRef.current = null; return; }
+        if (!d.id) { loadedDraftRef.current = null; setDraftReady(true); return; } // gone (sent, deleted): start empty
         if (d.to_raw) setToChips(d.to_raw.split(/[,;]\s*/).map((s: string) => s.trim()).filter(Boolean));
         if (d.cc_raw) {
           const cc = d.cc_raw.split(/[,;]\s*/).map((s: string) => s.trim()).filter(Boolean);
@@ -286,100 +309,121 @@ export default function ComposeForm({
         if (d.html_body && !d.yjs_state_b64) {
           setEditorBody(d.html_body);
           richContentRef.current = d.html_body;
+          if (d.is_shared) legacySeedRef.current = d.html_body;
         }
-        await applyYjsState();
+        if (ydocRef.current) applyYjsState((await loadYjsLibs()).Y, ydocRef.current);
         setDraftReady(true);
       })
       .catch(() => { loadedDraftRef.current = null; setDraftReady(true); });
   }, [resolvedDraftId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // A Yjs doc appeared after the draft was loaded (or From switched to a shared mailbox): restore its saved state, or,
-  // when switching a plain draft to shared, seed the empty shared doc with the text typed so far.
+  // The shared doc: made as soon as a shared mailbox is chosen (and thrown away when From leaves it).
+  // What was saved before is put in before the editor is bound to it, so the editor starts with it.
   useEffect(() => {
-    if (!ydoc) return;
-    void applyYjsState();
-    const carry = carryRef.current;
-    if (!carry || !yjsProvider) return;
-    carryRef.current = null;
-    let done = false;
-    const seed = () => {
-      if (done) return;
-      done = true;
-      // wait until the editor for this doc exists; seed only if nobody wrote anything yet
-      setTimeout(() => { if (editorRef.current?.isEmpty()) editorRef.current.setHTML(carry); }, 0);
-    };
-    if (yjsProvider.synced) seed();
-    else { yjsProvider.once('sync', seed); setTimeout(seed, 2500); }
-  }, [ydoc, yjsProvider]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Initialize Yjs for shared team drafts once draftId is known.
-  // Uses module-level _yjsRooms ref-counting to survive StrictMode double-mount
-  // and prevent "A Yjs Doc connected to room X already exists!" errors.
-  useEffect(() => {
-    if (!collab || !draft.draftId) return;
-    const roomId = `webmail-draft-${draft.draftId}`;
-    let destroyed = false;
-
-    loadYjsLibs().then(({ Y, WebsocketProvider, IndexeddbPersistence }) => {
-      if (destroyed) return;
-
-      const existing = _yjsRooms.get(roomId);
-      if (existing) {
-        // Another effect run already created this room — reuse and increment refcount
-        existing.refs++;
-        setYdoc(existing.doc);
-        setYjsProvider(existing.provider);
-        return;
-      }
-
-      const doc = new Y.Doc();
-      let provider: import('y-websocket').WebsocketProvider;
-      try {
-        provider = new WebsocketProvider(COLLAB_WS_URL, roomId, doc);
-      } catch {
-        doc.destroy();
-        return;
-      }
-      const persistence = new IndexeddbPersistence(roomId, doc);
-      _yjsRooms.set(roomId, { doc, provider, persistence, refs: 1 });
+    if (!collab) return;
+    let alive = true;
+    let doc: YDoc | null = null;
+    let aw: YAwareness | null = null;
+    loadYjsLibs().then(({ Y, Awareness }) => {
+      if (!alive) return;
+      doc = new Y.Doc();
+      aw = new Awareness(doc);
+      savedSVRef.current = null;
+      ydocRef.current = doc; // a draft read that finishes before the next render applies its saved state here too
+      applyYjsState(Y, doc);
+      // every change made here (typing, the signature, ...) is to be saved; changes that arrive from elsewhere were saved by their author
+      doc.on('update', (_u: Uint8Array, _origin: unknown, _d: YDoc, tr: { local: boolean }) => {
+        if (!tr.local) return;
+        yjsUnsavedRef.current = true;
+        scheduleYjsSaveRef.current?.();
+      });
       setYdoc(doc);
+      setAwareness(aw);
+    }).catch(() => { if (alive) setYjsFailed(true); });
+    return () => {
+      alive = false;
+      aw?.destroy();
+      doc?.destroy();
+      setYdoc(null);
+      setAwareness(null);
+    };
+  }, [collab]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Join the draft's room once the draft has an id: the collaboration server (live editing together) and this
+  // browser's own copy (IndexedDB). Both only merge into the doc the editor is already bound to.
+  useEffect(() => {
+    if (!ydoc || !awareness || !draft.draftId) return;
+    const roomId = `webmail-draft-${draft.draftId}`;
+    let alive = true;
+    let provider: import('y-websocket').WebsocketProvider | null = null;
+    let persistence: import('y-indexeddb').IndexeddbPersistence | null = null;
+    loadYjsLibs().then(({ WebsocketProvider, IndexeddbPersistence }) => {
+      if (!alive) return;
+      try {
+        provider = new WebsocketProvider(COLLAB_WS_URL, roomId, ydoc, { awareness });
+      } catch {
+        return;
+      }
+      persistence = new IndexeddbPersistence(roomId, ydoc);
       setYjsProvider(provider);
     }).catch(() => {});
-
     return () => {
-      destroyed = true;
-      const room = _yjsRooms.get(roomId);
-      if (room) {
-        room.refs--;
-        if (room.refs <= 0) {
-          room.provider.destroy();
-          room.persistence.destroy();
-          room.doc.destroy();
-          _yjsRooms.delete(roomId);
-        }
-      }
-      setYdoc(null);
+      alive = false;
+      provider?.destroy();
+      persistence?.destroy();
       setYjsProvider(null);
     };
-  }, [collab, draft.draftId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [ydoc, awareness, draft.draftId]);
 
-  // Persist Yjs state to DB every 30s and on beforeunload
+  // Save the shared body to the server a moment after it is changed here, and when the composer closes or the page goes away.
+  // The server merges what it gets into what it has, so a save never drops what someone else wrote.
   useEffect(() => {
     if (!ydoc || !draft.draftId) return;
-    const save = async () => {
-      const { Y } = await loadYjsLibs().catch(() => ({ Y: null }));
-      if (!Y || !ydoc) return;
-      const state = Y.encodeStateAsUpdate(ydoc);
-      fetch(`/api/drafts/${draft.draftId}/yjs`, {
+    const draftId = draft.draftId;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let firstUnsavedAt = 0;
+    const flush = (leaving = false) => {
+      if (timer) clearTimeout(timer);
+      timer = null;
+      firstUnsavedAt = 0;
+      if (!yjsUnsavedRef.current || !YLib) return;
+      yjsUnsavedRef.current = false;
+      const Y = YLib;
+      const sv = Y.encodeStateVector(ydoc);
+      const base = savedSVRef.current?.draftId === draftId ? savedSVRef.current.sv : null;
+      // only what the server does not have yet (it merges it into what it has)
+      const state = base ? Y.encodeStateAsUpdate(ydoc, base) : Y.encodeStateAsUpdate(ydoc);
+      const done = () => { if (ydocRef.current === ydoc) savedSVRef.current = { draftId, sv }; };
+      const url = `/api/drafts/${draftId}/yjs`;
+      // a page that is going away: the browser sends a beacon even after the page is gone (a normal request would be cut off)
+      if (leaving && navigator.sendBeacon?.(url, new Blob([state.buffer as ArrayBuffer], { type: 'application/octet-stream' }))) { done(); return; }
+      fetch(url, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/octet-stream' },
         body: state.buffer as ArrayBuffer,
-        keepalive: true,
-      }).catch(() => {});
+        keepalive: leaving && state.byteLength < 60_000,
+      }).then(r => { if (r.ok) done(); else yjsUnsavedRef.current = true; }).catch(() => { yjsUnsavedRef.current = true; });
     };
-    const interval = setInterval(save, 30_000);
-    window.addEventListener('beforeunload', save);
-    return () => { clearInterval(interval); window.removeEventListener('beforeunload', save); };
+    // 2 seconds after the last change, and at least every 10 seconds while someone keeps typing
+    const schedule = () => {
+      const now = Date.now();
+      if (!firstUnsavedAt) firstUnsavedAt = now;
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => flush(), now - firstUnsavedAt > 8_000 ? 0 : 2_000);
+    };
+    scheduleYjsSaveRef.current = schedule;
+    if (yjsUnsavedRef.current) schedule(); // typed before the draft had an id
+    // leaving: the tab is hidden (switched away, closed, the phone locked) or the page is unloaded
+    const onHide = () => flush(true);
+    const onVisibility = () => { if (document.visibilityState === 'hidden') flush(true); };
+    window.addEventListener('pagehide', onHide);
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      scheduleYjsSaveRef.current = null;
+      window.removeEventListener('pagehide', onHide);
+      document.removeEventListener('visibilitychange', onVisibility);
+      flush();
+    };
   }, [ydoc, draft.draftId]);
 
   // Sync signature selection + visibility across collaborators via Yjs meta map.
@@ -458,8 +502,8 @@ export default function ComposeForm({
       // For Yjs-backed team drafts the body is synced via the collab server and
       // persisted through /api/drafts/[id]/yjs — sending html_body here too would
       // race with the optimistic lock and cause 409s. Omit body when ydoc is active.
-      html_body: ydoc ? undefined : editorRef.current?.getHTML(),
-      text_body: ydoc ? undefined : editorRef.current?.getText(),
+      html_body: sharedEditor ? undefined : editorRef.current?.getHTML(),
+      text_body: sharedEditor ? undefined : editorRef.current?.getText(),
       is_shared: collab,
     };
   }
@@ -860,7 +904,7 @@ export default function ComposeForm({
 
   const editorSection = (
     <div className={isModal ? 'pt-3 pb-2 px-2 sm:px-5' : 'p-3'}>
-      <RichEditor
+      {editorReady ? <RichEditor
         ref={editorRef}
         placeholder={mode === 'reply' ? '返信内容を入力してください…' : '本文を入力してください…'}
         minHeight={bodyHeight}
@@ -870,10 +914,15 @@ export default function ComposeForm({
           saveDraft();
         }}
         ydoc={ydoc ?? undefined}
-        provider={yjsProvider ?? undefined}
+        awareness={awareness ?? undefined}
+        seedHTML={collabSeed ?? undefined}
+        onSeeded={() => { carryRef.current = null; legacySeedRef.current = null; }}
         currentUser={currentUser}
         onCollaboratorsChange={setCollaborators}
-      />
+      /> : (
+        // until it is known which editor this is (plain or shared) and what it starts with: typing into an editor that is about to be replaced would be lost
+        <div className="border border-gray-200 rounded-lg bg-gray-50/60" style={{ minHeight: bodyHeight + 42 }} aria-busy="true" />
+      )}
     </div>
   );
 

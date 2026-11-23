@@ -38,7 +38,7 @@ const SECURITY_HEADERS = [
       // Collaborative editing (y-websocket): allow the collab server origin.
       // dev → ws://localhost:1234, prod → any wss: (e.g. wss://<domain>/collab)
       isDev
-        ? "connect-src 'self' https://openrouter.ai ws://localhost:1234 ws://127.0.0.1:1234"
+        ? `connect-src 'self' https://openrouter.ai ws://localhost:1234 ws://127.0.0.1:1234${process.env.NEXT_PUBLIC_COLLAB_WS_URL ? ' ' + new URL(process.env.NEXT_PUBLIC_COLLAB_WS_URL).origin : ''}`
         : "connect-src 'self' https://openrouter.ai wss:",
       "worker-src 'self' blob:",
       "frame-src 'none'",

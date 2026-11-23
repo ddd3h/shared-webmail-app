@@ -37,7 +37,6 @@ const SESSION_COOKIE = 'sid';
 const secret = process.env.SESSION_SECRET || 'dev-secret-at-least-32-chars-long!!';
 // Mirror src/lib/auth.ts: password keyed by id '1'.
 const password = { 1: { id: '1', secret } };
-const INACTIVITY_MS = 12 * 60 * 60 * 1000; // keep in sync with src/lib/auth.ts
 const cryptoImpl = globalThis.crypto;
 const verbose = process.env.NODE_ENV !== 'production';
 
@@ -64,8 +63,10 @@ async function verifySession(req) {
   if (!token) return null;
   try {
     const session = await Iron.unseal(cryptoImpl, token, password, { ...Iron.defaults, ttl: 0 });
-    if (!session) return null;
-    if (Date.now() - (session.lastActivity || 0) > INACTIVITY_MS) return null;
+    // the cookie carries `expiresAt` (the idle limit, pushed forward while the person works), not a last-activity time.
+    // Cookie only: unlike the embedded server (src/lib/collab/embedded.ts), this stand-alone one does not ask the database whether the
+    // session still exists, nor check the address it is used from. Use the embedded server in production.
+    if (!session || !session.sessionId || !session.userId || !session.expiresAt || Date.now() > session.expiresAt) return null;
     return session;
   } catch (e) {
     if (verbose) console.warn('[collab] unseal failed:', e?.message ?? e);

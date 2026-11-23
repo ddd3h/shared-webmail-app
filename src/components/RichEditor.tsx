@@ -1,5 +1,5 @@
 'use client';
-import { forwardRef, useImperativeHandle, useEffect } from 'react';
+import { forwardRef, useImperativeHandle, useEffect, useRef } from 'react';
 import { useEditor, EditorContent, Editor } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import { TextStyle } from '@tiptap/extension-text-style';
@@ -7,12 +7,13 @@ import { Color } from '@tiptap/extension-color';
 import TextAlign from '@tiptap/extension-text-align';
 import Image from '@tiptap/extension-image';
 import Collaboration from '@tiptap/extension-collaboration';
+import { ySyncPluginKey } from '@tiptap/y-tiptap';
 import CollaborationCaret from '@tiptap/extension-collaboration-caret';
 import { Extension } from '@tiptap/core';
 import { DOMParser as PMDOMParser } from '@tiptap/pm/model';
 import DOMPurify from 'dompurify';
 import type * as Y from 'yjs';
-import type { WebsocketProvider } from 'y-websocket';
+import type { Awareness } from 'y-protocols/awareness';
 
 const PURIFY_CONFIG = {
   ALLOWED_TAGS: [
@@ -83,8 +84,13 @@ type Props = {
   minHeight?: number;
   initialHTML?: string;
   onInput?: () => void;
+  // shared drafts: the doc the editor is bound to, and who is here (carets). Both stay the same while the room
+  // is joined later, so the editor is not rebuilt when that happens.
   ydoc?: Y.Doc;
-  provider?: WebsocketProvider;
+  awareness?: Awareness;
+  // shared drafts: the HTML to start an empty doc with (text carried over from the plain editor, a forwarded message, ...)
+  seedHTML?: string;
+  onSeeded?: () => void;
   currentUser?: { name: string; color: string; id?: string };
   onCollaboratorsChange?: (users: CollabUser[]) => void;
 };
@@ -98,7 +104,9 @@ const PALETTE_COLORS = [
 const FONT_SIZES = [9, 10, 11, 12, 14, 16, 18, 20, 24, 28, 32, 36, 48, 72, 96, 144, 288];
 
 const RichEditor = forwardRef<RichEditorHandle, Props>(
-  ({ placeholder, minHeight = 160, initialHTML, onInput, ydoc, provider, currentUser, onCollaboratorsChange }, ref) => {
+  ({ placeholder, minHeight = 160, initialHTML, onInput, ydoc, awareness, seedHTML, onSeeded, currentUser, onCollaboratorsChange }, ref) => {
+    const seedRef = useRef({ seedHTML, onSeeded });
+    seedRef.current = { seedHTML, onSeeded };
     const extensions = [
       // StarterKit v3 already bundles link & underline — configure them here
       // instead of adding separate extensions (which caused duplicate-name warnings).
@@ -114,8 +122,8 @@ const RichEditor = forwardRef<RichEditorHandle, Props>(
       ...(ydoc
         ? [
             Collaboration.configure({ document: ydoc }),
-            ...(provider && currentUser
-              ? [CollaborationCaret.configure({ provider, user: currentUser })]
+            ...(awareness && currentUser
+              ? [CollaborationCaret.configure({ provider: { awareness }, user: currentUser })]
               : []),
           ]
         : []),
@@ -125,7 +133,17 @@ const RichEditor = forwardRef<RichEditorHandle, Props>(
       extensions,
       immediatelyRender: false, // client-only (dynamic ssr:false) — avoids hydration warning
       content: ydoc ? undefined : (initialHTML ? purify(initialHTML) : ''),
-      onUpdate: () => onInput?.(),
+      // Only what is typed here counts as an edit (and saves the draft): the text that arrives from the others does not.
+      onUpdate: ({ transaction }) => {
+        if ((transaction.getMeta(ySyncPluginKey) as { isChangeOrigin?: boolean } | undefined)?.isChangeOrigin) return;
+        onInput?.();
+      },
+      onCreate: ({ editor: ed }) => {
+        const { seedHTML: seed, onSeeded: done } = seedRef.current;
+        if (!ydoc || !seed) return;
+        if (ed.isEmpty) ed.commands.setContent(purify(seed));
+        done?.();
+      },
       editorProps: {
         attributes: {
           class: 'prose prose-sm max-w-none focus:outline-hidden leading-relaxed',
@@ -135,11 +153,11 @@ const RichEditor = forwardRef<RichEditorHandle, Props>(
         handlePaste(view, event) {
           // IMPORTANT: use `view` (the live ProseMirror EditorView ProseMirror hands
           // us for THIS event), not the outer `editor` closure variable. When this
-          // editor has a non-empty useEditor() deps array (ydoc/provider, for
+          // editor has a non-empty useEditor() deps array (ydoc/awareness, for
           // collaborative team drafts), Tiptap's react bindings only recreate the
           // editor on dep changes and never re-sync editorProps into the live
           // instance — so a closure-captured `editor` can end up permanently
-          // pointing at an already-destroyed instance the moment ydoc/provider
+          // pointing at an already-destroyed instance the moment ydoc/awareness
           // resolve, throwing "commandManager is null" on every future paste.
           // `view` has no such staleness: ProseMirror always passes the current one.
           const types = event.clipboardData?.types ?? [];
@@ -211,7 +229,7 @@ const RichEditor = forwardRef<RichEditorHandle, Props>(
           return false;
         },
       },
-    }, [ydoc, provider]); // re-create editor once Yjs doc/provider become available
+    }, [ydoc, awareness]); // a shared doc of its own: made when a shared mailbox is chosen, not when the room is joined
 
     useEffect(() => {
       if (!ydoc && editor && initialHTML && !editor.isEmpty) return;
@@ -223,16 +241,16 @@ const RichEditor = forwardRef<RichEditorHandle, Props>(
     // Keep the collaboration cursor label in sync when the display name resolves
     // after the editor (and its awareness state) was already created.
     useEffect(() => {
-      if (provider && currentUser) {
-        provider.awareness.setLocalStateField('user', currentUser);
+      if (awareness && currentUser) {
+        awareness.setLocalStateField('user', currentUser);
       }
-    }, [provider, currentUser]);
+    }, [awareness, currentUser]);
 
     // Report the set of connected collaborators (from awareness) to the parent
     // so it can render presence avatars.
     useEffect(() => {
-      if (!provider || !onCollaboratorsChange) return;
-      const aw = provider.awareness;
+      if (!awareness || !onCollaboratorsChange) return;
+      const aw = awareness;
       const update = () => {
         const seen = new Set<string>();
         const users: CollabUser[] = [];
@@ -250,7 +268,7 @@ const RichEditor = forwardRef<RichEditorHandle, Props>(
       update();
       aw.on('change', update);
       return () => aw.off('change', update);
-    }, [provider, onCollaboratorsChange]);
+    }, [awareness, onCollaboratorsChange]);
 
     useImperativeHandle(ref, () => ({
       getHTML: () => normalizeEmptyParagraphs(editor?.getHTML() ?? ''),
@@ -385,12 +403,6 @@ const RichEditor = forwardRef<RichEditorHandle, Props>(
             <svg className="w-3.5 h-3.5" viewBox="0 0 16 16" fill="currentColor"><path d="M3.27 1L2 2.27l5.11 5.11L4 13h2.5l1.64-3.89L13.73 15 15 13.73 3.27 1zm1.15 2.38L12 11l-1.5 2H8l1.5-3.5-5.08-4.12z" /></svg>
           </ToolBtn>
 
-          {/* Collaboration cursors legend */}
-          {provider && (
-            <div className="ml-auto flex items-center gap-1">
-              {/* y-webrtc awareness renders cursors inside EditorContent automatically */}
-            </div>
-          )}
         </div>
 
         {/* Editor area */}

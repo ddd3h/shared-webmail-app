@@ -159,7 +159,8 @@ if (!g.__autoflowStarted) {
 
 // Run the collaborative-editing (y-websocket) server IN-PROCESS, so a single
 // `pm2 start shared-webmail-app` brings up everything. It listens on COLLAB_PORT
-// (default 1234); nginx proxies wss://<host>/collab → it.
+// (default 1234) on loopback only; nginx proxies wss://<host>/collab/ → it (deploy/nginx-collab.conf; without that
+// location, shared drafts are still saved and merged, but people do not see each other's typing live).
 if (!g.__collabStarted) {
   g.__collabStarted = true;
   Promise.all([import('node:path'), import('@/lib/collab/embedded')]).then(([path, { startEmbeddedCollab }]) => {

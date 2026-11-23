@@ -49,8 +49,9 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     return NextResponse.json({ error: 'forbidden' }, { status: 403 });
   }
 
-  // Optimistic lock — only enforced when caller sends client_updated_at
-  if (body.client_updated_at !== undefined) {
+  // Optimistic lock — only enforced when caller sends client_updated_at, and not for a shared draft: its body is merged
+  // through Yjs, and saving that body moves updated_at all the time (also when From turns it back into a plain draft).
+  if (body.client_updated_at !== undefined && !draft.is_shared) {
     const clientTs = new Date(body.client_updated_at).getTime();
     const serverTs = draft.updated_at.getTime();
     if (clientTs !== serverTs) {

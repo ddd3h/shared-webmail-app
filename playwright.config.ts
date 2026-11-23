@@ -1,6 +1,6 @@
 import { execSync } from 'child_process';
 import { defineConfig, devices } from '@playwright/test';
-import { BASE_URL, DATABASE_URL, ENCRYPTION_KEY_HEX, MM_URL, PORT } from './e2e/helpers/constants';
+import { BASE_URL, COLLAB_PORT, DATABASE_URL, ENCRYPTION_KEY_HEX, MM_URL, PORT } from './e2e/helpers/constants';
 
 // Build the throw-away schema once (the main process; workers inherit the flag through the environment).
 if (!process.env.PW_E2E_DB_PREPARED) {
@@ -72,6 +72,9 @@ export default defineConfig({
       GOOGLE_CLIENT_ID: 'e2e-client.apps.googleusercontent.com',
       GOOGLE_CLIENT_SECRET: 'e2e-secret',
       NEXT_TELEMETRY_DISABLED: '1',
+      // shared drafts are edited together through the collaboration server; the test server runs its own on a port of its own
+      COLLAB_PORT: String(COLLAB_PORT),
+      NEXT_PUBLIC_COLLAB_WS_URL: `ws://localhost:${COLLAB_PORT}`,
     },
   },
 });
