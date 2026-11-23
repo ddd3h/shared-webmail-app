@@ -116,6 +116,12 @@ const nextConfig = {
         source: '/(.*)',
         headers: SECURITY_HEADERS,
       },
+      // Pictures fetched from elsewhere (a sender's SVG logo can carry a script): opened on their own, they may run nothing at all.
+      // Set here, after the page policy above, because that one would otherwise replace the policy the route sends.
+      ...['/api/sender-icon', '/api/users/:id/avatar', '/api/user/avatar'].map(source => ({
+        source,
+        headers: [{ key: 'Content-Security-Policy', value: "default-src 'none'; style-src 'unsafe-inline'; sandbox" }],
+      })),
       // Answers that hold personal or financial data must never be kept by a browser or a shared cache
       ...['/api/auth/:path*', '/api/security/:path*', '/api/admin/:path*', '/api/bank-accounts/:path*', '/api/transfers/:path*', '/api/profile/:path*'].map(source => ({
         source,

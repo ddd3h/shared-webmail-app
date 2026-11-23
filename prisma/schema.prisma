@@ -97,6 +97,7 @@ model users {
   bulk_actions_requested     pending_bulk_actions[]
   spam_senders_created       spam_senders[]
   sessions                   sessions[]
+  image_cache                image_cache[]
   login_logs                 login_logs[]
   last_login_at              DateTime?
   locked_at                  DateTime? // an admin locked the account: no login, sessions revoked
@@ -1555,4 +1556,27 @@ model payroll_profiles {
   updated_at         DateTime  @updatedAt
 
   user users @relation("payroll_profile_user", fields: [user_id], references: [id], onDelete: Cascade)
+}
+
+// Pictures fetched from elsewhere, kept so a restart or a deploy does not send everyone back to Mattermost and the internet
+// (src/lib/image-store.ts). The in-memory cache ('use cache') sits in front of it. Logging out does not throw these away:
+// they are kept per picture owner, not per login, and every logged-in person may see them.
+model image_cache {
+  // `avatar:<user id>`, or `sender:<sha256>` of the address / domain (no correspondent's address is stored in the clear)
+  key          String   @id
+  // the person a profile picture belongs to: their pictures go when they are deleted
+  user_id      String?
+  // the Mattermost user the profile picture was fetched for: a row for another one counts as missing
+  owner        String?
+  // null: looked up, and there is no picture
+  data         Bytes?
+  content_type String?
+  etag         String?
+  source       String?
+  fetched_at   DateTime @default(now())
+
+  user users? @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@index([fetched_at])
+  @@index([user_id])
 }

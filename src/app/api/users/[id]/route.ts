@@ -61,8 +61,8 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     // a password set by an admin ends the person's sessions (they may have been opened with the old one)
     if (data.password_hash && id !== session.userId) await revokeUserSessions(id);
 
-    // Clear avatar cache so the new Mattermost ID's image is fetched immediately
-    if (mattermostIdChanged) forgetAvatar(id);
+    // Clear the kept picture (memory and database) so the new Mattermost ID's image is fetched immediately
+    if (mattermostIdChanged) await forgetAvatar(id);
 
     await logAudit({
       actorUserId: session.userId,

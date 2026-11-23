@@ -22,6 +22,8 @@ export function startMattermostMock(): Promise<() => Promise<void>> {
   const channelTarget = new Map<string, string>();
   let failPosts = false;
   let imageHits = 0;
+  // how the profile picture endpoint answers: a picture, 503 (Mattermost is down) or 404 (no such user)
+  let imageMode: 'ok' | 'down' | 'missing' = 'ok';
   let failEmbeddings = false;
   let embeddingCalls = 0;
   let mapsCalls = 0;
@@ -52,7 +54,7 @@ export function startMattermostMock(): Promise<() => Promise<void>> {
       const url = req.url || '';
       const send = (o: unknown, code = 200) => { res.writeHead(code, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(o)); };
       if (url === '/__posts') return send(posts);
-      if (url === '/__reset') { posts.length = 0; failPosts = false; imageHits = 0; failEmbeddings = false; embeddingCalls = 0; mapsCalls = 0; failMaps = null; lastMaps = null; osm.gsi = []; osm.nominatim = []; osm.osrm = []; osm.uas = []; failOsm = null; freeeAccess = ''; freeeRefresh = ''; freeeTokenCalls = []; freeeDeals = []; freeeReceipts = []; failFreee = null; freeeCompanies = 1; return send({ ok: true }); }
+      if (url === '/__reset') { posts.length = 0; failPosts = false; imageHits = 0; imageMode = 'ok'; failEmbeddings = false; embeddingCalls = 0; mapsCalls = 0; failMaps = null; lastMaps = null; osm.gsi = []; osm.nominatim = []; osm.osrm = []; osm.uas = []; failOsm = null; freeeAccess = ''; freeeRefresh = ''; freeeTokenCalls = []; freeeDeals = []; freeeReceipts = []; failFreee = null; freeeCompanies = 1; return send({ ok: true }); }
       if (url === '/__fail_embeddings') { failEmbeddings = JSON.parse(body || '{}').on !== false; return send({ failEmbeddings }); }
       if (url === '/__embedding_calls') return send({ calls: embeddingCalls });
       if (url === '/v1/embeddings') {
@@ -171,7 +173,8 @@ export function startMattermostMock(): Promise<() => Promise<void>> {
         return send({ message: 'not found' }, 404);
       }
       if (url === '/__image_hits') return send({ hits: imageHits });
-      if (/^\/api\/v4\/users\/[^/]+\/image$/.test(url)) { imageHits++; res.writeHead(200, { 'Content-Type': 'image/png' }); return res.end(Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64')); }
+      if (url === '/__image_mode') { imageMode = JSON.parse(body || '{}').mode ?? 'ok'; return send({ imageMode }); }
+      if (/^\/api\/v4\/users\/[^/]+\/image$/.test(url)) { imageHits++; if (imageMode !== 'ok') return send({ error: imageMode }, imageMode === 'down' ? 503 : 404); res.writeHead(200, { 'Content-Type': 'image/png' }); return res.end(Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64')); }
       if (url === '/__fail') { failPosts = JSON.parse(body || '{}').on !== false; return send({ failPosts }); }
       if (url === '/api/v4/users/me') return send({ id: 'bot-id' });
       if (url.startsWith('/api/v4/users/email/')) return send({ id: 'mm-' + decodeURIComponent(url.split('/').pop()!).split('@')[0] });
@@ -197,6 +200,7 @@ export const mm = {
   async posts(): Promise<Post[]> { return (await fetch(`${MM_URL}/__posts`)).json(); },
   // How many times a profile picture was fetched from (the fake) Mattermost
   async imageHits(): Promise<number> { return (await (await fetch(`${MM_URL}/__image_hits`)).json()).hits; },
+  async imageMode(mode: 'ok' | 'down' | 'missing') { await fetch(`${MM_URL}/__image_mode`, { method: 'POST', body: JSON.stringify({ mode }) }); },
   async failEmbeddings(on = true) { await fetch(`${MM_URL}/__fail_embeddings`, { method: 'POST', body: JSON.stringify({ on }) }); },
   async embeddingCalls(): Promise<number> { return (await (await fetch(`${MM_URL}/__embedding_calls`)).json()).calls; },
   async mapsCalls(): Promise<{ calls: number; last: { key: string; origin?: string; destination?: string; mode?: string; departureTime?: string } | null }> { return (await fetch(`${MM_URL}/__maps_calls`)).json(); },

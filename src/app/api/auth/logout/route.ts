@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSession, clearSession } from '@/lib/auth';
-import { forgetAvatar } from '@/lib/avatar';
 import { DEVICE_COOKIE } from '@/lib/known-device';
 import { forgetRemembered } from '@/lib/remember-login';
 
@@ -8,8 +7,8 @@ import { forgetRemembered } from '@/lib/remember-login';
 async function performLogout(deviceToken?: string) {
   try {
     if (deviceToken) await forgetRemembered({ token: deviceToken });
+    // the profile picture stays kept (lib/avatar.ts): it belongs to the person, not to this login, and every logged-in person may see it
     const session = await getSession();
-    if (session?.userId) forgetAvatar(session.userId);
     if (session?.sessionId) await clearSession(session.sessionId);
   } catch {}
 }

@@ -133,6 +133,17 @@ if (!g.__sessionCleanupStarted) {
   }, 24 * 60 * 60 * 1000);
 }
 
+// Kept pictures (profile pictures, sender icons) that nobody needed for 30 days: deleted once a day (src/lib/image-store.ts)
+if (!g.__imageCachePruneStarted) {
+  g.__imageCachePruneStarted = true;
+  const prune = () => import('@/lib/image-store')
+    .then(({ pruneImageCache }) => pruneImageCache())
+    .then(n => { if (n > 0) console.log(`[image-cache] deleted ${n} pictures not needed for 30 days`); })
+    .catch(e => console.error('[image-cache] prune failed:', e));
+  setTimeout(prune, 5 * 60 * 1000);
+  setInterval(prune, 24 * 60 * 60 * 1000);
+}
+
 // オートフロー（申請・給与の自動通知）: 日本時間の 9 時を過ぎた最初の 1 回だけ、その日の分を送る。
 // 「9 時台だけ」ではなく「9 時以降」なので、デプロイや再起動で 9 時台を逃しても、その日のうちに動く。
 // 1 日 1 回は DB の autoflow_runs が保証する。何も ON になっていなければ何もしない。
