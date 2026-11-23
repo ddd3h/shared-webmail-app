@@ -4,6 +4,7 @@ import { prisma } from '@/lib/db';
 import { recordSecurityEvent } from '@/lib/security-events';
 import { sendNotificationEmail } from '@/lib/notify-mail';
 import { counterstrike } from '@/lib/counterattack';
+import { isTrustedIp } from '@/lib/security-settings';
 
 export const LOCKDOWN_KEY = 'LOCKDOWN';
 
@@ -121,6 +122,7 @@ export async function engageLockdown(why: { fails: number; ips: number; windowSe
 /** Called for every failed or refused login. Shuts the app when the window of failures is over a limit. */
 export async function noteLoginFailureForLockdown(ip: string, reason?: string | null): Promise<void> {
   if (!lockdownEnabled() || g.__lockdown?.on || !reason || !COUNTED_FAILURES.has(reason)) return;
+  if (await isTrustedIp(ip)) return; // our own lines (the admin's trusted addresses) do not shut the app
   const over = meter().note(ip);
   if (over) await engageLockdown(over, ip);
 }

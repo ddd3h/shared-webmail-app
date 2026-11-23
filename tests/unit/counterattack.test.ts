@@ -15,6 +15,9 @@ describe('counterattack helpers', () => {
   it('cleans and caps the target list', () => {
     expect(counterattackTargets(['8.8.8.8', ' 8.8.8.8 ', '10.0.0.1', 'unknown', '1.1.1.1', null], 10)).toEqual(['8.8.8.8', '1.1.1.1']);
     expect(counterattackTargets(['8.8.8.8', '1.1.1.1', '9.9.9.9'], 2)).toEqual(['8.8.8.8', '1.1.1.1']);
+    // our own lines (the trusted addresses) are never hit back, a range included
+    expect(counterattackTargets(['8.8.8.8', '219.104.167.157', '1.1.1.1'], 10, ['219.104.167.157'])).toEqual(['8.8.8.8', '1.1.1.1']);
+    expect(counterattackTargets(['203.0.113.9', '8.8.8.8'], 10, ['203.0.113.0/24'])).toEqual(['8.8.8.8']);
   });
 
   it('parses ports, dropping bad entries and duplicates', () => {

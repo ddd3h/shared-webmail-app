@@ -2,22 +2,39 @@
 import { prisma } from '@/lib/db';
 import { matchesAny, isValidRule, isLoopback } from '@/lib/cidr';
 import { recordSecurityEvent } from '@/lib/security-events';
+import { isTrustedIp } from '@/lib/security-settings';
 
 const ttlMs = () => Number(process.env.SECURITY_CACHE_TTL_MS ?? 10_000);
-const g = globalThis as unknown as { __ipBlocks?: { at: number; rules: string[] } };
+type Rules = { manual: string[]; auto: string[] };
+const g = globalThis as unknown as { __ipBlocks?: { at: number; rules: Rules } };
 
-async function activeRules(): Promise<string[]> {
+async function activeRules(): Promise<Rules> {
   if (g.__ipBlocks && Date.now() - g.__ipBlocks.at < ttlMs()) return g.__ipBlocks.rules;
-  const rows = await prisma.ip_blocks.findMany({ where: { OR: [{ expires_at: null }, { expires_at: { gt: new Date() } }] }, select: { ip: true } });
-  g.__ipBlocks = { at: Date.now(), rules: rows.map(r => r.ip) };
-  return g.__ipBlocks.rules;
+  const rows = await prisma.ip_blocks.findMany({ where: { OR: [{ expires_at: null }, { expires_at: { gt: new Date() } }] }, select: { ip: true, source: true } });
+  const rules = { manual: rows.filter(r => r.source !== 'auto').map(r => r.ip), auto: rows.filter(r => r.source === 'auto').map(r => r.ip) };
+  g.__ipBlocks = { at: Date.now(), rules };
+  return rules;
 }
 const forget = () => { g.__ipBlocks = undefined; };
 
-/** Fails open: if the list can't be read, the request goes on (the other defences still apply). */
+/** Fails open: if the list can't be read, the request goes on (the other defences still apply).
+ *  A block put in by hand always counts; an automatic one does not count for a trusted address (the admin's list of our own lines). */
 export async function isIpBlocked(ip: string): Promise<boolean> {
   if (ip === 'unknown') return false;
-  try { return matchesAny(ip, await activeRules()); } catch { return false; }
+  try {
+    const { manual, auto } = await activeRules();
+    if (matchesAny(ip, manual)) return true;
+    return matchesAny(ip, auto) && !(await isTrustedIp(ip));
+  } catch { return false; }
+}
+
+const skipNoted = new Map<string, number>();
+/** A trusted address did something that would have blocked it: noted (once in 10 minutes per address), not blocked. */
+async function noteTrustedNotBlocked(ip: string, reason: string) {
+  if (Date.now() - (skipNoted.get(ip) ?? 0) < 10 * 60_000) return;
+  if (skipNoted.size > 500) skipNoted.clear();
+  skipNoted.set(ip, Date.now());
+  await recordSecurityEvent({ type: 'trusted_ip_not_blocked', severity: 'info', ip, detail: { reason } });
 }
 
 /** An automatic block of an address that was blocked automatically before (sweeping, or a robot) is permanent. */
@@ -26,6 +43,7 @@ export const REPEAT_BLOCK_LABEL = '再発のため永久ブロック';
 export async function blockIp(o: { ip: string; reason: string; minutes?: number | null; source: 'manual' | 'auto'; byUserId?: string | null }): Promise<boolean> {
   if (!isValidRule(o.ip) || o.ip === 'unknown') return false;
   if (o.source === 'auto' && isLoopback(o.ip)) return false; // never lock out this machine itself
+  if (o.source === 'auto' && await isTrustedIp(o.ip)) { await noteTrustedNotBlocked(o.ip, o.reason); return false; } // nor our own lines
   let minutes = o.minutes;
   let reason = o.reason;
   if (o.source === 'auto') {

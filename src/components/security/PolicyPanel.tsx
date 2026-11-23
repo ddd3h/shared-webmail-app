@@ -11,7 +11,7 @@ export default function PolicyPanel() {
 
   async function save() {
     if (!p) return;
-    const res = await fetch('/api/admin/security/policy', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ allowed_cidrs: p.allowed_cidrs, allowed_countries: p.allowed_countries, session_max_days: Number(p.session_max_days), new_device_alert: p.new_device_alert, device_binding: p.device_binding, require_2fa: p.require_2fa, mfa_trust_days: Number(p.mfa_trust_days), block_bots: p.block_bots, remember_days: Number(p.remember_days), idle_minutes: Number(p.idle_minutes), reauth_minutes: Number(p.reauth_minutes ?? 15) }) });
+    const res = await fetch('/api/admin/security/policy', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ allowed_cidrs: p.allowed_cidrs, trusted_cidrs: p.trusted_cidrs ?? '', allowed_countries: p.allowed_countries, session_max_days: Number(p.session_max_days), new_device_alert: p.new_device_alert, device_binding: p.device_binding, require_2fa: p.require_2fa, mfa_trust_days: Number(p.mfa_trust_days), block_bots: p.block_bots, remember_days: Number(p.remember_days), idle_minutes: Number(p.idle_minutes), reauth_minutes: Number(p.reauth_minutes ?? 15) }) });
     const e = await res.json().catch(() => ({}));
     setMsg(res.ok ? { ok: true, text: '保存しました' } : { ok: false, text: e.message ?? '保存できませんでした。入力を確認してください' });
   }
@@ -22,8 +22,13 @@ export default function PolicyPanel() {
       <div><p className="text-xs text-gray-500 mt-0.5">いまあなたが使っているアドレス: <span className="font-mono text-gray-700">{p.your_ip}</span></p></div>
       <div>
         <label className="label text-xs">使えるネットワーク（1行に1つ。空なら制限なし）</label>
-        <textarea className="input font-mono text-sm" rows={4} placeholder={'203.0.113.7  # 本社\n198.51.100.0/24  # 支社'} value={p.allowed_cidrs} onChange={e => setP({ ...p, allowed_cidrs: e.target.value })} />
+        <textarea className="input font-mono text-sm" rows={4} placeholder={'203.0.113.7  # 本社\n198.51.100.0/24  # 支社'} value={p.allowed_cidrs} onChange={e => setP({ ...p, allowed_cidrs: e.target.value })} data-testid="allowed-cidrs" />
         <p className="mt-1 text-xs text-gray-500">設定すると、それ以外のアドレスからはログインも利用もできません。ご自身のアドレスが含まれていないと保存できません。</p>
+      </div>
+      <div>
+        <label className="label text-xs">信頼するアドレス（ホワイトリスト。1行に1つ）</label>
+        <textarea className="input font-mono text-sm" rows={3} placeholder={'203.0.113.7  # 本社\n198.51.100.0/24  # 支社'} value={p.trusted_cidrs ?? ''} onChange={e => setP({ ...p, trusted_cidrs: e.target.value })} data-testid="trusted-cidrs" />
+        <p className="mt-1 text-xs text-gray-500">自社の回線など。ここにあるアドレスは自動ブロック（ロボット・スキャン・回数制限・スイーピング）されず、反撃の対象にもならず、シャットアウトを発動させる回数にも数えません。ログイン・2段階認証・IPアドレスが変わったときの本人確認・回数制限・手動のブロックは、ほかと同じようにかかります。範囲は /16 まで（それより広い範囲は保存できません）。</p>
       </div>
       <div>
         <label className="label text-xs">ログインを許可する国（英語名をカンマ区切り。空なら制限なし）</label>

@@ -3,11 +3,12 @@
 // It is deliberately bounded (max addresses, ports, duration, rate) so a counterattack can never become the bigger attack.
 // Only public addresses are targeted: the same private range we live in must never be hit, and a forged address cannot
 // make us attack our own network. A counterattack can still reach a shared proxy or an innocent NAT neighbour, so it is
-// off with COUNTERATTACK=off.
+// off with COUNTERATTACK=off. Our own lines (the admin's trusted addresses) are never targeted.
 import http from 'node:http';
 import https from 'node:https';
 import net from 'node:net';
-import { ipv4ToInt, normalizeIp } from '@/lib/cidr';
+import { ipv4ToInt, matchesAny, normalizeIp } from '@/lib/cidr';
+import { loadSecurityPolicy } from '@/lib/security-settings';
 import { recordSecurityEvent } from '@/lib/security-events';
 import { sendNotificationEmail } from '@/lib/notify-mail';
 
@@ -67,13 +68,13 @@ export function isPublicIp(ip: string): boolean {
   return true;
 }
 
-/** The addresses to hit: cleaned, de-duplicated, public only, and never more than the configured maximum. */
-export function counterattackTargets(ips: (string | null | undefined)[], max = counterattackConfig().maxIps): string[] {
+/** The addresses to hit: cleaned, de-duplicated, public only, none of `trusted` (our own lines), and never more than the configured maximum. */
+export function counterattackTargets(ips: (string | null | undefined)[], max = counterattackConfig().maxIps, trusted: string[] = []): string[] {
   const out: string[] = [];
   const seen = new Set<string>();
   for (const raw of ips) {
     const ip = normalizeIp((raw ?? '').trim());
-    if (!ip || ip === 'unknown' || seen.has(ip) || !isPublicIp(ip)) continue;
+    if (!ip || ip === 'unknown' || seen.has(ip) || !isPublicIp(ip) || matchesAny(ip, trusted)) continue;
     seen.add(ip);
     out.push(ip);
     if (out.length >= max) break;
@@ -209,7 +210,8 @@ ${rows}</table>
 export async function counterstrike(ips: (string | null | undefined)[]): Promise<CounterstrikeSummary | null> {
   if (!counterattackEnabled()) return null;
   const cfg = counterattackConfig();
-  const targets = counterattackTargets(ips, cfg.maxIps);
+  const trusted = await loadSecurityPolicy().then(p => p.trustedRules).catch(() => [] as string[]);
+  const targets = counterattackTargets(ips, cfg.maxIps, trusted);
   if (targets.length === 0) return null;
   try {
     const scanned = await mapLimit(targets, cfg.maxIps, ip => scan(ip, cfg));

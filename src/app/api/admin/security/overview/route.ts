@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { adminActor, forbidden } from '@/lib/finance-guard';
 import { serializeLogin } from '@/lib/security-view';
+import { matchesAny } from '@/lib/cidr';
+import { loadSecurityPolicy } from '@/lib/security-settings';
 
 const DAY_MS = 24 * 3600 * 1000;
 const TOP = 8;
@@ -16,6 +18,7 @@ export async function GET(req: NextRequest) {
   const failedSince = { success: false, created_at: { gt: since } };
   const now = new Date();
 
+  const { trustedRules } = await loadSecurityPolicy();
   const [byResult, topIps, topAccounts, events, blocks, lockedCount, sessions] = await Promise.all([
     prisma.login_logs.groupBy({ by: ['success'], where: { created_at: { gt: since } }, _count: { _all: true } }), // successes and failures in one query
     prisma.login_logs.groupBy({ by: ['ip_address'], where: failedSince, _count: { _all: true }, orderBy: { _count: { ip_address: 'desc' } }, take: TOP }),
@@ -32,7 +35,8 @@ export async function GET(req: NextRequest) {
     top_ips: topIps.map(r => ({ key: r.ip_address, count: r._count._all })),
     top_accounts: topAccounts.map(r => ({ key: r.email, count: r._count._all })),
     events: events.map(e => ({ id: e.id, type: e.type, severity: e.severity, ip: e.ip, email: e.email, detail: e.detail ? JSON.parse(e.detail) : null, at: e.created_at })),
-    blocks: blocks.map(b => ({ id: b.id, ip: b.ip, reason: b.reason, source: b.source, expires_at: b.expires_at, created_at: b.created_at })),
+    // an automatic block of a trusted address stays listed (it happened) but does not apply (lib/ip-block.ts)
+    blocks: blocks.map(b => ({ id: b.id, ip: b.ip, reason: b.reason, source: b.source, expires_at: b.expires_at, created_at: b.created_at, trusted: b.source === 'auto' && matchesAny(b.ip, trustedRules) })),
   };
   if (lite) return NextResponse.json(body);
 

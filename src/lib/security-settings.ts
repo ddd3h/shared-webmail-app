@@ -1,9 +1,10 @@
 // Security policy that admins can change at runtime (stored in app_settings). Read often, so cached for a short while.
 import { getSetting, setSetting, type AppSettingKey } from '@/lib/settings';
-import { isValidRule, parseRules } from '@/lib/cidr';
+import { isValidRule, matchesAny, parseRules } from '@/lib/cidr';
 
 export type SecurityPolicy = {
   allowedRules: string[];       // empty = anywhere
+  trustedRules: string[];       // our own lines (an office, a home): never blocked automatically, not taken for sweeping, never hit back, not counted toward the lockdown
   allowedCountries: string[];   // empty = any country (only checked at login: the country comes from an IP lookup)
   sessionMaxDays: number;       // a session never lives longer than this, however active
   newDeviceAlert: boolean;      // tell people when their account is used from a browser it has not been used from before
@@ -22,17 +23,18 @@ export const DEFAULT_IDLE_MINUTES = 10;
 export const MAX_IDLE_MINUTES = 1440;
 // How long the settings are remembered (the settings page clears it at once; this only matters for edits made elsewhere).
 const ttlMs = () => Number(process.env.SECURITY_CACHE_TTL_MS ?? 15_000);
-const KEYS = { cidrs: 'SECURITY_ALLOWED_CIDRS', countries: 'SECURITY_ALLOWED_COUNTRIES', days: 'SECURITY_SESSION_MAX_DAYS', alert: 'SECURITY_NEW_DEVICE_ALERT', binding: 'SECURITY_DEVICE_BINDING', twofa: 'SECURITY_REQUIRE_2FA', trust: 'SECURITY_MFA_TRUST_DAYS', bots: 'SECURITY_BLOCK_BOTS', remember: 'SECURITY_REMEMBER_DAYS', idle: 'SECURITY_IDLE_MINUTES' } as const satisfies Record<string, AppSettingKey>;
+const KEYS = { cidrs: 'SECURITY_ALLOWED_CIDRS', countries: 'SECURITY_ALLOWED_COUNTRIES', days: 'SECURITY_SESSION_MAX_DAYS', alert: 'SECURITY_NEW_DEVICE_ALERT', binding: 'SECURITY_DEVICE_BINDING', twofa: 'SECURITY_REQUIRE_2FA', trust: 'SECURITY_MFA_TRUST_DAYS', bots: 'SECURITY_BLOCK_BOTS', remember: 'SECURITY_REMEMBER_DAYS', idle: 'SECURITY_IDLE_MINUTES', trusted: 'SECURITY_TRUSTED_CIDRS' } as const satisfies Record<string, AppSettingKey>;
 
 const g = globalThis as unknown as { __secPolicy?: { at: number; value: SecurityPolicy } };
 
-export function parsePolicy(raw: { cidrs: string | null; countries: string | null; days: string | null; alert: string | null; binding?: string | null; twofa?: string | null; trust?: string | null; bots?: string | null; remember?: string | null; idle?: string | null }): SecurityPolicy {
+export function parsePolicy(raw: { cidrs: string | null; countries: string | null; days: string | null; alert: string | null; binding?: string | null; twofa?: string | null; trust?: string | null; bots?: string | null; remember?: string | null; idle?: string | null; trusted?: string | null }): SecurityPolicy {
   const trust = Number(raw.trust);
   const remember = Number(raw.remember);
   const days = Number(raw.days);
   const idle = Number(raw.idle);
   return {
     allowedRules: parseRules(raw.cidrs ?? '').filter(isValidRule),
+    trustedRules: parseRules(raw.trusted ?? '').filter(isValidRule),
     allowedCountries: (raw.countries ?? '').split(/[\n,]/).map(s => s.trim()).filter(Boolean),
     sessionMaxDays: Number.isInteger(days) && days >= 1 && days <= 90 ? days : DEFAULT_SESSION_MAX_DAYS,
     newDeviceAlert: raw.alert !== 'off',
@@ -47,13 +49,13 @@ export function parsePolicy(raw: { cidrs: string | null; countries: string | nul
 
 export async function loadSecurityPolicy(): Promise<SecurityPolicy> {
   if (g.__secPolicy && Date.now() - g.__secPolicy.at < ttlMs()) return g.__secPolicy.value;
-  const [cidrs, countries, days, alert, binding, twofa, trust, bots, remember, idle] = await Promise.all(Object.values(KEYS).map(k => getSetting(k).catch(() => null)));
-  const value = parsePolicy({ cidrs, countries, days, alert, binding, twofa, trust, bots, remember, idle });
+  const [cidrs, countries, days, alert, binding, twofa, trust, bots, remember, idle, trusted] = await Promise.all(Object.values(KEYS).map(k => getSetting(k).catch(() => null)));
+  const value = parsePolicy({ cidrs, countries, days, alert, binding, twofa, trust, bots, remember, idle, trusted });
   g.__secPolicy = { at: Date.now(), value };
   return value;
 }
 
-export async function saveSecurityPolicy(p: { allowed_cidrs: string; allowed_countries: string; session_max_days: number; new_device_alert: boolean; device_binding: boolean; require_2fa: boolean; mfa_trust_days: number; block_bots: boolean; remember_days: number; idle_minutes: number }, userId: string) {
+export async function saveSecurityPolicy(p: { allowed_cidrs: string; allowed_countries: string; session_max_days: number; new_device_alert: boolean; device_binding: boolean; require_2fa: boolean; mfa_trust_days: number; block_bots: boolean; remember_days: number; idle_minutes: number; trusted_cidrs?: string }, userId: string) {
   await setSetting(KEYS.cidrs, p.allowed_cidrs, false, userId);
   await setSetting(KEYS.countries, p.allowed_countries, false, userId);
   await setSetting(KEYS.days, String(p.session_max_days), false, userId);
@@ -64,5 +66,15 @@ export async function saveSecurityPolicy(p: { allowed_cidrs: string; allowed_cou
   await setSetting(KEYS.bots, p.block_bots ? 'on' : 'off', false, userId);
   await setSetting(KEYS.remember, String(p.remember_days), false, userId);
   await setSetting(KEYS.idle, String(p.idle_minutes), false, userId);
+  if (p.trusted_cidrs !== undefined) await setSetting(KEYS.trusted, p.trusted_cidrs, false, userId);
   g.__secPolicy = undefined;
+}
+
+/** One of our own lines (the admin's list of trusted addresses): it is never blocked automatically, many accounts logging in
+ *  from it is not taken for sweeping, it is never hit back, and its failed logins do not count toward the lockdown. Everything
+ *  else (passwords, the second step, the address check of a session, rate limits, robots refused, a block put in by hand)
+ *  applies to it as to anyone. */
+export async function isTrustedIp(ip: string): Promise<boolean> {
+  if (!ip || ip === 'unknown') return false;
+  try { return matchesAny(ip, (await loadSecurityPolicy()).trustedRules); } catch { return false; }
 }

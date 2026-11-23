@@ -415,6 +415,66 @@ test.describe('アクセス元の制限（管理者）', () => {
     expect((await (await client('10.66.0.1')).get('/login')).status()).toBe(200);
     expect((await (await client('10.66.0.2')).get('/login')).status()).toBe(403);
   });
+
+  // trusted addresses (the whitelist): our own lines, never blocked automatically. 172.20.x so that fakeIp() (10.x) never falls in it.
+  const TRUSTED = '172.20.0.0/16  # 本社';
+  const trust = async (admin: APIRequestContext, trusted_cidrs: string) => (await admin.put('/api/admin/security/policy', { data: policy({ trusted_cidrs }) })).status();
+
+  test('信頼するアドレスは、書式が正しくないと保存できず、保存すると一覧に出て、変更が記録に残る', async () => {
+    const admin = await signedInAt('10.77.0.5', USERS.admin.email);
+    expect(await trust(admin, 'not an address')).toBe(400);
+    expect(await trust(admin, '0.0.0.0/0')).toBe(400); // would switch the automatic blocks off for everyone
+    expect(await trust(admin, TRUSTED)).toBe(200);
+    expect((await (await admin.get('/api/admin/security/policy')).json()).trusted_cidrs).toBe(TRUSTED);
+    expect(await db.security_events.findFirst({ where: { type: 'trusted_ips_changed' } })).toMatchObject({ severity: 'alert' });
+    // a save that leaves the field out keeps the list
+    expect((await admin.put('/api/admin/security/policy', { data: policy() })).status()).toBe(200);
+    expect((await (await admin.get('/api/admin/security/policy')).json()).trusted_cidrs).toBe(TRUSTED);
+  });
+
+  test('信頼するアドレスからは、多数のアカウントでログインしてもスイーピング扱いにならず、ブロックされない。ほかのアドレスはこれまでどおりブロック', async () => {
+    const admin = await signedInAt('10.77.0.5', USERS.admin.email);
+    expect(await trust(admin, TRUSTED)).toBe(200);
+    const ip = '172.20.3.4';
+    const c = await client(ip);
+    for (let i = 0; i < 9; i++) expect((await login(c, `trusted${i}@e2e.test`, 'wrong-password-1')).status()).toBe(401); // a wrong password is still a wrong password
+    expect(await db.ip_blocks.findUnique({ where: { ip } })).toBeNull();
+    expect(await db.security_events.findFirst({ where: { type: 'login_sweep', ip } })).toBeNull();
+    expect((await c.get('/login')).status()).toBe(200); // the app stays open to that address
+    expect((await login(c, USERS.sato.email)).status()).toBe(200); // and a 10th account logs in
+
+    const other = fakeIp();
+    const o = await client(other);
+    for (let i = 0; i < 9; i++) await login(o, `untrusted${i}@e2e.test`, 'wrong-password-1');
+    expect(await db.ip_blocks.findUnique({ where: { ip: other } })).toMatchObject({ source: 'auto' });
+  });
+
+  test('信頼するアドレスでも、ロボットの接続は403。ただしアドレスはブロックされない', async () => {
+    const admin = await signedInAt('10.77.0.5', USERS.admin.email);
+    expect(await trust(admin, TRUSTED)).toBe(200);
+    const ip = '172.20.5.6';
+    expect((await (await client(ip, { ua: 'curl/8.5.0' })).get('/login')).status()).toBe(403);
+    expect(await db.ip_blocks.findUnique({ where: { ip } })).toBeNull();
+    expect(await db.security_events.findFirst({ where: { type: 'trusted_ip_not_blocked', ip } })).not.toBeNull(); // what would have blocked it is on record
+    expect((await (await client(ip)).get('/login')).status()).toBe(200);
+  });
+
+  test('すでにある自動ブロックは、信頼するアドレスにすると効かなくなり、外すとまた効く。手動のブロックは信頼しても効く', async () => {
+    const admin = await signedInAt('10.77.0.5', USERS.admin.email);
+    await db.ip_blocks.create({ data: { ip: '172.20.7.7', reason: '自動ブロック: 再発のため永久ブロック（6回目）', source: 'auto', expires_at: null } });
+    await db.ip_blocks.create({ data: { ip: '172.20.8.8', reason: '手動', source: 'manual', expires_at: null } });
+    const status = async (ip: string) => (await (await client(ip)).get('/login')).status();
+    await expect.poll(() => status('172.20.7.7')).toBe(403);
+    expect(await trust(admin, TRUSTED)).toBe(200);
+    await expect.poll(() => status('172.20.7.7')).toBe(200);
+    expect(await status('172.20.8.8')).toBe(403);
+    // the block stays listed, marked as not applying
+    const listed = (await (await admin.get('/api/admin/security/overview')).json()).blocks as { ip: string; trusted?: boolean }[];
+    expect(listed.find(b => b.ip === '172.20.7.7')?.trusted).toBe(true);
+    expect(listed.find(b => b.ip === '172.20.8.8')?.trusted).toBe(false);
+    expect(await trust(admin, '')).toBe(200);
+    await expect.poll(() => status('172.20.7.7')).toBe(403);
+  });
 });
 
 test.describe('Cookieの使い回し・セッションの寿命', () => {
@@ -641,10 +701,25 @@ test.describe('画面', () => {
       const policy = page.getByLabel('アクセスの条件', { exact: true });
       // the panel fills the form with the saved settings a moment after it opens, which would wipe what was typed too early: type again until it sticks
       await expect(async () => {
-        await policy.locator('textarea').fill('192.0.2.0/24');
+        await policy.getByTestId('allowed-cidrs').fill('192.0.2.0/24');
         await policy.getByRole('button', { name: '保存' }).click();
         await expect(policy.getByRole('status')).toContainText('あなた自身がログインできなくなります', { timeout: 2000 });
       }).toPass({ timeout: 15000 });
+    });
+
+    test('信頼するアドレスを画面から保存でき、広すぎる範囲は理由つきで断られる', async ({ page }) => {
+      await page.goto('/admin/security#access');
+      const policy = page.getByLabel('アクセスの条件', { exact: true });
+      await expect(async () => {
+        await policy.getByTestId('trusted-cidrs').fill('0.0.0.0/0');
+        await policy.getByRole('button', { name: '保存' }).click();
+        await expect(policy.getByRole('status')).toContainText('範囲が広すぎます', { timeout: 2000 });
+      }).toPass({ timeout: 15000 });
+      await policy.getByTestId('trusted-cidrs').fill('172.20.0.0/16  # 本社');
+      await policy.getByRole('button', { name: '保存' }).click();
+      await expect(policy.getByRole('status')).toContainText('保存しました');
+      await page.reload();
+      await expect(page.getByLabel('アクセスの条件', { exact: true }).getByTestId('trusted-cidrs')).toHaveValue('172.20.0.0/16  # 本社');
     });
 
     test('メニューの「管理」から開き、管理のタブの「セキュリティ」に着く（メニューに別の「セキュリティ」はない）', async ({ page }) => {

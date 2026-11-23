@@ -5,7 +5,7 @@ import { prisma } from '@/lib/db';
 import { isLoopback, matchesAny } from '@/lib/cidr';
 import { isIpBlocked, blockIp } from '@/lib/ip-block';
 import { checkRateLimit, resetRateLimit } from '@/lib/rate-limit';
-import { loadSecurityPolicy } from '@/lib/security-settings';
+import { isTrustedIp, loadSecurityPolicy } from '@/lib/security-settings';
 import { recordSecurityEvent } from '@/lib/security-events';
 
 export const WINDOW_MS = 15 * 60 * 1000;
@@ -73,7 +73,8 @@ export async function gateLogin(o: { ip: string; email: string; knownDevice: boo
   const address = await gateAddress(ip);
   if (!address.ok) return address;
 
-  if (ip !== 'unknown' && !isLoopback(ip) && noteAccountTried(ip, email) > LIMITS.distinctEmails) {
+  // many accounts from one address is sweeping, except from this machine itself or one of our own lines (an office logs many people in)
+  if (ip !== 'unknown' && !isLoopback(ip) && !(await isTrustedIp(ip)) && noteAccountTried(ip, email) > LIMITS.distinctEmails) {
     await blockIp({ ip, reason: `自動ブロック: 短時間に多数のアカウントを試行（スイーピング）`, minutes: AUTO_BLOCK_MINUTES, source: 'auto' });
     await recordSecurityEvent({ type: 'login_sweep', severity: 'alert', ip, detail: { distinct_accounts: LIMITS.distinctEmails + 1, window_min: SWEEP_WINDOW_MS / 60000 } });
     return deny(403, 'sweep_blocked');

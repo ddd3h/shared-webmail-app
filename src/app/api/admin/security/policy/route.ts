@@ -11,8 +11,12 @@ import { forgetReauthMinutes, MAX_REAUTH_MINUTES, reauthMinutes } from '@/lib/re
 import { setSetting } from '@/lib/settings';
 import { recordSecurityEvent } from '@/lib/security-events';
 
+const MIN_TRUSTED_PREFIX = 16;
+
 const schema = z.object({
   allowed_cidrs: z.string().max(5000),
+  // omitted = keep what is set now
+  trusted_cidrs: z.string().max(5000).optional(),
   allowed_countries: z.string().max(500),
   session_max_days: z.number().int().min(1).max(90),
   new_device_alert: z.boolean(),
@@ -30,8 +34,8 @@ const schema = z.object({
 export async function GET(req: NextRequest) {
   if (!(await adminActor())) return forbidden();
   const p = await loadSecurityPolicy();
-  const [cidrs, countries] = await Promise.all([getSetting('SECURITY_ALLOWED_CIDRS'), getSetting('SECURITY_ALLOWED_COUNTRIES')]);
-  return NextResponse.json({ reauth_minutes: await reauthMinutes(), allowed_cidrs: cidrs ?? '', allowed_countries: countries ?? '', session_max_days: p.sessionMaxDays, new_device_alert: p.newDeviceAlert, device_binding: p.deviceBinding, require_2fa: p.require2fa, mfa_trust_days: p.mfaTrustDays, block_bots: p.blockBots, remember_days: p.rememberDays, idle_minutes: p.idleMinutes, your_ip: getClientIp(req) });
+  const [cidrs, countries, trusted] = await Promise.all([getSetting('SECURITY_ALLOWED_CIDRS'), getSetting('SECURITY_ALLOWED_COUNTRIES'), getSetting('SECURITY_TRUSTED_CIDRS')]);
+  return NextResponse.json({ reauth_minutes: await reauthMinutes(), allowed_cidrs: cidrs ?? '', trusted_cidrs: trusted ?? '', allowed_countries: countries ?? '', session_max_days: p.sessionMaxDays, new_device_alert: p.newDeviceAlert, device_binding: p.deviceBinding, require_2fa: p.require2fa, mfa_trust_days: p.mfaTrustDays, block_bots: p.blockBots, remember_days: p.rememberDays, idle_minutes: p.idleMinutes, your_ip: getClientIp(req) });
 }
 
 // PUT /api/admin/security/policy
@@ -46,6 +50,12 @@ export async function PUT(req: NextRequest) {
   const lines = parseRules(d.allowed_cidrs);
   const bad = lines.filter(l => !isValidRule(l));
   if (bad.length > 0) return NextResponse.json({ error: 'invalid_rule', message: `書式が正しくない行があります: ${bad.slice(0, 3).join(', ')}` }, { status: 400 });
+  const trustedLines = d.trusted_cidrs === undefined ? null : parseRules(d.trusted_cidrs);
+  const badTrusted = (trustedLines ?? []).filter(l => !isValidRule(l));
+  if (badTrusted.length > 0) return NextResponse.json({ error: 'invalid_rule', message: `信頼するアドレスに、書式が正しくない行があります: ${badTrusted.slice(0, 3).join(', ')}` }, { status: 400 });
+  // a trusted address is never blocked automatically, so a range as wide as 0.0.0.0/0 would switch that defence off for everyone
+  const tooWide = (trustedLines ?? []).filter(l => l.includes('/') && Number(l.split('/')[1]) < MIN_TRUSTED_PREFIX);
+  if (tooWide.length > 0) return NextResponse.json({ error: 'trusted_range_too_wide', message: `信頼するアドレスの範囲が広すぎます（/${MIN_TRUSTED_PREFIX} より広い範囲は入れられません）: ${tooWide.slice(0, 3).join(', ')}` }, { status: 400 });
   const ip = getClientIp(req);
   if (lines.length > 0 && ip !== 'unknown' && !matchesAny(ip, lines)) {
     return NextResponse.json({ error: 'locks_yourself_out', message: `許可リストにあなたの現在のアドレス（${ip}）が含まれていません。保存するとあなた自身がログインできなくなります` }, { status: 409 });
@@ -55,12 +65,17 @@ export async function PUT(req: NextRequest) {
   const block_bots = d.block_bots ?? current.blockBots;
   const remember_days = d.remember_days ?? current.rememberDays;
   const idle_minutes = d.idle_minutes ?? current.idleMinutes;
+  const trustedBefore = current.trustedRules;
   await saveSecurityPolicy({ ...d, require_2fa, mfa_trust_days: d.mfa_trust_days ?? current.mfaTrustDays, block_bots, remember_days, idle_minutes }, actor.id);
   if (d.reauth_minutes !== undefined) { await setSetting('SECURITY_REAUTH_MINUTES', String(d.reauth_minutes), false, actor.id); forgetReauthMinutes(); }
+  if (trustedLines && trustedLines.join('\n') !== trustedBefore.join('\n')) {
+    // a trusted address is never blocked automatically: a change to the list is a change to the defences, so it is recorded loudly
+    await recordSecurityEvent({ type: 'trusted_ips_changed', severity: 'alert', userId: actor.id, detail: { before: trustedBefore, after: trustedLines } });
+  }
   if (require_2fa !== current.require2fa) {
     // turning the second step off is the one change that weakens every account at once: leave a loud record
     await recordSecurityEvent({ type: require_2fa ? 'policy_2fa_on' : 'policy_2fa_off', severity: require_2fa ? 'info' : 'alert', userId: actor.id });
   }
-  await logAudit({ actorUserId: actor.id, actionType: 'security_policy_update', targetType: 'app_settings', metadata: { rules: lines.length, countries: d.allowed_countries, session_max_days: d.session_max_days, new_device_alert: d.new_device_alert, device_binding: d.device_binding, require_2fa, mfa_trust_days: d.mfa_trust_days ?? current.mfaTrustDays, block_bots, remember_days, idle_minutes } });
+  await logAudit({ actorUserId: actor.id, actionType: 'security_policy_update', targetType: 'app_settings', metadata: { rules: lines.length, trusted: trustedLines ?? trustedBefore, countries: d.allowed_countries, session_max_days: d.session_max_days, new_device_alert: d.new_device_alert, device_binding: d.device_binding, require_2fa, mfa_trust_days: d.mfa_trust_days ?? current.mfaTrustDays, block_bots, remember_days, idle_minutes } });
   return NextResponse.json({ ok: true });
 }

@@ -16,7 +16,7 @@ vi.mock('@/lib/login-log', () => ({ logLoginAttempt: vi.fn() }));
 vi.mock('@/lib/known-device', () => ({ DEVICE_COOKIE: 'did', isKnownDeviceFor: vi.fn().mockResolvedValue(false) }));
 vi.mock('@/lib/login-flow', () => ({ finishLogin: vi.fn(async () => NextResponse.json({ ok: true })), countryAllowed: vi.fn().mockResolvedValue(true) }));
 vi.mock('@/lib/ip-block', () => ({ isIpBlocked: vi.fn().mockResolvedValue(false), blockIp: vi.fn().mockResolvedValue(true) }));
-vi.mock('@/lib/security-settings', () => ({ loadSecurityPolicy: vi.fn().mockResolvedValue({ allowedRules: [], allowedCountries: [], sessionMaxDays: 14, newDeviceAlert: true, deviceBinding: true }) }));
+vi.mock('@/lib/security-settings', () => ({ loadSecurityPolicy: vi.fn().mockResolvedValue({ allowedRules: [], allowedCountries: [], sessionMaxDays: 14, newDeviceAlert: true, deviceBinding: true }), isTrustedIp: vi.fn().mockResolvedValue(false) }));
 vi.mock('@/lib/security-events', () => ({ recordSecurityEvent: vi.fn() }));
 vi.mock('@/lib/work-notify', () => ({ notifyLoginLockout: vi.fn() }));
 

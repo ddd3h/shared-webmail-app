@@ -3,14 +3,14 @@ export type Overview = {
   top_ips: { key: string; count: number }[];
   top_accounts: { key: string; count: number }[];
   events: { id: string; type: string; severity: 'info' | 'warn' | 'alert'; ip: string | null; email: string | null; detail: Record<string, unknown> | null; at: string }[];
-  blocks: { id: string; ip: string; reason: string; source: 'manual' | 'auto'; expires_at: string | null; created_at: string }[];
+  blocks: { id: string; ip: string; reason: string; source: 'manual' | 'auto'; expires_at: string | null; created_at: string; trusted?: boolean }[];
   locked: { id: string; name: string; email: string }[];
   people: { id: string; name: string; email: string; mfa: boolean; passkeys: number }[];
   recent_logins: { id: string; success: boolean; reason: string | null; ip: string; device: string; place: string | null; at: string; email: string; name: string | null }[];
 };
 export type Person = { id: string; name: string; email: string; mfa: boolean; passkeys: number; created_at: string; last_login_at: string | null };
 export type People = { locked: { id: string; name: string; email: string }[]; people: Person[] };
-export type Policy = { allowed_cidrs: string; allowed_countries: string; session_max_days: number; new_device_alert: boolean; device_binding: boolean; require_2fa: boolean; mfa_trust_days: number; block_bots: boolean; remember_days: number; idle_minutes: number; reauth_minutes?: number; your_ip: string };
+export type Policy = { allowed_cidrs: string; trusted_cidrs: string; allowed_countries: string; session_max_days: number; new_device_alert: boolean; device_binding: boolean; require_2fa: boolean; mfa_trust_days: number; block_bots: boolean; remember_days: number; idle_minutes: number; reauth_minutes?: number; your_ip: string };
 
 export const EVENT_LABEL: Record<string, string> = {
   login_sweep: '多数のアカウントを試行（スイーピング）', ip_blocked: 'アドレスを自動ブロック', sweep_detected: '大量アクセスを検知', bad_origin: '他サイトからの更新リクエストを拒否',
@@ -22,6 +22,7 @@ export const EVENT_LABEL: Record<string, string> = {
   account_reset_all: '管理者がアカウントを全リセット（パスキー・2段階認証・パスワード）', password_login_refused: 'パスキー登録済みのアカウントへのパスワードログインを拒否',
   session_ip_mismatch: '別のIPアドレスからのセッション使用を検知し、セッションを終了',
   session_ip_changed: 'IPアドレスが変わったため、本人確認を求めた', session_ip_confirmed: 'IPアドレスが変わったあと、本人確認できたので使い続けられるようにした', session_ip_confirm_failed: 'IPアドレスが変わったあとの本人確認に失敗',
+  trusted_ip_not_blocked: '信頼するアドレスのため、自動ブロックしなかった', trusted_ips_changed: '信頼するアドレス（ホワイトリスト）を変更',
   session_device_mismatch: 'Cookieの使い回しを疑い、セッションを終了',
   session_max_age: '期限切れのセッションを終了', session_locked_account: 'ロック中のアカウントのセッションを終了', user_locked: 'アカウントをロック', user_unlocked: 'アカウントのロックを解除',
 };

@@ -4,7 +4,7 @@ import { NextRequest, NextResponse } from 'next/server';
 vi.mock('@/lib/db', () => ({ prisma: {} }));
 vi.mock('@/lib/known-device', () => ({ DEVICE_COOKIE: 'did', isTrustedForMfa: vi.fn().mockResolvedValue(false) }));
 vi.mock('@/lib/login-flow', () => ({ finishLogin: vi.fn(async () => NextResponse.json({ ok: true })) }));
-vi.mock('@/lib/security-settings', () => ({ loadSecurityPolicy: vi.fn() }));
+vi.mock('@/lib/security-settings', () => ({ loadSecurityPolicy: vi.fn(), isTrustedIp: vi.fn().mockResolvedValue(false) }));
 vi.mock('@/lib/short-token', () => ({ sealShort: vi.fn(async (typ: string) => `token-for-${typ}`) }));
 vi.mock('@/lib/mfa', () => ({ hasTotp: vi.fn() }));
 
