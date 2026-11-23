@@ -445,7 +445,7 @@ test.describe('Cookieの使い回し・セッションの寿命', () => {
     }
   });
 
-  test('セッションは、ログインしたIPアドレスからしか使えない。別のアドレスから使うとセッションごと終了する', async () => {
+  test('セッションは、確かめたIPアドレスからしか使えない。別のアドレスからは本人確認するまで何も返さない（持ち主はそのまま使える）', async () => {
     const ip = fakeIp();
     const owner = await signedInAt(ip, USERS.guest.email);
     expect(await sessionOf(owner)).toBe(true);
@@ -454,16 +454,18 @@ test.describe('Cookieの使い回し・セッションの寿命', () => {
     const elsewhere = await pwRequest.newContext({ baseURL: BASE_URL, userAgent: CHROME_WIN, extraHTTPHeaders: { 'x-forwarded-for': fakeIp(), cookie: `sid=${sid}` } });
     opened.push(elsewhere);
     expect(await sessionOf(elsewhere)).toBe(false);
-    expect((await elsewhere.get('/api/threads', { maxRedirects: 0 })).status()).not.toBe(200);
-    const events = await db.security_events.findMany({ where: { type: 'session_ip_mismatch', user_id: USERS.guest.id } });
-    expect(events.length).toBeGreaterThanOrEqual(1);
-    expect(events[0].severity).toBe('warn');
+    const api = await elsewhere.get('/api/threads', { maxRedirects: 0 });
+    expect(api.status()).toBe(403);
+    expect(await api.json()).toEqual({ error: 'address_changed' });
+    const page = await elsewhere.get('/threads', { maxRedirects: 0 });
+    expect(page.status()).toBe(307);
+    expect(page.headers().location).toContain('/confirm-address?from=%2Fthreads');
+    const events = await db.security_events.findMany({ where: { type: 'session_ip_changed', user_id: USERS.guest.id } });
+    expect(events.length).toBe(1); // (once per address, however often it is refused)
 
-    // the session is gone for good: the real owner is signed out too, and logs in again
-    expect(await sessionOf(owner)).toBe(false);
-    expect(await db.sessions.count({ where: { id: { not: '' }, user_id: USERS.guest.id, ip_address: ip } })).toBe(0);
-    expect((await login(owner, USERS.guest.email)).status()).toBe(200);
+    // the session is held, not ended: the owner goes on from their own address
     expect(await sessionOf(owner)).toBe(true);
+    expect(await db.sessions.count({ where: { user_id: USERS.guest.id, ip_address: ip } })).toBe(1);
   });
 
   test('同じアドレスなら使い続けられる。IPv6は、同じ回線（先頭64ビット）の中で下位が変わっても外れない', async () => {
@@ -484,7 +486,7 @@ test.describe('Cookieの使い回し・セッションの寿命', () => {
     expect(await sessionOf(otherLine)).toBe(false);
   });
 
-  test('画面（ブラウザ）でも、別のアドレスから開くとログイン画面に戻される', async ({ browser }) => {
+  test('画面（ブラウザ）でも、別のアドレスから開くと本人確認の画面になり、中身は見えない', async ({ browser }) => {
     const ip = fakeIp();
     const c = await signedInAt(ip, USERS.guest.email);
     const sid = (await c.storageState()).cookies.find(k => k.name === 'sid')!.value;
@@ -492,7 +494,9 @@ test.describe('Cookieの使い回し・セッションの寿命', () => {
     await ctx.addCookies([{ name: 'sid', value: sid, url: BASE_URL }]);
     const page = await ctx.newPage();
     await page.goto('/threads');
-    await expect(page).toHaveURL(/\/login/);
+    await expect(page).toHaveURL(/\/confirm-address/);
+    await expect(page.getByRole('heading', { name: '本人確認' })).toBeVisible();
+    await expect(page.getByPlaceholder('パスワード')).toBeVisible();
     await ctx.close();
   });
 

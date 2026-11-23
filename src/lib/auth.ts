@@ -117,18 +117,22 @@ export async function revokeSuspicious(sessionId: string, userId: string, type: 
  *  revoked, password changed, account locked, moved to another address, too old ...). The login page says which. */
 export type SessionEnd = 'idle' | 'ended';
 
+/** A session used from an address it was not proved from: `from` is where it began, `to` is the address of this request. */
+export type Moved = { from: string; to: string };
+export type Live = { session: Session; moved?: Moved } | { ended: SessionEnd };
+
 /**
  * The DB side of a session, checked on every request that matters: the session must still exist (revoked, user deleted), the account must still be
- * allowed in, and the request must come from where the session began. The role comes from the DB, not the cookie, so a demotion or lock takes effect
- * at once. `get` reads a header of the request (works for both route handlers and the proxy).
+ * allowed in, and the request must come from an address the session was proved from. The role comes from the DB, not the cookie, so a demotion or
+ * lock takes effect at once. `get` reads a header of the request (works for both route handlers and the proxy).
  */
-export async function checkLive(payload: SealedPayload, get: (name: string) => string | null | undefined): Promise<{ session: Session } | { ended: SessionEnd }> {
+export async function checkLive(payload: SealedPayload, get: (name: string) => string | null | undefined): Promise<Live> {
   const ended = (why: SessionEnd = 'ended') => ({ ended: why });
   // one query: the session and its user (role, lock) together
   const dbSession = await prisma.sessions.findUnique({
     where: { id: payload.sessionId },
     relationLoadStrategy: 'join',
-    select: { id: true, expires_at: true, created_at: true, ip_address: true, last_input_at: true, reauth_at: true, user: { select: { role: true, locked_at: true } } },
+    select: { id: true, expires_at: true, created_at: true, ip_address: true, confirmed_ips: true, last_input_at: true, reauth_at: true, user: { select: { role: true, locked_at: true } } },
   });
   if (!dbSession) return ended();
   if (dbSession.expires_at < new Date()) {
@@ -137,11 +141,14 @@ export async function checkLive(payload: SealedPayload, get: (name: string) => s
   }
   if (dbSession.user.locked_at) { await revokeSuspicious(payload.sessionId, payload.userId, 'session_locked_account', {}); return ended(); }
 
-  // A login belongs to the address it began on. From any other address the session is ended, not just refused,
-  // so a stolen cookie is dead for good (and the real person simply logs in again).
-  const ip = clientIpFrom(get);
+  // A login belongs to the addresses it was proved from: the one it began on, and those the person confirmed later. From any other address the
+  // session is held, not used: nothing is answered until the person proves who they are again there (password / passkey, see
+  // api/auth/confirm-address). A stolen cookie alone is no use, and a line whose address alternates or rotates asks once per address.
+  // The other checks below still run, so a held session still ends when it is idle, too old or on another kind of device.
   // (the installed app is the exception: its device key is what vouches for it, so it may move between networks)
-  if (!payload.pwa && !sameNetwork(ip, dbSession.ip_address)) { await revokeSuspicious(payload.sessionId, payload.userId, 'session_ip_mismatch', { expected: dbSession.ip_address, got: ip }); return ended(); }
+  const ip = clientIpFrom(get);
+  const moved = !payload.pwa && ![dbSession.ip_address, ...dbSession.confirmed_ips].some(known => sameNetwork(ip, known))
+    ? { from: dbSession.ip_address, to: ip } : undefined;
 
   const policy = await loadSecurityPolicy();
   const issuedAt = payload.issuedAt ?? dbSession.created_at.getTime();
@@ -174,11 +181,11 @@ export async function checkLive(payload: SealedPayload, get: (name: string) => s
       pwa: payload.pwa,
       reauthAt: dbSession.reauth_at?.getTime(),
     },
+    ...(moved ? { moved } : {}),
   };
 }
 
-// For Route Handlers and Server Components (uses next/headers cookies)
-export async function getSession(): Promise<Session | null> {
+async function liveFromCookies(): Promise<Live | null> {
   const store = await cookies();
   const token = store.get(SESSION_COOKIE)?.value;
   if (!token) return null;
@@ -189,8 +196,19 @@ export async function getSession(): Promise<Session | null> {
   if (Date.now() > payload.expiresAt) return null;
 
   const hdrs = await headers();
-  const live = await checkLive(payload, name => hdrs.get(name));
-  return 'session' in live ? live.session : null;
+  return checkLive(payload, name => hdrs.get(name));
+}
+
+// For Route Handlers and Server Components (uses next/headers cookies). A session held for a changed address counts as none.
+export async function getSession(): Promise<Session | null> {
+  const live = await liveFromCookies();
+  return live && 'session' in live && !live.moved ? live.session : null;
+}
+
+/** The session of this request, also while it is held for a changed address (`moved`). Only for the endpoints where the person confirms the address. */
+export async function getSessionAtNewAddress(): Promise<{ session: Session; moved?: Moved } | null> {
+  const live = await liveFromCookies();
+  return live && 'session' in live ? live : null;
 }
 
 /**
@@ -198,7 +216,7 @@ export async function getSession(): Promise<Session | null> {
  * otherwise the session, or the reason it is over. This is what makes a page of an ended session open the login page
  * instead of a screen that can no longer load anything.
  */
-export async function verifyRequestSession(req: NextRequest): Promise<{ session: Session } | { ended: SessionEnd } | null> {
+export async function verifyRequestSession(req: NextRequest): Promise<Live | null> {
   const token = req.cookies.get(SESSION_COOKIE)?.value;
   if (!token) return null;
   const payload = await unsealToken(token);

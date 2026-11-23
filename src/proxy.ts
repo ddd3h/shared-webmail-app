@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSessionFromRequest, refreshSessionCookie, revokeSuspicious, verifyRequestSession } from '@/lib/auth';
+import { getSessionFromRequest, refreshSessionCookie, verifyRequestSession, type Moved, type Session } from '@/lib/auth';
+import { addPendingAddress } from '@/lib/address-confirm';
 import { matchesAny } from '@/lib/cidr';
-import { clientIpFrom, sameNetwork } from '@/lib/client-ip';
+import { clientIpFrom } from '@/lib/client-ip';
 import { blockIp, isIpBlocked } from '@/lib/ip-block';
 import { addStrike } from '@/lib/login-guard';
 import { originProblem } from '@/lib/origin-check';
@@ -96,6 +97,39 @@ async function sweepResponse(req: NextRequest, ip: string, v: Extract<Verdict, {
   return denied(req, 429, 'too_many_requests', v.retryAfterSec);
 }
 
+/** Where a session held for a changed address may still go: the proof itself, and the page that asks for it. */
+const CONFIRM_PATHS = ['/api/auth/confirm-address', '/confirm-address'];
+const isConfirmPath = (p: string) => CONFIRM_PATHS.some(c => p === c || p.startsWith(c + '/'));
+
+const askedAt = new Map<string, number>();
+/** The note that a session was asked to confirm a new address: once per session and address in 10 minutes (the page polls). */
+async function noteAddressChange(session: Session, moved: Moved, path: string) {
+  const key = `${session.sessionId}|${moved.to}`;
+  if (Date.now() - (askedAt.get(key) ?? 0) < 10 * 60_000) return;
+  if (askedAt.size > 1000) askedAt.clear();
+  askedAt.set(key, Date.now());
+  await recordSecurityEvent({ type: 'session_ip_changed', severity: 'info', ip: moved.to, userId: session.userId, detail: { expected: moved.from, got: moved.to, path } });
+}
+
+/** A session used from an address it was not proved from: nothing is answered (no data, no refreshed cookie) until the person confirms the address. */
+async function heldForAddress(req: NextRequest, session: Session, moved: Moved): Promise<NextResponse> {
+  const { pathname } = req.nextUrl;
+  if (isConfirmPath(pathname)) return NextResponse.next();
+  await noteAddressChange(session, moved, pathname);
+  const headers = { 'Cache-Control': 'no-store' };
+  let res: NextResponse;
+  if (!isNavigation(req)) res = NextResponse.json({ error: 'address_changed' }, { status: 403, headers });
+  else {
+    const url = new URL('/confirm-address', req.url);
+    const here = new URL(req.url);
+    here.searchParams.delete('_rsc');
+    url.searchParams.set('from', here.pathname + here.search);
+    res = NextResponse.redirect(url, { headers });
+  }
+  await addPendingAddress(res, req, session.sessionId, moved.to); // this browser was refused from here: the proof that follows approves it
+  return res;
+}
+
 /** Lockdown: every connection (pages, API, files, the scheduler's calls) is turned away until the admin lifts it on the server. */
 const shutOut = (req: NextRequest, ip: string) => {
   void noteShutOut(ip);
@@ -127,15 +161,6 @@ export async function proxy(req: NextRequest) {
     return res;
   }
 
-  // A session only works from the address it began on; from anywhere else it is ended on the spot.
-  // (not for the installed app that stays logged in with its device key: that key vouches for it, wherever it is)
-  if (!session.pwa && session.ip && !sameNetwork(ip, session.ip)) {
-    await revokeSuspicious(session.sessionId, session.userId, 'session_ip_mismatch', { expected: session.ip, got: ip, path: pathname });
-    const res = pathname.startsWith('/api/') ? NextResponse.json({ error: 'unauthorized' }, { status: 401 }) : toLogin(req, 'expired');
-    res.cookies.delete('sid');
-    return res;
-  }
-
   const verdict = judgeAuthenticated(session.userId, pathname);
   if (!verdict.ok) return sweepResponse(req, ip, verdict, session.userId);
 
@@ -150,6 +175,8 @@ export async function proxy(req: NextRequest) {
     res.cookies.delete('sid');
     return res;
   }
+  // From an address the session was not proved from (the DB knows the confirmed ones): held until the person confirms it, see lib/address-confirm.ts
+  if (live.moved) return heldForAddress(req, live.session, live.moved);
 
   // Admin-only paths
   if (pathname.startsWith('/admin') || pathname.startsWith('/api/admin')) {

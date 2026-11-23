@@ -680,6 +680,9 @@ model sessions {
   last_input_at    DateTime @default(now())
   // the last time the person proved who they are again (password, and the code) inside this session: high-risk actions need it to be recent
   reauth_at        DateTime?
+  // other addresses the person proved who they are from (password / passkey again) after the address changed inside this session:
+  // the session works from these too, so a line whose address alternates or rotates asks only once per address
+  confirmed_ips    String[] @default([])
   created_at       DateTime @default(now())
 
   user users @relation(fields: [user_id], references: [id], onDelete: Cascade)

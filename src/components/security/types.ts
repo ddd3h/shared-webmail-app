@@ -21,6 +21,7 @@ export const EVENT_LABEL: Record<string, string> = {
   lockdown_engaged: 'シャットアウト（全接続停止）を発動', lockdown_active: 'シャットアウト中のアクセスを記録', lockdown_expired: 'シャットアウトを自動解除', counterattack: '攻撃元へ反撃（ポートスキャン＋HTTPリクエスト）',
   account_reset_all: '管理者がアカウントを全リセット（パスキー・2段階認証・パスワード）', password_login_refused: 'パスキー登録済みのアカウントへのパスワードログインを拒否',
   session_ip_mismatch: '別のIPアドレスからのセッション使用を検知し、セッションを終了',
+  session_ip_changed: 'IPアドレスが変わったため、本人確認を求めた', session_ip_confirmed: 'IPアドレスが変わったあと、本人確認できたので使い続けられるようにした', session_ip_confirm_failed: 'IPアドレスが変わったあとの本人確認に失敗',
   session_device_mismatch: 'Cookieの使い回しを疑い、セッションを終了',
   session_max_age: '期限切れのセッションを終了', session_locked_account: 'ロック中のアカウントのセッションを終了', user_locked: 'アカウントをロック', user_unlocked: 'アカウントのロックを解除',
 };

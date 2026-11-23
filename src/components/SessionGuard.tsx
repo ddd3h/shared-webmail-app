@@ -1,6 +1,7 @@
 'use client';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import Modal from '@/components/Modal';
+import AddressCheck, { type AddressResult } from '@/components/AddressCheck';
 import { isStandalone, rememberFlag } from '@/lib/device-key';
 
 // Every fetch of the page passes through here, so no screen has to handle these two things itself:
@@ -9,9 +10,13 @@ import { isStandalone, rememberFlag } from '@/lib/device-key';
 //    (the login brings them back). Without this a screen whose session ended while it was open stays on screen with an empty list or an error.
 // 2. The server says a high-risk action needs a RECENT proof of who is asking (403 `recent_login_required`): the password is asked for here, in a
 //    dialog, and the very same request is sent again. The person does not lose what they were doing.
+// 3. The server says the address of the connection changed (403 `address_changed`, see lib/address-confirm.ts): the person proves who they are
+//    again in a dialog (passkey, or password and code), and the request is sent again. This one is answered on every path, /api/auth/* too
+//    (the page polls /api/auth/session), except the confirmation itself.
 //
 // Not counted: the login steps themselves (/api/auth/*: a 401 there is an ordinary "wrong password" / "no device key"), which have their own handling.
 const IGNORED = ['/api/auth/', '/api/passkeys/auth', '/api/profile/password-reset', '/api/cron/'];
+const CONFIRM_ADDRESS = '/api/auth/confirm-address';
 
 function appApiPath(input: RequestInfo | URL): string | null {
   try {
@@ -28,6 +33,9 @@ export default function SessionGuard() {
   const [asking, setAsking] = useState(false);
   const waiting = useRef<((ok: boolean) => void)[]>([]);
   const pending = useRef<Promise<boolean> | null>(null);
+  const [askingAddress, setAskingAddress] = useState(false);
+  const waitingAddress = useRef<((r: AddressResult) => void)[]>([]);
+  const pendingAddress = useRef<Promise<AddressResult> | null>(null);
 
   useEffect(() => {
     const original = window.fetch;
@@ -45,15 +53,24 @@ export default function SessionGuard() {
       pending.current ??= new Promise<boolean>(resolve => { waiting.current.push(resolve); setAsking(true); }).finally(() => { pending.current = null; });
       return pending.current;
     }
+    function askAddress(): Promise<AddressResult> {
+      pendingAddress.current ??= new Promise<AddressResult>(resolve => { waitingAddress.current.push(resolve); setAskingAddress(true); }).finally(() => { pendingAddress.current = null; });
+      return pendingAddress.current;
+    }
     window.fetch = async function guarded(input: RequestInfo | URL, init?: RequestInit) {
       const again = input instanceof Request ? input.clone() : input; // (a request that carries a body can only be read once)
       const res = await original.call(window, input, init);
       const path = appApiPath(input);
       if (!path) return res;
       if (res.status === 401 && !IGNORED.some(p => path.startsWith(p))) toLogin();
-      if (res.status === 403 && !path.startsWith('/api/auth/')) {
+      if (res.status === 403 && !path.startsWith(CONFIRM_ADDRESS)) {
         const body = await res.clone().json().catch(() => null);
-        if (body?.error === 'recent_login_required' && (await askProof())) return original.call(window, again, init);
+        if (body?.error === 'address_changed') {
+          const r = await askAddress();
+          if (r === 'ended') { toLogin(); return res; }
+          return original.call(window, again instanceof Request ? again.clone() : again, init);
+        }
+        if (!path.startsWith('/api/auth/') && body?.error === 'recent_login_required' && (await askProof())) return original.call(window, again, init);
       }
       return res;
     };
@@ -61,6 +78,8 @@ export default function SessionGuard() {
   }, []);
 
   function done(ok: boolean) { setAsking(false); waiting.current.splice(0).forEach(r => r(ok)); }
+  const addressDone = useCallback((r: AddressResult) => { setAskingAddress(false); waitingAddress.current.splice(0).forEach(w => w(r)); }, []);
+  if (askingAddress) return <AddressDialog onDone={addressDone} />;
   return asking ? <ProofDialog onDone={done} /> : null;
 }
 
@@ -97,5 +116,17 @@ function ProofDialog({ onDone }: { onDone: (ok: boolean) => void }) {
         </div>
       </form>
     </Modal>
+  );
+}
+
+/** The address changed: no way past it but the proof (or logging out), so the dialog cannot be dismissed. */
+function AddressDialog({ onDone }: { onDone: (r: AddressResult) => void }) {
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-4" role="dialog" aria-modal="true" aria-labelledby="address-check-title">
+      <div className="w-full max-w-sm rounded-xl bg-white p-5 shadow-xl">
+        <h2 id="address-check-title" className="mb-3 text-base font-semibold text-gray-900">本人確認</h2>
+        <AddressCheck onDone={onDone} />
+      </div>
+    </div>
   );
 }
