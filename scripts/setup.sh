@@ -460,6 +460,20 @@ server {
     # HTTPS にリダイレクト (証明書取得後にコメントを外す)
     # return 301 https://\$host\$request_uri;
 
+    # 共有メールの共同編集（アプリの中の共同編集サーバー、127.0.0.1 だけ）。末尾の / で /collab/ を外して渡す
+    location /collab/ {
+        proxy_pass         http://127.0.0.1:1234/;
+        proxy_http_version 1.1;
+        proxy_set_header   Upgrade \$http_upgrade;
+        proxy_set_header   Connection "upgrade";
+        proxy_set_header   Host \$host;
+        proxy_set_header   X-Real-IP \$remote_addr;
+        proxy_set_header   X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header   X-Forwarded-Proto \$scheme;
+        proxy_read_timeout 86400s;
+        proxy_send_timeout 86400s;
+    }
+
     # 証明書取得前はHTTPで直接プロキシ
     location / {
         proxy_pass         http://127.0.0.1:${APP_PORT};
@@ -493,6 +507,19 @@ server {
 #     ssl_session_cache   shared:SSL:10m;
 #     ssl_session_timeout 10m;
 #     add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+#
+#     location /collab/ {
+#         proxy_pass         http://127.0.0.1:1234/;
+#         proxy_http_version 1.1;
+#         proxy_set_header   Upgrade \$http_upgrade;
+#         proxy_set_header   Connection "upgrade";
+#         proxy_set_header   Host \$host;
+#         proxy_set_header   X-Real-IP \$remote_addr;
+#         proxy_set_header   X-Forwarded-For \$proxy_add_x_forwarded_for;
+#         proxy_set_header   X-Forwarded-Proto https;
+#         proxy_read_timeout 86400s;
+#         proxy_send_timeout 86400s;
+#     }
 #
 #     location / {
 #         proxy_pass         http://127.0.0.1:${APP_PORT};
