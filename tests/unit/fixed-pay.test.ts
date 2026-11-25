@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { DEFAULT_SCHEDULE, DEFAULT_SCHEDULES } from '@/lib/pay-schedule';
-import { AUTO_NOTE_MARK, autoNoteSection, bonusKey, commuteTotal, DEDUCTION_TYPES, defaultPlanLabel, deductionItems, draftItems, draftPeriod, earningTotal, FIXED_PAY_TYPES, fixedKey, isCommuteLabel, isPlanDue, payDateChoices, plansOverlap, withAutoNote } from '@/lib/fixed-pay';
+import { AUTO_NOTE_MARK, autoDraftNotice, autoNoteSection, bonusKey, commuteTotal, DEDUCTION_TYPES, defaultPlanLabel, deductionItems, draftItems, draftPeriod, earningTotal, FIXED_PAY_TYPES, fixedKey, isCommuteLabel, isPlanDue, payDateChoices, plansOverlap, withAutoNote } from '@/lib/fixed-pay';
 import { planSchema, extraSchema } from '@/lib/fixed-pay-input';
 import { isBonusTitle } from '@/lib/work';
 
@@ -114,6 +114,15 @@ describe('下書きの行', () => {
     expect(withAutoNote(first, null)).toBe('下書きです。');
     expect(withAutoNote(null, section)).toBe(section);
     expect(withAutoNote('x', 'y'.repeat(2000)).length).toBeLessThanOrEqual(990);
+  });
+  it('自動で作った下書きの注意は、支払予定で全銀データに入る前だけ（備考には入れない）', () => {
+    const slip = { auto_key: 'fixed:u1:2026-11', status: 'planned', batch_id: null, deductions: 0 };
+    expect(autoDraftNotice(slip)).toContain('控除（源泉所得税など）を確認してから');
+    expect(autoDraftNotice({ ...slip, deductions: 24625 })).toContain('控除は自動計算した概算です');
+    expect(autoDraftNotice({ ...slip, auto_key: 'bonus:x1' })).toContain('賞与として登録された支払いです');
+    expect(autoDraftNotice({ ...slip, batch_id: 'b1' })).toBeNull();
+    expect(autoDraftNotice({ ...slip, status: 'paid' })).toBeNull();
+    expect(autoDraftNotice({ ...slip, auto_key: null })).toBeNull();
   });
   it('加算がなければ、月額の1行だけ', () => {
     expect(draftItems({ label: '業務委託報酬', amount: 300000 }, [])).toHaveLength(1);

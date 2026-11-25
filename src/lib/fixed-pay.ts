@@ -93,6 +93,20 @@ export const commuteTotal = (items: { kind: string; label: string; amount: numbe
 export const draftItems = (plan: { label: string; amount: number; commute_amount?: number }, addons: { label: string; amount: number }[], deductions: { label: string; amount: number }[] = []): DraftItem[] =>
   [...earningItems(plan, addons), ...deductionItems(deductions)];
 
+// ---- 自動で作った下書きの、経理への注意 ----
+// 明細の備考には入れない（本人が自分の明細を見る画面にも出てしまい、消える時もないため）。管理の画面だけに、
+// 支払予定のうち（全銀データに入る前・支払済みにする前）だけ出す。
+export function autoDraftNotice(p: { auto_key: string | null; status: string; batch_id: string | null; deductions: number }): string | null {
+  if (p.status !== 'planned' || p.batch_id) return null;
+  if (p.auto_key?.startsWith('fixed:')) {
+    return p.deductions > 0
+      ? 'オートフローが、登録された固定報酬から自動で作った下書きです。控除は自動計算した概算です。確認してから振込に進んでください。'
+      : 'オートフローが、登録された固定報酬から自動で作った下書きです。控除（源泉所得税など）を確認してから振込に進んでください。';
+  }
+  if (p.auto_key?.startsWith('bonus:')) return '賞与として登録された支払いです。控除（源泉所得税など）は自動では入りません。確認してから振込に進んでください。';
+  return null;
+}
+
 // ---- 明細のメモ: 計算の根拠と警告を「【自動計算】」から後ろに書く（再計算で、その部分だけ書き換える）----
 export const AUTO_NOTE_MARK = '【自動計算】';
 export function autoNoteSection(r: { notes: string[]; warnings: string[] }): string {

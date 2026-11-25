@@ -9,6 +9,7 @@ import { selfDealing, selfDealingResponse } from '@/lib/finance-guard';
 import { getActor, isFinance } from '@/lib/work-auth';
 import { notifyPayslip } from '@/lib/work-notify';
 import { isValidDateString, isValidMonth, jstDateString, payslipTotals, toDbDate } from '@/lib/work';
+import { autoDraftNotice } from '@/lib/fixed-pay';
 
 type Row = Awaited<ReturnType<typeof load>>[number];
 
@@ -22,6 +23,7 @@ function load(where: object) {
 }
 
 function serializePayslip(p: Row) {
+  const totals = payslipTotals(p.items);
   return {
     id: p.id,
     user: p.user,
@@ -32,10 +34,12 @@ function serializePayslip(p: Row) {
     note: p.note,
     // オートフローが固定報酬から作った下書きで、まだ支払予定・全銀ファイル前なら true（「控除を再計算」を出す）。edited = 経理が明細を直したあと
     auto_draft: !!p.auto_key?.startsWith('fixed:') && p.status === 'planned' && !p.batch_id ? { edited: p.auto_edited } : null,
+    // 自動で作った下書きの、経理への注意（管理の画面だけに出す）。全銀データに入るか支払済みになれば null
+    auto_notice: autoDraftNotice({ auto_key: p.auto_key, status: p.status, batch_id: p.batch_id, deductions: totals.deductions }),
     items: p.items.map(i => ({ id: i.id, kind: i.kind, label: i.label, amount: i.amount, system: !!i.system_key })),
     // expense claims merged into this statement (shown as the 立替金精算 line)
     claims: p.expense_claims.map(c => ({ id: c.id, title: c.title, amount: c.amount, expense_date: c.expense_date.toISOString().slice(0, 10) })),
-    ...payslipTotals(p.items),
+    ...totals,
   };
 }
 

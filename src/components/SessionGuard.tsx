@@ -80,7 +80,8 @@ export default function SessionGuard() {
   function done(ok: boolean) { setAsking(false); waiting.current.splice(0).forEach(r => r(ok)); }
   const addressDone = useCallback((r: AddressResult) => { setAskingAddress(false); waitingAddress.current.splice(0).forEach(w => w(r)); }, []);
   if (askingAddress) return <AddressDialog onDone={addressDone} />;
-  return asking ? <ProofDialog onDone={done} /> : null;
+  // 振込の確定などの画面（同じ z-70 の Modal）より上に出す。同じ高さだと、ページの後ろにある画面が上に描かれて、この画面が隠れる
+  return asking ? <div className="relative z-[100]"><ProofDialog onDone={done} /></div> : null;
 }
 
 function ProofDialog({ onDone }: { onDone: (ok: boolean) => void }) {

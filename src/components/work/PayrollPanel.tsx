@@ -11,6 +11,7 @@ type Slip = {
   id: string; user: { id: string; name: string; worker_type: WorkerType }; pay_month: string; title: string; status: 'planned' | 'paid';
   pay_date: string | null; note: string | null; items: Item[]; claims: LinkedClaim[]; earnings: number; deductions: number; net: number;
   auto_draft?: { edited: boolean } | null; // オートフローが固定報酬から作った下書き（支払予定・全銀ファイル前）
+  auto_notice?: string | null; // 自動で作った下書きの、経理への注意（支払予定・全銀データ前だけ。管理の画面だけに出す）
 };
 type Summary = { month: string; planned_total: number; paid_total: number; count: number };
 type Draft = { id?: string; userId: string; pay_month: string; title: string; status: 'planned' | 'paid'; pay_date: string; note: string; items: { kind: 'earning' | 'deduction'; label: string; amount: string }[]; system: { label: string; amount: number } | null ; date_touched?: boolean; hint?: string };
@@ -136,6 +137,7 @@ export default function PayrollPanel({ manage = false, members = [], noun = '給
             </button>
             {open === p.id && (
               <div className="border-t border-gray-100 p-3 text-sm space-y-3">
+                {manage && p.auto_notice && <p role="note" className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">{p.auto_notice}</p>}
                 {(['earning', 'deduction'] as const).map(kind => (
                   <div key={kind}>
                     <div className="text-xs font-semibold text-gray-500 mb-1">{kind === 'earning' ? '支給' : '控除'}</div>

@@ -22,8 +22,6 @@ export type DraftResult = {
 };
 
 const isUnique = (e: unknown) => (e as { code?: string })?.code === 'P2002';
-const NOTE = 'オートフローが、登録された固定報酬から自動で作った下書きです。控除（源泉所得税など）を確認してから振込に進んでください。';
-const NOTE_WITH_DEDUCTIONS = 'オートフローが、登録された固定報酬から自動で作った下書きです。控除は自動計算した概算です。確認してから振込に進んでください。';
 
 // 「この人のこの月の下書きは、もう作った」という記録。経理が下書きを消して、その月は払わないことにしても、次の日にまた作らないための印。
 // autoflow_notices の unique をそのまま使う（送信履歴には出さない: notices API が rule='fixed' を除く）。
@@ -102,7 +100,7 @@ export async function generateFixedDrafts(opts: { today: string; month?: string;
       await prisma.payslips.create({
         data: {
           user_id: plan.user_id, pay_month: month, title: plan.label, status: 'planned', auto_key: key,
-          note: withAutoNote(ded ? NOTE_WITH_DEDUCTIONS : NOTE, ded ? autoNoteSection(ded) : null),
+          note: ded ? withAutoNote(null, autoNoteSection(ded)) : null, // 経理への注意は備考に入れない（管理の画面に autoDraftNotice で出す）
           created_by_id: opts.actorId ?? null, pay_date: toDbDate(pay),
           items: { create: [...earnings, ...deductionItems(ded?.lines ?? [])] },
         },
@@ -227,7 +225,7 @@ export async function createBonusSlip(extra: { id: string; user_id: string; pay_
   const slip = await prisma.payslips.create({
     data: {
       user_id: extra.user_id, pay_month: extra.pay_month, title, status: 'planned', auto_key: bonusKey(extra.id), created_by_id: actorId,
-      pay_date: toDbDate(payDate(extra.pay_month, schedule)), note: '賞与として登録された支払いです。控除（源泉所得税など）は自動では入りません。確認してから振込に進んでください。',
+      pay_date: toDbDate(payDate(extra.pay_month, schedule)),
       items: { create: [{ kind: 'earning', label: extra.label, amount: extra.amount, sort: 0 }] },
     },
     select: { id: true },

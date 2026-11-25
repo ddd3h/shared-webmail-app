@@ -356,6 +356,7 @@ describe('加算と賞与', () => {
     const data = db.payslips.create.mock.calls[0][0].data;
     expect(data).toMatchObject({ title: '賞与（夏季ボーナス）', status: 'planned', auto_key: 'bonus:x2', pay_month: '2026-10' });
     expect(data.items.create).toEqual([{ kind: 'earning', label: '夏季ボーナス', amount: 300000, sort: 0 }]);
+    expect(data.note ?? null).toBeNull(); // 経理への注意は備考に入れない
   });
   it('題名にすでに「賞与」があれば、そのまま', async () => {
     db.users.findUnique.mockResolvedValue({ worker_type: 'executive', locked_at: null });
@@ -414,8 +415,8 @@ describe('控除の自動計算', () => {
     expect(Object.keys(deductionsOf()).at(-1)).toBe('所得税（甲欄）');
     expect(itemsOf().filter(i => i.kind === 'deduction').every(i => i.sort >= 100 && i.system_key === null)).toBe(true);
     const data = db.payslips.create.mock.calls[0][0].data;
-    expect(data.note).toContain('概算');
-    expect(data.note).toContain('【自動計算】');
+    expect(data.note).not.toContain('オートフローが'); // 経理への注意は備考に入れない（本人の明細にも出るため）
+    expect(data.note.startsWith('【自動計算】')).toBe(true);
     expect(data.note).toContain('2026-10分');
     expect(out[0].deductions).toBe(Object.values(deductionsOf()).reduce((a, b) => a + b, 0));
     // 役員なのに雇用保険のチェックが付いているので、その警告だけが出る
