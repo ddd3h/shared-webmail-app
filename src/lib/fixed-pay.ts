@@ -1,5 +1,5 @@
 // 役員・社員・準業務委託の「固定の月額」(fixed_pay_plans) から、毎月の給与明細の下書きを作るための、DB を使わない部分。
-import { addMonths, closingDate, periodOf, type PaySchedule } from '@/lib/pay-schedule';
+import { addDays, addMonths, closingDate, payDate, periodOf, type PaySchedule } from '@/lib/pay-schedule';
 import type { WorkerType } from '@/lib/work';
 
 /**
@@ -20,10 +20,41 @@ export const isPlanDue = (p: PlanRange, month: string) => p.active && month >= p
 export const plansOverlap = (a: Pick<PlanRange, 'starts_month' | 'ends_month'>, b: Pick<PlanRange, 'starts_month' | 'ends_month'>) =>
   a.starts_month <= (b.ends_month ?? '9999-12') && b.starts_month <= (a.ends_month ?? '9999-12');
 
-/** 今日、下書きを作る月（期間）: 締め日がもう過ぎた、いちばん新しい期間。今日が締め日なら、その期間。 */
+/** 当月払い（振込日が締め日より前）の区分は、振込日の何日前から下書きを作るか。全銀データを作って確かめる時間をとる。 */
+export const DRAFT_LEAD_DAYS = 10;
+
+/**
+ * 今日、下書きを作る月（期間）: 締め日がもう過ぎた、いちばん新しい期間。今日が締め日なら、その期間。
+ * ただし振込日が締め日より前の期間（役員報酬の当月25日払いなど）は、締め日を待つと振込日に間に合わないので、振込日の DRAFT_LEAD_DAYS 日前から作る。
+ */
 export function draftPeriod(today: string, s: PaySchedule): string {
   const current = periodOf(today, s); // 今日を含む期間（その締め日は今日以降）
-  return closingDate(current, s) === today ? current : addMonths(current, -1);
+  const closed = closingDate(current, s) === today ? current : addMonths(current, -1);
+  for (const p of [addMonths(current, 1), current]) {
+    const pay = payDate(p, s);
+    if (p > closed && pay < closingDate(p, s) && pay <= addDays(today, DRAFT_LEAD_DAYS)) return p;
+  }
+  return closed;
+}
+
+export type PayDateChoice = { date: string; groups: { worker_type: WorkerType; month: string }[] };
+
+/**
+ * 「○/○振込分の下書きを作る」の選択肢: 固定報酬がある区分（`types` の順）の、今日の31日前から62日後までの振込日。
+ * 同じ日に払う区分をまとめ、それぞれ何月分かを付ける（例: 11/25 は役員の11月分と、準業務委託の10月分）。
+ */
+export function payDateChoices(today: string, schedules: Record<WorkerType, PaySchedule>, types: WorkerType[]): PayDateChoice[] {
+  const from = addDays(today, -31), to = addDays(today, 62);
+  const byDate = new Map<string, PayDateChoice['groups']>();
+  for (const type of types) {
+    for (let k = -4; k <= 3; k++) {
+      const month = addMonths(today.slice(0, 7), k);
+      const date = payDate(month, schedules[type]);
+      if (date < from || date > to) continue;
+      byDate.set(date, [...(byDate.get(date) ?? []), { worker_type: type, month }]);
+    }
+  }
+  return [...byDate].sort(([a], [b]) => a.localeCompare(b)).map(([date, groups]) => ({ date, groups }));
 }
 
 export const fixedKey = (userId: string, month: string) => `fixed:${userId}:${month}`;

@@ -2,18 +2,23 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { logAudit } from '@/lib/audit';
 import { financeActor, forbidden } from '@/lib/finance-guard';
-import { FIXED_PAY_TYPES, plansOverlap } from '@/lib/fixed-pay';
+import { FIXED_PAY_TYPES, payDateChoices, plansOverlap } from '@/lib/fixed-pay';
 import { planSchema } from '@/lib/fixed-pay-input';
-import type { WorkerType } from '@/lib/work';
+import { loadSchedules } from '@/lib/pay-schedule-server';
+import { jstDateString, type WorkerType } from '@/lib/work';
 
 // GET /api/autoflow/plans - the fixed monthly pay that is registered (経理・管理者)
+// `pay_dates`: the pay days around today of the kinds of worker with an active plan, and which month each pays ("○/○振込分を作る").
 export async function GET() {
   if (!(await financeActor())) return forbidden();
-  const [plans, users] = await Promise.all([
+  const [plans, users, { schedules }] = await Promise.all([
     prisma.fixed_pay_plans.findMany({ orderBy: [{ active: 'desc' }, { created_at: 'asc' }], include: { user: { select: { id: true, name: true, worker_type: true } } } }),
     prisma.users.findMany({ where: { worker_type: { in: FIXED_PAY_TYPES }, locked_at: null }, select: { id: true, name: true, worker_type: true }, orderBy: { name: 'asc' } }),
+    loadSchedules(),
   ]);
+  const types = FIXED_PAY_TYPES.filter(t => plans.some(p => p.active && p.user.worker_type === t));
   return NextResponse.json({
+    pay_dates: payDateChoices(jstDateString(new Date()), schedules, types),
     plans: plans.map(p => ({ id: p.id, user_id: p.user_id, user_name: p.user.name, worker_type: p.user.worker_type, label: p.label, amount: p.amount, commute_amount: p.commute_amount, starts_month: p.starts_month, ends_month: p.ends_month, active: p.active, note: p.note })),
     users,
   });

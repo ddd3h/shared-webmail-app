@@ -2,7 +2,7 @@
 // 「控除の自動計算」がONなら、社会保険料・雇用保険料・源泉所得税・住民税の行も入れる。
 // すでに全銀ファイルに入った明細（batch_id あり）は、金額が変わらないよう、決して触らない。
 import { prisma } from '@/lib/db';
-import { closingDate, DEFAULT_SCHEDULES, payDate } from '@/lib/pay-schedule';
+import { closingDate, DEFAULT_SCHEDULES, payDate, periodPaidOn } from '@/lib/pay-schedule';
 import { loadSchedules } from '@/lib/pay-schedule-server';
 import { isBonusTitle, toDbDate, type WorkerType } from '@/lib/work';
 import { autoNoteSection, bonusKey, COMMUTE_LABEL, commuteTotal, deductionItems, DEDUCTION_SORT, draftPeriod, earningItems, earningTotal, fixedKey, isPlanDue, withAutoNote, type DraftItem } from '@/lib/fixed-pay';
@@ -13,6 +13,7 @@ import { deductionsFor, type ProfileRow } from '@/lib/payroll/for-payslip';
 
 export type DraftResult = {
   user_id: string; user_name: string; month: string; label: string; amount: number;
+  pay_date: string | null; // 下書きの支払日（作成済みなら、その明細にいま入っている日）
   // conflict: その月の明細を手ですでに入れてある（二重に払わないよう作らない）／skipped: 一度作った下書きが消されている（毎日の実行では作り直さない）
   status: 'new' | 'exists' | 'conflict' | 'skipped';
   // 控除の自動計算が働いたとき（status が new のときだけ）: 控除の合計と、警告（登録がない・率がない など）
@@ -45,10 +46,12 @@ function draftDeductions(config: AutoflowConfig, user: { worker_type: string; wi
 }
 
 /**
- * 有効な固定報酬ごとに、今日作るべき月の下書きを作る。`month` を指定すると、その月の分を作る（手動。経理が押したときは、消した下書きも作り直せる）。
+ * 有効な固定報酬ごとに、今日作るべき月の下書きを作る。`month` を指定すると、その月の分を作る。
+ * `payDate` を指定すると、その日に払う月の分を、人の区分の締め日・振込日から決めて作る（11/25 なら役員の11月分と準業務委託の10月分など）。
+ * `month`・`payDate` は経理が押したときの手動の作成で、消した下書きも作り直せる。
  * 何度呼んでも、同じ月の下書きは増えない。`dry` なら作らずに、結果だけ返す。
  */
-export async function generateFixedDrafts(opts: { today: string; month?: string; actorId?: string | null; dry?: boolean; config?: AutoflowConfig }): Promise<DraftResult[]> {
+export async function generateFixedDrafts(opts: { today: string; month?: string; payDate?: string; actorId?: string | null; dry?: boolean; config?: AutoflowConfig }): Promise<DraftResult[]> {
   const [{ schedules }, plans, config] = await Promise.all([
     loadSchedules(),
     prisma.fixed_pay_plans.findMany({ where: { active: true, user: { locked_at: null } }, include: { user: { select: { id: true, name: true, worker_type: true, withholding_class: true } } }, orderBy: { created_at: 'asc' } }),
@@ -60,25 +63,26 @@ export async function generateFixedDrafts(opts: { today: string; month?: string;
   for (const plan of plans) {
     const type = plan.user.worker_type as WorkerType;
     const schedule = schedules[type] ?? DEFAULT_SCHEDULES.employee;
-    const month = opts.month ?? draftPeriod(opts.today, schedule);
-    if (!isPlanDue(plan, month)) continue;
+    const month = opts.payDate ? periodPaidOn(opts.payDate, schedule) : opts.month ?? draftPeriod(opts.today, schedule);
+    if (!month || !isPlanDue(plan, month)) continue; // その日に払わない区分・その月に払わない計画
     const key = fixedKey(plan.user_id, month);
     if (seen.has(key)) continue; // 期間が重なる計画が2つあっても、1人1か月に1枚
     seen.add(key);
-    const row = { user_id: plan.user_id, user_name: plan.user.name, month, label: plan.label, amount: plan.amount };
+    const pay = payDate(month, schedule);
+    const row = { user_id: plan.user_id, user_name: plan.user.name, month, label: plan.label, amount: plan.amount, pay_date: pay };
 
-    if (await prisma.payslips.findUnique({ where: { auto_key: key }, select: { id: true } })) { out.push({ ...row, status: 'exists' }); continue; }
+    const existing = await prisma.payslips.findUnique({ where: { auto_key: key }, select: { id: true, pay_date: true } });
+    if (existing) { out.push({ ...row, status: 'exists', pay_date: existing.pay_date ? dayOf(existing.pay_date) : null }); continue; }
     const manual = await prisma.payslips.findFirst({
       where: { user_id: plan.user_id, pay_month: month, auto_key: null, NOT: [{ title: '立替金精算' }, { title: { contains: '賞与' } }] },
       select: { id: true },
     });
     if (manual) { out.push({ ...row, status: 'conflict' }); continue; }
-    const manualRun = opts.month !== undefined;
+    const manualRun = opts.month !== undefined || opts.payDate !== undefined;
     const claimed = await prisma.autoflow_notices.findFirst({ where: { ...CLAIM, subject_key: key, user_id: plan.user_id }, select: { id: true } });
     if (claimed && !manualRun) { out.push({ ...row, status: 'skipped' }); continue; }
 
     const addons = await prisma.pay_extras.findMany({ where: { user_id: plan.user_id, pay_month: month, kind: 'addon' }, orderBy: { created_at: 'asc' } });
-    const pay = payDate(month, schedule);
     const earnings = earningItems(plan, addons);
     const ded = draftDeductions(config, plan.user, profiles.get(plan.user_id), pay, closingDate(month, schedule), earnings);
     const extra = ded ? { deductions: sum(ded.lines), warnings: ded.warnings } : {};

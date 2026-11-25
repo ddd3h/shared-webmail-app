@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { NextRequest, NextResponse } from 'next/server';
 
 vi.mock('@/lib/db', () => ({
@@ -33,6 +33,8 @@ import { generateFixedDrafts } from '@/lib/fixed-pay-server';
 import { DEFAULT_CONFIG, type AutoflowConfig } from '@/lib/autoflow/config';
 import { EXECUTIVE_EMPLOYMENT_WARNING } from '@/lib/payroll/for-payslip';
 import { loadConfig } from '@/lib/autoflow/config-server';
+import { loadSchedules } from '@/lib/pay-schedule-server';
+import { DEFAULT_SCHEDULE, DEFAULT_SCHEDULES } from '@/lib/pay-schedule';
 import { prisma } from '@/lib/db';
 import { financeActor } from '@/lib/finance-guard';
 import { logAudit } from '@/lib/audit';
@@ -136,7 +138,7 @@ describe('固定報酬の下書き', () => {
   it('締め日に、有効な計画ごとに「支払予定」の下書きを1枚作る', async () => {
     db.fixed_pay_plans.findMany.mockResolvedValue([plan]);
     const out = await generateFixedDrafts({ today: OCT_END });
-    expect(out).toEqual([{ user_id: 'u1', user_name: '山田', month: '2026-10', label: '役員報酬', amount: 500000, status: 'new' }]); // 控除の自動計算がOFFなら、控除の項目は付かない
+    expect(out).toEqual([{ user_id: 'u1', user_name: '山田', month: '2026-10', label: '役員報酬', amount: 500000, status: 'new', pay_date: '2026-11-25' }]); // 控除の自動計算がOFFなら、控除の項目は付かない
     const data = db.payslips.create.mock.calls[0][0].data;
     expect(data).toMatchObject({ user_id: 'u1', pay_month: '2026-10', title: '役員報酬', status: 'planned', auto_key: 'fixed:u1:2026-10' });
     expect(data.items.create).toEqual([{ kind: 'earning', label: '役員報酬', amount: 500000, sort: 0, system_key: null }]);
@@ -237,6 +239,56 @@ describe('固定報酬の下書き', () => {
   });
   it('月の指定が不正なら 400', async () => {
     expect((await generate(json({ month: '2026-1' }))).status).toBe(400);
+  });
+});
+
+describe('振込日を選んで、下書きを作る', () => {
+  // 役員は末日締め・当月25日払い、準業務委託は末日締め・翌月25日払い（土日なら次の平日）
+  const SCHEDULES = { ...DEFAULT_SCHEDULES, executive: { ...DEFAULT_SCHEDULE, pay_month_offset: 0 }, quasi_contractor: { ...DEFAULT_SCHEDULE, pay_day_shift: 'after' as const } };
+  const quasi = { ...plan, id: 'p2', user_id: 'u2', label: '業務委託報酬', amount: 150000, starts_month: '2026-10', user: { id: 'u2', name: '佐藤', worker_type: 'quasi_contractor', withholding_class: 'ko' } };
+  beforeEach(() => { (loadSchedules as any).mockResolvedValue({ schedules: SCHEDULES, custom: new Set() }); });
+  afterEach(() => { (loadSchedules as any).mockResolvedValue({ schedules: DEFAULT_SCHEDULES, custom: new Set() }); });
+
+  it('11/25 振込分: 役員は11月分、準業務委託は10月分を、支払日 11/25 で作る', async () => {
+    db.fixed_pay_plans.findMany.mockResolvedValue([plan, quasi]);
+    const body = await (await generate(json({ pay_date: '2026-11-25' }))).json();
+    expect(body.drafts.map((d: any) => [d.user_id, d.month, d.status, d.pay_date])).toEqual([['u1', '2026-11', 'new', '2026-11-25'], ['u2', '2026-10', 'new', '2026-11-25']]);
+    expect(db.payslips.create.mock.calls.map((c: any) => [c[0].data.auto_key, c[0].data.pay_date.toISOString().slice(0, 10)])).toEqual([['fixed:u1:2026-11', '2026-11-25'], ['fixed:u2:2026-10', '2026-11-25']]);
+    expect((logAudit as any).mock.calls[0][0].metadata).toMatchObject({ pay_date: '2026-11-25', created: 2 });
+  });
+  it('その日に払わない区分や、まだ始まっていない計画は入らない', async () => {
+    db.fixed_pay_plans.findMany.mockResolvedValue([plan, quasi]);
+    const body = await (await generate(json({ pay_date: '2026-10-23' }))).json(); // 役員の10月分（10/25 が日曜なので前の金曜）
+    expect(body.drafts.map((d: any) => [d.user_id, d.month])).toEqual([['u1', '2026-10']]);
+    expect((await (await generate(json({ pay_date: '2026-11-24' }))).json()).drafts).toEqual([]);
+  });
+  it('作成済みの下書きは、いまの支払日を返す（違う日なら画面で直してもらう）', async () => {
+    db.fixed_pay_plans.findMany.mockResolvedValue([plan]);
+    db.payslips.findUnique.mockResolvedValue({ id: 'already', pay_date: new Date('2026-12-25T00:00:00Z') });
+    const body = await (await generate(json({ pay_date: '2026-11-25' }))).json();
+    expect(body.drafts[0]).toMatchObject({ month: '2026-11', status: 'exists', pay_date: '2026-12-25' });
+    expect(db.payslips.create).not.toHaveBeenCalled();
+  });
+  it('消した下書きも、振込日を選んで押せば作り直せる', async () => {
+    db.fixed_pay_plans.findMany.mockResolvedValue([plan]);
+    db.autoflow_notices.findFirst.mockResolvedValue({ id: 'claim1' });
+    expect((await (await generate(json({ pay_date: '2026-11-25' }))).json()).drafts[0].status).toBe('new');
+  });
+  it('振込日の指定が不正なら 400', async () => {
+    expect((await generate(json({ pay_date: '2026-11-31' }))).status).toBe(400);
+    expect((await generate(json({}))).status).toBe(400);
+  });
+  it('固定報酬の一覧に、振込日の選択肢（その日に何月分を払うか）が付く', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-11-24T03:00:00Z'));
+    try {
+      db.fixed_pay_plans.findMany.mockResolvedValue([plan, quasi, { ...plan, id: 'p3', user_id: 'u3', active: false, user: { id: 'u3', name: '鈴木', worker_type: 'employee' } }]);
+      db.users.findMany.mockResolvedValue([]);
+      const body = await (await getPlans()).json();
+      const nov = body.pay_dates.find((c: any) => c.date === '2026-11-25');
+      expect(nov.groups).toEqual([{ worker_type: 'executive', month: '2026-11' }, { worker_type: 'quasi_contractor', month: '2026-10' }]);
+      expect(body.pay_dates.flatMap((c: any) => c.groups.map((g: any) => g.worker_type))).not.toContain('employee'); // 止めた計画の区分は出さない
+    } finally { vi.useRealTimers(); }
   });
 });
 

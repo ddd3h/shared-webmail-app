@@ -72,6 +72,22 @@ export function payDate(period: string, s: PaySchedule): string {
   return addDays(raw, wd === 6 ? 2 : 1);
 }
 
+/** The period paid on `date` ('2026-11-25' -> '2026-10' when paid the next month, '2026-11' when paid the same month), or null when nothing is paid that day. */
+export function periodPaidOn(date: string, s: PaySchedule): string | null {
+  const ym = date.slice(0, 7);
+  for (let k = -1; k <= 3; k++) { const p = addMonths(ym, -k); if (payDate(p, s) === date) return p; } // a weekend shift can move the day into the month before or after
+  return null;
+}
+
+/**
+ * The day an expense or a report of the period is paid. Paid the same month (the pay day comes before the closing day,
+ * like 役員報酬 末日締め・当月25日払い), the period's own pay day is too early: it is paid with the next one.
+ */
+export function settlePayDate(period: string, s: PaySchedule): string {
+  const own = payDate(period, s);
+  return own >= closingDate(period, s) ? own : payDate(addMonths(period, 1), s);
+}
+
 export const reportDeadline = (period: string, s: PaySchedule) => addDays(closingDate(period, s), s.report_deadline_days);
 export const expenseDeadline = (period: string, s: PaySchedule) => addDays(closingDate(period, s), s.expense_deadline_days);
 
@@ -87,7 +103,7 @@ export function planFor(happened: string, submitted: string, s: PaySchedule, kin
   let period = periodOf(happened, s);
   let late = false;
   for (let i = 0; i < 24 && submitted > deadlineOf(period, s); i++) { period = addMonths(period, 1); late = true; }
-  return { period, closing_date: closingDate(period, s), deadline: deadlineOf(period, s), pay_date: payDate(period, s), late };
+  return { period, closing_date: closingDate(period, s), deadline: deadlineOf(period, s), pay_date: settlePayDate(period, s), late };
 }
 
 /** The period that is open on `today`: the one whose closing date has not passed yet. */

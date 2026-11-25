@@ -1,16 +1,20 @@
 'use client';
 import { useCallback, useEffect, useState } from 'react';
 import { api, btn, btnPrimary, currentMonth, inp, MonthNav, Notice, yen } from '@/components/work/ui';
-import { defaultPlanLabel } from '@/lib/fixed-pay';
-import { WORKER_TYPE_LABEL, type WorkerType } from '@/lib/work';
+import { defaultPlanLabel, type PayDateChoice } from '@/lib/fixed-pay';
+import { shortDate } from '@/lib/pay-schedule';
+import { WORKER_TYPE_LABEL, jstDateString, type WorkerType } from '@/lib/work';
 
 type Plan = { id: string; user_id: string; user_name: string; worker_type: string; label: string; amount: number; commute_amount: number; starts_month: string; ends_month: string | null; active: boolean; note: string | null };
 type PayUser = { id: string; name: string; worker_type: string };
 type Extra = { id: string; user_id: string; user_name: string; pay_month: string; kind: 'addon' | 'bonus'; label: string; amount: number };
-type Draft = { user_id: string; user_name: string; month: string; label: string; amount: number; status: 'new' | 'exists' | 'conflict' | 'skipped'; deductions?: number; warnings?: string[] };
+type Draft = { user_id: string; user_name: string; month: string; label: string; amount: number; status: 'new' | 'exists' | 'conflict' | 'skipped'; pay_date: string | null; deductions?: number; warnings?: string[] };
 type Msg = { type: 'success' | 'error'; text: string } | null;
 
 const typeLabel = (t: string) => WORKER_TYPE_LABEL[t as WorkerType] ?? t;
+const monthText = (m: string) => `${Number(m.slice(5))}月分`;
+/** "11/25(水)振込分（役員 11月分・準業務委託 10月分）" */
+const payDateText = (c: PayDateChoice) => `${shortDate(c.date)}振込分（${c.groups.map(g => `${typeLabel(g.worker_type)} ${monthText(g.month)}`).join('・')}）`;
 const defaultLabel = (t: string | undefined) => defaultPlanLabel((t ?? 'executive') as WorkerType);
 const ERR: Record<string, string> = {
   overlap: 'その人の、期間が重なる固定報酬がすでにあります（同じ月に二重に払うことになります）',
@@ -25,9 +29,10 @@ const errText = async (res: Response, fallback: string) => ERR[(await res.json()
 export default function PlansPanel() {
   const [plans, setPlans] = useState<Plan[] | null>(null);
   const [users, setUsers] = useState<PayUser[]>([]);
+  const [payDates, setPayDates] = useState<PayDateChoice[]>([]);
   const [msg, setMsg] = useState<Msg>(null);
   const say = (m: Msg) => { setMsg(m); if (m) setTimeout(() => setMsg(null), 5000); };
-  const load = useCallback(() => fetch('/api/autoflow/plans').then(r => r.json()).then(d => { setPlans(d.plans ?? []); setUsers(d.users ?? []); }).catch(() => setPlans([])), []);
+  const load = useCallback(() => fetch('/api/autoflow/plans').then(r => r.json()).then(d => { setPlans(d.plans ?? []); setUsers(d.users ?? []); setPayDates(d.pay_dates ?? []); }).catch(() => setPlans([])), []);
   useEffect(() => { load(); }, [load]);
 
   // 固定報酬の登録
@@ -83,10 +88,14 @@ export default function PlansPanel() {
     loadExtras();
   }
 
-  // 下書きを今すぐ作る
+  // 下書きを今すぐ作る: 振込日を選ぶと、その日に払う月の分（区分ごとに締め日・振込日から決まる）を作る
   const [drafts, setDrafts] = useState<Draft[] | null>(null);
+  const [chosenPay, setChosenPay] = useState('');
+  const today = jstDateString(new Date());
+  const payDay = payDates.some(c => c.date === chosenPay) ? chosenPay : (payDates.find(c => c.date >= today) ?? payDates[payDates.length - 1])?.date ?? '';
   async function generate(dry: boolean) {
-    const res = await api('/api/autoflow/fixed/generate', 'POST', { month, dry });
+    if (!payDay) return;
+    const res = await api('/api/autoflow/fixed/generate', 'POST', { pay_date: payDay, dry });
     if (!res.ok) { say({ type: 'error', text: '実行できませんでした' }); return; }
     const d = await res.json();
     setDrafts(d.drafts);
@@ -171,20 +180,27 @@ export default function PlansPanel() {
 
       <section className="space-y-2">
         <h2 className="text-sm font-bold text-gray-900">下書きを今すぐ作る</h2>
-        <p className="text-xs text-gray-500">上で選んだ月の分を、登録された固定報酬から作ります（自動の作成を待たずに作りたいとき）。すでにある月は、増えません。その月に手で入れた明細がある人は、二重に払わないよう作りません。自動で作った下書きを消した月は、毎日の自動作成では作り直さないので、その月を払わないときは下書きを消してください（ここで作ると作り直せます）。</p>
-        <div className="flex flex-wrap gap-2">
-          <button className={btn} onClick={() => generate(true)}>作る内容を確認</button>
-          <button className={btnPrimary} onClick={() => generate(false)}>{month}分の下書きを作る</button>
-        </div>
+        <p className="text-xs text-gray-500">振込日を選ぶと、その日に払う分を、登録された固定報酬から作ります（自動の作成を待たずに作りたいとき）。何月分になるかは、人の区分の「締め日・振込日」で決まります（例: 役員が当月25日払い、準業務委託が翌月25日払いなら、11/25振込分は役員の11月分と準業務委託の10月分）。すでにある下書きは増えません。その月に手で入れた明細がある人は、二重に払わないよう作りません。自動で作った下書きを消した月は、毎日の自動作成では作り直さないので、その月を払わないときは下書きを消してください（ここで作ると作り直せます）。</p>
+        {payDates.length === 0 ? <p className="text-sm text-gray-400">固定報酬が登録されていないので、作るものはありません</p> : (
+          <div className="flex flex-wrap items-center gap-2">
+            <select aria-label="振込日" className={`${inp} max-w-md`} value={payDay} onChange={e => { setChosenPay(e.target.value); setDrafts(null); }}>
+              {payDates.map(c => <option key={c.date} value={c.date}>{payDateText(c)}</option>)}
+            </select>
+            <button className={btn} onClick={() => generate(true)}>作る内容を確認</button>
+            <button className={btnPrimary} onClick={() => generate(false)}>{shortDate(payDay)}振込分の下書きを作る</button>
+          </div>
+        )}
         {drafts && (drafts.length === 0 ? <p className="text-sm text-gray-400">この月に払う固定報酬はありません</p> : (
           <ul className="space-y-1">
             {drafts.map(d => (
               <li key={d.user_id} className="rounded-xl border border-gray-200 bg-white p-2.5 text-sm flex flex-wrap items-center gap-2">
                 <span className="font-medium text-gray-900">{d.user_name}</span>
+                <span className="text-xs text-gray-500">{monthText(d.month)}</span>
                 <span className="text-gray-700 flex-1 min-w-24">{d.label}</span>
                 <span className="font-semibold tabular-nums">{yen(d.amount)}</span>
                 {d.deductions !== undefined && <span className="text-xs text-gray-600">控除 {yen(d.deductions)}</span>}
                 <span className={`rounded-sm px-1.5 py-0.5 text-[11px] ${DRAFT_STATUS[d.status][1]}`}>{DRAFT_STATUS[d.status][0]}</span>
+                {d.status === 'exists' && d.pay_date && d.pay_date !== payDay && <p className="basis-full text-xs text-amber-700">⚠ この下書きの支払日は {shortDate(d.pay_date)} です。{shortDate(payDay)}に払うなら、給与明細の画面で支払日を直してください</p>}
                 {d.warnings?.map((w, i) => <p key={i} className="basis-full text-xs text-amber-700">⚠ {w}</p>)}
               </li>
             ))}

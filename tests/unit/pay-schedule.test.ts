@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { DEFAULT_SCHEDULE, DEFAULT_SCHEDULES, addMonths, closingDate, describeSchedule, expenseDeadline, isValidSchedule, payDate, periodOf, periodStart, planFor, reportDeadline, shortDate, type PaySchedule } from '@/lib/pay-schedule';
+import { DEFAULT_SCHEDULE, DEFAULT_SCHEDULES, addMonths, closingDate, describeSchedule, expenseDeadline, isValidSchedule, payDate, periodOf, periodPaidOn, periodStart, planFor, reportDeadline, shortDate, type PaySchedule } from '@/lib/pay-schedule';
 
 const s = (o: Partial<PaySchedule> = {}): PaySchedule => ({ ...DEFAULT_SCHEDULE, ...o });
 
@@ -55,5 +55,36 @@ describe('締め日・振込日', () => {
     expect(describeSchedule(s())).toBe('末日締め・翌月25日払い');
     expect(describeSchedule(s({ closing_day: 15, pay_month_offset: 0, pay_day: 0 }))).toBe('15日締め・当月末日払い');
     expect(describeSchedule(DEFAULT_SCHEDULES.contractor)).toBe('末日締め・翌月末日払い');
+  });
+});
+
+describe('振込日から、何月分か', () => {
+  const nextMonth = s({ pay_day_shift: 'none' });                        // 末日締め・翌月25日払い
+  const sameMonth = s({ pay_month_offset: 0, pay_day_shift: 'before' });  // 末日締め・当月25日払い（役員報酬）
+  it('翌月払いなら前の月分、当月払いならその月分', () => {
+    expect(periodPaidOn('2026-11-25', nextMonth)).toBe('2026-10');
+    expect(periodPaidOn('2026-11-25', sameMonth)).toBe('2026-11');
+  });
+  it('土日で動いた振込日でも、その月分を返す。その日に払わない設定なら null', () => {
+    expect(payDate('2026-10', sameMonth)).toBe('2026-10-23');   // 10/25 は日曜なので前の金曜
+    expect(periodPaidOn('2026-10-23', sameMonth)).toBe('2026-10');
+    expect(periodPaidOn('2026-10-25', sameMonth)).toBeNull();
+    expect(periodPaidOn('2026-11-24', nextMonth)).toBeNull();
+  });
+  it('年をまたぐ・翌々月払い・月末払い', () => {
+    expect(periodPaidOn('2027-01-25', nextMonth)).toBe('2026-12');
+    expect(periodPaidOn('2027-02-10', s({ pay_month_offset: 2, pay_day: 10, pay_day_shift: 'none' }))).toBe('2026-12');
+    expect(periodPaidOn('2026-12-31', s({ pay_day: 0, pay_day_shift: 'none' }))).toBe('2026-11');
+  });
+});
+
+describe('当月払い（振込日が締め日より前）の経費・業務報告', () => {
+  const sameMonth = s({ pay_month_offset: 0, pay_day_shift: 'none', expense_deadline_days: 10 });
+  it('締め日より前の振込日には入れず、締め日のあとの最初の振込日に払う', () => {
+    expect(planFor('2026-11-10', '2026-11-12', sameMonth, 'expense')).toEqual({ period: '2026-11', closing_date: '2026-11-30', deadline: '2026-12-10', pay_date: '2026-12-25', late: false });
+    expect(planFor('2026-11-10', '2026-12-11', sameMonth, 'expense')).toMatchObject({ period: '2026-12', pay_date: '2027-01-25', late: true });
+  });
+  it('振込日が締め日より後なら、今までどおり', () => {
+    expect(planFor('2026-10-10', '2026-10-12', s({ closing_day: 15, pay_month_offset: 0, pay_day_shift: 'none' }), 'expense').pay_date).toBe('2026-10-25');
   });
 });

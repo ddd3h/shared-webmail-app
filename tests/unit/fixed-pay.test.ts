@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { DEFAULT_SCHEDULES } from '@/lib/pay-schedule';
-import { AUTO_NOTE_MARK, autoNoteSection, bonusKey, commuteTotal, DEDUCTION_TYPES, defaultPlanLabel, deductionItems, draftItems, draftPeriod, earningTotal, FIXED_PAY_TYPES, fixedKey, isCommuteLabel, isPlanDue, plansOverlap, withAutoNote } from '@/lib/fixed-pay';
+import { DEFAULT_SCHEDULE, DEFAULT_SCHEDULES } from '@/lib/pay-schedule';
+import { AUTO_NOTE_MARK, autoNoteSection, bonusKey, commuteTotal, DEDUCTION_TYPES, defaultPlanLabel, deductionItems, draftItems, draftPeriod, earningTotal, FIXED_PAY_TYPES, fixedKey, isCommuteLabel, isPlanDue, payDateChoices, plansOverlap, withAutoNote } from '@/lib/fixed-pay';
 import { planSchema, extraSchema } from '@/lib/fixed-pay-input';
 import { isBonusTitle } from '@/lib/work';
 
@@ -41,6 +41,31 @@ describe('下書きを作る月', () => {
   });
   it('年をまたぐ', () => {
     expect(draftPeriod('2027-01-05', S)).toBe('2026-12');
+  });
+  it('当月払い（振込日が締め日より前）: 振込日の10日前から、締め日を待たずにその月分を作る', () => {
+    const same = { ...S, pay_month_offset: 0 }; // 末日締め・当月25日払い
+    expect(draftPeriod('2026-11-14', same)).toBe('2026-10');
+    expect(draftPeriod('2026-11-15', same)).toBe('2026-11');   // 11/25 の10日前
+    expect(draftPeriod('2026-11-30', same)).toBe('2026-11');
+    expect(draftPeriod('2026-12-15', same)).toBe('2026-12');
+  });
+  it('翌月払いは、振込日が近くても締め日まで待つ（今までどおり）', () => {
+    const soon = { ...S, pay_day: 1, pay_day_shift: 'none' as const }; // 末日締め・翌月1日払い
+    expect(draftPeriod('2026-10-25', soon)).toBe('2026-09');
+    expect(draftPeriod('2026-10-31', soon)).toBe('2026-10');
+  });
+});
+
+describe('振込日の選択肢', () => {
+  it('区分ごとに、その日に何月分を払うかをまとめる。前後の振込日も出す', () => {
+    const schedules = { ...DEFAULT_SCHEDULES, executive: { ...DEFAULT_SCHEDULE, pay_month_offset: 0 }, quasi_contractor: { ...DEFAULT_SCHEDULE, pay_day_shift: 'after' as const } };
+    const out = payDateChoices('2026-11-24', schedules, ['executive', 'quasi_contractor']);
+    expect(out.map(c => c.date)).toEqual(['2026-10-26', '2026-11-25', '2026-12-25', '2027-01-25']);
+    expect(out[1].groups).toEqual([{ worker_type: 'executive', month: '2026-11' }, { worker_type: 'quasi_contractor', month: '2026-10' }]);
+    expect(out[0].groups).toEqual([{ worker_type: 'quasi_contractor', month: '2026-09' }]); // 10/25 は日曜なので月曜に
+  });
+  it('区分がなければ空', () => {
+    expect(payDateChoices('2026-11-24', DEFAULT_SCHEDULES, [])).toEqual([]);
   });
 });
 
