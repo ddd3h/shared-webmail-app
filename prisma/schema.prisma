@@ -303,6 +303,8 @@ model messages {
   mm_forwards mattermost_forwards[]
 
   @@unique([external_message_id, mailbox_id])
+  // a thread's mails in order (its first sender, its messages): without it each lookup reads the whole table
+  @@index([thread_id, sent_at])
 }
 
 model attachments {
