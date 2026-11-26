@@ -14,6 +14,8 @@ import { DOMParser as PMDOMParser } from '@tiptap/pm/model';
 import DOMPurify from 'dompurify';
 import type * as Y from 'yjs';
 import type { Awareness } from 'y-protocols/awareness';
+import { collabSignature, collabUsersFromStates, type CollabUser } from '@/lib/collab-users';
+import { JumpWatch } from '@/lib/editor-jump-watch';
 
 const PURIFY_CONFIG = {
   ALLOWED_TAGS: [
@@ -77,7 +79,7 @@ export type RichEditorHandle = {
   isEmpty: () => boolean;
 };
 
-export type CollabUser = { clientId: number; name: string; color: string; id?: string };
+export type { CollabUser } from '@/lib/collab-users';
 
 type Props = {
   placeholder?: string;
@@ -119,6 +121,8 @@ const RichEditor = forwardRef<RichEditorHandle, Props>(
       FontSize,
       TextAlign.configure({ types: ['heading', 'paragraph'] }),
       Image,
+      // records the caret jumping to the start of the body while typing (only looks; see lib/editor-jump-watch.ts)
+      JumpWatch.configure({ shared: !!ydoc }),
       ...(ydoc
         ? [
             Collaboration.configure({ document: ydoc }),
@@ -251,18 +255,14 @@ const RichEditor = forwardRef<RichEditorHandle, Props>(
     useEffect(() => {
       if (!awareness || !onCollaboratorsChange) return;
       const aw = awareness;
+      // 'change' fires on every caret move (each person's caret is in their state), so on every keystroke.
+      // Only a different list of people is passed on: otherwise each keystroke redraws the whole compose screen.
+      let last: string | null = null;
       const update = () => {
-        const seen = new Set<string>();
-        const users: CollabUser[] = [];
-        aw.getStates().forEach((state, clientId) => {
-          const u = (state as { user?: { name?: string; color?: string; id?: string } }).user;
-          if (!u) return;
-          // de-dupe by user id (same person in multiple tabs) when id is present
-          const key = u.id ?? `c${clientId}`;
-          if (seen.has(key)) return;
-          seen.add(key);
-          users.push({ clientId, name: u.name ?? 'ユーザー', color: u.color ?? '#888', id: u.id });
-        });
+        const users = collabUsersFromStates(aw.getStates());
+        const sig = collabSignature(users);
+        if (sig === last) return;
+        last = sig;
         onCollaboratorsChange(users);
       };
       update();

@@ -93,6 +93,21 @@ draftId = null, status = 'idle'
 
 コラボがアクティブになった瞬間、デバウンス待ち中の `pendingRef` からも本文フィールドを削除する（`stripBodyFromPending()`）。
 
+参加者の印（「〇〇 が編集中」）は、Yjs の awareness から作る（`src/lib/collab-users.ts`）。awareness の `change` は、だれかのカーソルが動くたびに届く。つまり1文字打つたびに届く。参加者が変わったとき（人・名前・色）だけ親の ComposeForm に渡すので、打っても作成画面全体は描き直さない。共有メールの返信で14文字を IME で打ったとき、描き直しは 28 回から 0 回に減った。
+
+---
+
+## カーソルが本文の先頭へ飛んだときの記録
+
+「IME で速く打っていると、カーソルが本文の一番最初へ飛ぶ」という報告がある（Mac の Chrome、共有メールの返信）。手元では再現できていないので、起きたときの様子を記録する。
+
+- エディタの拡張 `JumpWatch`（`src/lib/editor-jump-watch.ts`）が、個人・共有どちらの本文でも、キャレットが本文の先頭へ戻ったのを見つける。判定は `isJumpToStart`（`src/lib/editor-jump.ts`）。
+- 見つけると 1.5 秒待ち、前の 6 秒と後の 1.5 秒の出来事を `POST /api/diag/editor-jump` に送る。出来事は、キー・変換・入力の種類・選択の移動・トランザクション（印の名前、前後の位置）・エディタの作成と破棄。
+- 送るのは 30 秒に1回まで、1ページで5回まで。サーバーも1人1時間30回まで。
+- 打った文字は送らない。キーは Space・Enter・矢印などの名前だけで、それ以外は `char` にする。Cmd/Ctrl と一緒に押したアルファベットだけは、ショートカットとして文字を残す。`code` は送らない（IME 中はローマ字になるため）。サーバーも `isSafeDetail` で確かめ直し、合わないものは 400 にする。
+- 記録はサーバーのログ（pm2 の out ログ）に `[editor-jump]` で始まる1行で出る。`ssh overleaf-oss 'grep "\[editor-jump\]" ~/.pm2/logs/shared-webmail-app-out-0.log'` で読む。
+- `jump.tags` の意味: `typing` は直前2秒に打鍵または変換があった、`nav` は矢印や Cmd/Ctrl のショートカットのすぐ後、`pointer` はクリックのすぐ後、`remote` はほかの人の編集で動いた、`undo` は取り消し。`nav` と `pointer` は、わざと動かした場合なので読み飛ばしてよい。
+
 ---
 
 ## 状態一覧（DraftStatus）

@@ -106,6 +106,7 @@
 | PUT | `/api/autoflow/profiles/[userId]` | `src/app/api/autoflow/profiles/[userId]/route.ts` |
 | POST | `/api/autoflow/deductions/estimate` | `src/app/api/autoflow/deductions/estimate/route.ts` |
 | POST | `/api/autoflow/deductions/recalc` | `src/app/api/autoflow/deductions/recalc/route.ts` |
+| POST | `/api/diag/editor-jump` | `src/app/api/diag/editor-jump/route.ts` |
 
 ---
 

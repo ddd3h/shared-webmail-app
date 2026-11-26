@@ -192,6 +192,43 @@ test('共有メールの返信: 打っている途中にもう1人が開いて�
   await a.ctx.close(); await b.ctx.close();
 });
 
+test('共有メールの返信: もう1人が開くと編集中の印が2人分になり、打ち続けても印はそのまま', async ({ browser }) => {
+  const a = await openReply(browser, 'sato');
+  const marks = a.page.locator('[title$=" が編集中"]');
+  await expect(marks).toHaveCount(1);
+  const b = await openReply(browser, 'admin');
+  await expect(marks).toHaveCount(2);
+  await editorOf(a.page).click();
+  await ime(a.page, '印が消えないか確かめます。');
+  await expect(marks).toHaveCount(2);
+  await b.ctx.close();
+  await expect(marks).toHaveCount(1, { timeout: 45_000 }); // the other person's state times out on the server (30 s)
+  await a.ctx.close();
+});
+
+// The recorder of the caret jumping to the start of the body (lib/editor-jump-watch.ts): one report, and nothing typed in it.
+test('共有メールの返信: 打っている途中にカーソルが先頭へ行くと、記録が1回だけ送られ、打った文字は入っていない', async ({ browser }) => {
+  const a = await openReply(browser, 'sato');
+  const reports: string[] = [];
+  a.page.on('request', r => { if (r.url().includes('/api/diag/editor-jump')) reports.push(r.postData() ?? ''); });
+  const answered = a.page.waitForResponse(r => r.url().includes('/api/diag/editor-jump'));
+  await editorOf(a.page).click();
+  await ime(a.page, '一行目の本文です。');
+  await a.page.keyboard.press('Enter');
+  await ime(a.page, '二行目を打っています。');
+  await a.page.keyboard.press('Control+Home'); // to the start of the body, the way the reported jump ends
+  await ime(a.page, '先頭');
+  expect((await answered).status()).toBe(200);
+  await a.page.waitForTimeout(2000);
+  expect(reports).toHaveLength(1);
+  const r = JSON.parse(reports[0]);
+  expect(r).toMatchObject({ v: 1, shared: true, path: '/threads/:id', jump: { to: 1, start: 1 } });
+  expect(r.jump.tags).toEqual(expect.arrayContaining(['typing', 'nav']));
+  expect(r.events.map((e: unknown[]) => e[1])).toEqual(expect.arrayContaining(['kd', 'cu', 'tr', 'jump']));
+  for (const typed of ['一行目', '二行目', '先頭', '本文']) expect(reports[0]).not.toContain(typed);
+  await a.ctx.close();
+});
+
 // Production today: the collaboration server cannot be reached. Each browser edits on its own, and the body only travels through the saved draft.
 test.describe('共同編集サーバーにつながらないとき（本文は保存された下書きで受け渡す）', () => {
   test('共有メールの返信: 開いてすぐ打ち始めても、文字は消えず、続きは文末に入る', async ({ browser }) => {
