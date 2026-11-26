@@ -38,6 +38,7 @@ describe('JumpWatch', () => {
     expect(send).toHaveBeenCalledTimes(1);
     const r: JumpReport = send.mock.calls[0][0];
     expect(r.jump).toMatchObject({ to: 1, start: 1, docChanged: false });
+    expect(r.jump.tags).not.toContain('range');
     expect(r.jump.from).toBeGreaterThan(40);
     expect(r.jump.tags).toContain('typing');
     expect(r.jump.tags).not.toContain('nav');
@@ -87,6 +88,17 @@ describe('JumpWatch', () => {
     typeAt(editor, 'あ');
     vi.advanceTimersByTime(5000);
     expect(send).not.toHaveBeenCalled();
+  });
+
+  it('変換中の文節が範囲で選ばれていたところから先頭へ飛んでも報告し、range の印が付く', () => {
+    const send = vi.fn();
+    const editor = make(send);
+    editor.view.dispatch(editor.state.tr.setSelection(TextSelection.create(editor.state.doc, 40, 43)));
+    caretTo(editor, 1);
+    vi.advanceTimersByTime(1500);
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(send.mock.calls[0][0].jump).toMatchObject({ from: 40, to: 1 });
+    expect(send.mock.calls[0][0].jump.tags).toContain('range');
   });
 
   it('報告を待っている間に閉じられたら、その場で送る', () => {

@@ -57,21 +57,25 @@ describe('isSafeDetail: サーバーで、文字が混じっていないこと�
 
 describe('isJumpToStart: 本文の先頭に飛んだか', () => {
   it('文の途中から先頭へ飛んだら true', () => {
-    expect(isJumpToStart({ oldHead: 40, newHead: 1, oldEmpty: true, start: 1 })).toBe(true);
-    expect(isJumpToStart({ oldHead: 5, newHead: 1, oldEmpty: true, start: 1 })).toBe(true);
+    expect(isJumpToStart({ oldFrom: 40, newFrom: 1, start: 1 })).toBe(true);
+    expect(isJumpToStart({ oldFrom: 5, newFrom: 1, start: 1 })).toBe(true);
   });
   it('先頭へ飛んで、そこに何文字か入ったあとでも true', () => {
-    expect(isJumpToStart({ oldHead: 80, newHead: 4, oldEmpty: true, start: 1 })).toBe(true);
+    expect(isJumpToStart({ oldFrom: 80, newFrom: 4, start: 1 })).toBe(true);
+  });
+  it('変換中の文節が範囲で選ばれていた（40〜43）ところから先頭へ飛んでも true', () => {
+    expect(isJumpToStart({ oldFrom: 40, newFrom: 1, start: 1 })).toBe(true);
   });
   it('1行目で IME の変換で数文字戻るだけなら false', () => {
-    expect(isJumpToStart({ oldHead: 14, newHead: 11, oldEmpty: true, start: 1 })).toBe(false);
-    expect(isJumpToStart({ oldHead: 4, newHead: 2, oldEmpty: true, start: 1 })).toBe(false);
+    expect(isJumpToStart({ oldFrom: 14, newFrom: 11, start: 1 })).toBe(false);
+    expect(isJumpToStart({ oldFrom: 4, newFrom: 2, start: 1 })).toBe(false);
   });
-  it('選んだ範囲を打ち替えたとき（先頭から選んでいた）は false', () => {
-    expect(isJumpToStart({ oldHead: 40, newHead: 1, oldEmpty: false, start: 1 })).toBe(false);
+  it('先頭から選んだ範囲を打ち替えたときは false（選択の始まりがもう先頭）', () => {
+    expect(isJumpToStart({ oldFrom: 1, newFrom: 2, start: 1 })).toBe(false);
   });
   it('先へ進むのは false', () => {
-    expect(isJumpToStart({ oldHead: 1, newHead: 2, oldEmpty: true, start: 1 })).toBe(false);
+    expect(isJumpToStart({ oldFrom: 1, newFrom: 2, start: 1 })).toBe(false);
+    expect(isJumpToStart({ oldFrom: 10, newFrom: 11, start: 1 })).toBe(false);
   });
 });
 

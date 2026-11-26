@@ -34,14 +34,18 @@ export async function POST(req: NextRequest) {
   const session = await getSession();
   requireAuth(session);
 
+  if (!checkRateLimit(`editor-jump:${session.userId}`, PER_HOUR, HOUR).allowed) return NextResponse.json({ error: 'too_many' }, { status: 429 });
+
   const text = await req.text().catch(() => '');
   if (text.length > MAX_BYTES) return NextResponse.json({ error: 'too_large' }, { status: 413 });
   let raw: unknown;
   try { raw = JSON.parse(text); } catch { return NextResponse.json({ error: 'invalid' }, { status: 400 }); }
   const parsed = schema.safeParse(raw);
-  if (!parsed.success) return NextResponse.json({ error: 'invalid' }, { status: 400 });
-
-  if (!checkRateLimit(`editor-jump:${session.userId}`, PER_HOUR, HOUR).allowed) return NextResponse.json({ error: 'too_many' }, { status: 429 });
+  if (!parsed.success) {
+    // a refused report still leaves a trace: where it was wrong (the field paths only, never the values)
+    console.info(`[editor-jump] rejected ${JSON.stringify({ user: session.userId, issues: parsed.error.issues.slice(0, 10).map(i => i.path.join('.')) })}`);
+    return NextResponse.json({ error: 'invalid' }, { status: 400 });
+  }
 
   const r = parsed.data;
   console.info(`[editor-jump] ${JSON.stringify({

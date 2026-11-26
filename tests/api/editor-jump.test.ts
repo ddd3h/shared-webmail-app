@@ -53,7 +53,12 @@ describe('POST /api/diag/editor-jump', () => {
       r.events.push(bad as never);
       expect((await POST(req(r))).status).toBe(400);
     }
-    expect(info).not.toHaveBeenCalled();
+    // only a note of where it was wrong: never the values
+    expect(info).toHaveBeenCalledTimes(4);
+    for (const [line] of info.mock.calls) {
+      expect(String(line).startsWith('[editor-jump] rejected ')).toBe(true);
+      expect(String(line)).not.toMatch(/konnichiha|こんにちは|abc|本文/);
+    }
   });
 
   it('知らない項目・知らない種類・大きすぎる報告は書かない', async () => {
@@ -64,7 +69,8 @@ describe('POST /api/diag/editor-jump', () => {
     expect((await POST(req(r))).status).toBe(400);
     expect((await POST(req('not json'))).status).toBe(400);
     expect((await POST(req('x'.repeat(49 * 1024)))).status).toBe(413);
-    expect(info).not.toHaveBeenCalled();
+    expect(info.mock.calls.every(([line]: unknown[]) => String(line).startsWith('[editor-jump] rejected '))).toBe(true);
+    expect(info.mock.calls.map(([line]: unknown[]) => String(line)).join('\n')).not.toContain('お世話になっております');
   });
 
   it('1人1時間に30回まで', async () => {

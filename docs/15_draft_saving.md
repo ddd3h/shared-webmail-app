@@ -105,8 +105,8 @@ draftId = null, status = 'idle'
 - 見つけると 1.5 秒待ち、前の 6 秒と後の 1.5 秒の出来事を `POST /api/diag/editor-jump` に送る。出来事は、キー・変換・入力の種類・選択の移動・トランザクション（印の名前、前後の位置）・エディタの作成と破棄。
 - 送るのは 30 秒に1回まで、1ページで5回まで。サーバーも1人1時間30回まで。
 - 打った文字は送らない。キーは Space・Enter・矢印などの名前だけで、それ以外は `char` にする。Cmd/Ctrl と一緒に押したアルファベットだけは、ショートカットとして文字を残す。`code` は送らない（IME 中はローマ字になるため）。サーバーも `isSafeDetail` で確かめ直し、合わないものは 400 にする。
-- 記録はサーバーのログ（pm2 の out ログ）に `[editor-jump]` で始まる1行で出る。`ssh overleaf-oss 'grep "\[editor-jump\]" ~/.pm2/logs/shared-webmail-app-out-0.log'` で読む。
-- `jump.tags` の意味: `typing` は直前2秒に打鍵または変換があった、`nav` は矢印や Cmd/Ctrl のショートカットのすぐ後、`pointer` はクリックのすぐ後、`remote` はほかの人の編集で動いた、`undo` は取り消し。`nav` と `pointer` は、わざと動かした場合なので読み飛ばしてよい。
+- 記録はサーバーのログ（pm2 の out ログ）に `[editor-jump]` で始まる1行で出る。`ssh overleaf-oss 'grep "\[editor-jump\]" ~/.pm2/logs/shared-webmail-app-out-0.log'` で読む。形が合わずに受け取らなかった報告も `[editor-jump] rejected` で出る（合わなかった項目の場所だけで、値は出さない）。
+- `jump.tags` の意味: `typing` は直前2秒に打鍵または変換があった、`nav` は矢印や Cmd/Ctrl のショートカットのすぐ後、`pointer` はクリックのすぐ後、`remote` はほかの人の編集で動いた、`undo` は取り消し、`range` は飛ぶ前が範囲の選択だった（変換中の文節など）。`nav` と `pointer` は、わざと動かした場合なので読み飛ばしてよい。
 
 ---
 

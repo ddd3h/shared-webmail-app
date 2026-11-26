@@ -12,7 +12,7 @@ export type JumpEventKind = (typeof JUMP_EVENT_KINDS)[number];
 /** [ms from the jump, kind, detail, a, b, which editor on the page] */
 export type JumpEvent = [number, JumpEventKind, string, number, number, number];
 
-export const JUMP_TAGS = ['typing', 'nav', 'pointer', 'remote', 'undo'] as const;
+export const JUMP_TAGS = ['typing', 'nav', 'pointer', 'remote', 'undo', 'range'] as const;
 export type JumpTag = (typeof JUMP_TAGS)[number];
 
 export type JumpReport = {
@@ -72,16 +72,16 @@ export function isSafeDetail(kind: JumpEventKind, detail: string): boolean {
 export const isMetaName = (s: string) => /^[A-Za-z0-9$_-]{1,40}$/.test(s);
 
 /**
- * Did the caret jump (back) to the start of the doc? `start` is the first place a caret can be (1 for a doc that starts with a paragraph).
- * A replaced selection is not a jump (typing over a selection starts where it started). Two shapes count: the caret right at the start,
- * having been at least 3 places further on; or the caret a few characters past the start, having been far further on (the jump, and the
- * characters typed there before the next transaction). Converting a long phrase with the IME moves the caret back only a few places.
+ * Did the caret jump (back) to the start of the doc? Measured from where the selection began before and after (`from`): during an IME
+ * conversion the clause being converted may be a selected range, and typing over a range that began at the start is not a jump.
+ * `start` is the first place a caret can be (1 for a doc that starts with a paragraph). Two shapes count: right at the start, having been
+ * at least 3 places further on; or a few characters past the start, having been far further on (the jump, and what was typed there before
+ * the next transaction). Converting a long phrase with the IME moves the caret back only a few places.
  */
-export function isJumpToStart(p: { oldHead: number; newHead: number; oldEmpty: boolean; start: number }): boolean {
-  if (!p.oldEmpty) return false;
-  const back = p.oldHead - p.newHead;
-  if (p.newHead <= p.start + 1 && back >= 3) return true;
-  return p.newHead <= p.start + 12 && back >= 15;
+export function isJumpToStart(p: { oldFrom: number; newFrom: number; start: number }): boolean {
+  const back = p.oldFrom - p.newFrom;
+  if (p.newFrom <= p.start + 1 && back >= 3) return true;
+  return p.newFrom <= p.start + 12 && back >= 15;
 }
 
 /** The page the editor was on, with record ids taken out: "/threads/:id". */

@@ -79,10 +79,13 @@ class Watcher {
     const metas = metaNames(tr);
     push('tr', this.id, `${tr.docChanged ? 'D' : ''}${tr.selectionSet ? 'S' : ''}|${metas.join(',')}`, oldHead, newHead);
     const start = Selection.atStart(after.doc).from;
-    if (isJumpToStart({ oldHead, newHead, oldEmpty: before.selection.empty, start })) this.onJump({ oldHead, newHead, start, size: after.doc.content.size, docChanged: tr.docChanged, metas });
+    const oldFrom = before.selection.from;
+    // a range that ends far on (Shift+click, a selection dragged up) is a selection, not a jump: then where it ends counts
+    const newFrom = after.selection.empty ? after.selection.from : after.selection.head;
+    if (isJumpToStart({ oldFrom, newFrom, start })) this.onJump({ oldFrom, newFrom, start, size: after.doc.content.size, docChanged: tr.docChanged, metas, range: !before.selection.empty });
   }
 
-  private onJump(j: { oldHead: number; newHead: number; start: number; size: number; docChanged: boolean; metas: string[] }) {
+  private onJump(j: { oldFrom: number; newFrom: number; start: number; size: number; docChanged: boolean; metas: string[]; range: boolean }) {
     const at = now();
     if (this.collecting || sentOnPage >= PAGE_MAX || at - lastSentAt < GAP_MS) return;
     sentOnPage++;
@@ -90,8 +93,8 @@ class Watcher {
     const mark = seq; // everything up to the jump's own transaction
     const before = ring.filter(x => at - x.t <= BEFORE_MS);
     const jump: JumpReport['jump'] = {
-      from: j.oldHead, to: j.newHead, start: j.start, size: j.size, docChanged: j.docChanged, metas: j.metas,
-      composing: !!this.view?.composing, focused: !!this.view?.hasFocus(), tags: tagsFor(before, at, j.metas),
+      from: j.oldFrom, to: j.newFrom, start: j.start, size: j.size, docChanged: j.docChanged, metas: j.metas,
+      composing: !!this.view?.composing, focused: !!this.view?.hasFocus(), tags: [...tagsFor(before, at, j.metas), ...(j.range ? ['range' as const] : [])],
     };
     this.flush = () => {
       this.collecting = null;
@@ -99,7 +102,7 @@ class Watcher {
       const after = ring.filter(x => x.n > mark && x.t - at <= AFTER_MS + 500);
       const row = (x: Entry): JumpEvent => [Math.round(x.t - at), x.k, x.d, x.a, x.b, x.e];
       const kept = after.slice(0, MAX_EVENTS / 2);
-      const events: JumpEvent[] = [...before.slice(-(MAX_EVENTS - kept.length - 1)).map(row), [0, 'jump', '', j.oldHead, j.newHead, this.id], ...kept.map(row)];
+      const events: JumpEvent[] = [...before.slice(-(MAX_EVENTS - kept.length - 1)).map(row), [0, 'jump', '', j.oldFrom, j.newFrom, this.id], ...kept.map(row)];
       const path = typeof location !== 'undefined' ? pathPattern(location.pathname) : '';
       try { this.send({ v: 1, shared: this.shared, path, jump, events }); } catch { /* ignore */ }
     };
